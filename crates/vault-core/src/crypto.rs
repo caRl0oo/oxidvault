@@ -111,23 +111,62 @@ pub fn decrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::VaultError;
 
     #[test]
-    fn encrypt_decrypt_roundtrip() {
-        let salt = random_salt();
-        let key = MasterKey::derive_from_password("test-password", &salt, KdfParams::default())
-            .unwrap();
-        let (nonce, ct) = encrypt(&key, b"secret payload").unwrap();
-        let pt = decrypt(&key, &nonce, &ct).unwrap();
-        assert_eq!(&pt[..], b"secret payload");
+    fn test_kdf_derivation() {
+        let salt = [0x42u8; SALT_LEN];
+        let params = KdfParams::default();
+
+        let key_a =
+            MasterKey::derive_from_password("correct-horse-battery-staple", &salt, params).unwrap();
+        let key_b =
+            MasterKey::derive_from_password("correct-horse-battery-staple", &salt, params).unwrap();
+
+        assert_eq!(key_a.as_bytes(), key_b.as_bytes());
     }
 
     #[test]
-    fn wrong_password_fails_decrypt() {
-        let salt = random_salt();
-        let key = MasterKey::derive_from_password("correct", &salt, KdfParams::default()).unwrap();
-        let wrong = MasterKey::derive_from_password("wrong", &salt, KdfParams::default()).unwrap();
-        let (nonce, ct) = encrypt(&key, b"data").unwrap();
-        assert!(decrypt(&wrong, &nonce, &ct).is_err());
+    fn test_encrypt_decrypt_success() {
+        let password = "vault-integration-test-password";
+        let salt = [0x11u8; SALT_LEN];
+        let plaintext = b"OxidVault secret payload - AES-256-GCM roundtrip";
+        let params = KdfParams::default();
+
+        let key = MasterKey::derive_from_password(password, &salt, params).unwrap();
+        let (nonce, ciphertext) = encrypt(&key, plaintext).unwrap();
+        let decrypted = decrypt(&key, &nonce, &ciphertext).unwrap();
+
+        assert_eq!(&decrypted[..], plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_invalid_password() {
+        let salt = [0x99u8; SALT_LEN];
+        let params = KdfParams::default();
+
+        let correct_key = MasterKey::derive_from_password("correct", &salt, params).unwrap();
+        let wrong_key = MasterKey::derive_from_password("wrong", &salt, params).unwrap();
+
+        let (nonce, ciphertext) = encrypt(&correct_key, b"protected data").unwrap();
+        let err = decrypt(&wrong_key, &nonce, &ciphertext).unwrap_err();
+
+        assert!(matches!(err, VaultError::InvalidPassword));
+    }
+
+    #[test]
+    fn test_nonce_uniqueness() {
+        let salt = [0xABu8; SALT_LEN];
+        let key = MasterKey::derive_from_password("nonce-test", &salt, KdfParams::default()).unwrap();
+        let plaintext = b"same plaintext for both encryptions";
+
+        let (nonce_a, ciphertext_a) = encrypt(&key, plaintext).unwrap();
+        let (nonce_b, ciphertext_b) = encrypt(&key, plaintext).unwrap();
+
+        assert_ne!(nonce_a, nonce_b, "each encrypt must draw a fresh random nonce");
+        assert_ne!(
+            ciphertext_a, ciphertext_b,
+            "identical plaintext must produce distinct ciphertext when nonces differ"
+        );
     }
 }
