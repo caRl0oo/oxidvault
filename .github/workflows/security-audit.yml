@@ -28,7 +28,7 @@ jobs:
 
       # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
       - name: Run Cargo Audit (Vulnerability Scan)
-        uses: rustsec/audit-check-action@v2
+        uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
