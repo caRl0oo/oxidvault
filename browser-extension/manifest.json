@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "OxidVault Connector",
+  "version": "0.2.0",
+  "description": "Native-Messaging-Brücke zu OxidVault (Phase 3 — AutoFill get_login)",
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+

@@ -224,6 +224,46 @@ impl Vault {
         })
     }
 
+    /// Finds the best-matching web-login for a page hostname (least-privilege: one entry).
+    ///
+    /// Returns `(username, password)` only when the vault is unlocked and a match exists.
+    pub fn find_web_login_for_hostname(
+        &self,
+        page_hostname: &str,
+    ) -> Result<Option<(String, Zeroizing<String>)>, VaultError> {
+        use crate::url_match::{score_web_login_url_match, UrlMatchScore};
+
+        self.ensure_unlocked()?;
+
+        let mut best: Option<(UrlMatchScore, &SecretEntry)> = None;
+
+        for entry in &self.entries {
+            let SecretPayload::WebLogin { url, .. } = &entry.payload else {
+                continue;
+            };
+
+            let score = score_web_login_url_match(url, page_hostname);
+            if score == UrlMatchScore::None {
+                continue;
+            }
+
+            if best.as_ref().is_none_or(|(s, _)| score > *s) {
+                best = Some((score, entry));
+            }
+        }
+
+        let Some((_, entry)) = best else {
+            return Ok(None);
+        };
+
+        let SecretPayload::WebLogin { username, .. } = &entry.payload else {
+            return Ok(None);
+        };
+
+        let password = self.extract_secret(&entry.id, SecretField::Password)?;
+        Ok(Some((username.clone(), password)))
+    }
+
     pub fn probe_target_for_entry(&self, id: &str) -> Option<ProbeTarget> {
         self.entries
             .iter()
@@ -427,5 +467,41 @@ mod tests {
         vault2.unlock("correct-horse-battery-staple").unwrap();
         let reloaded = vault2.get_entry_public(&summary.id).unwrap();
         assert_eq!(reloaded.title, "GitHub Prod");
+    }
+
+    #[test]
+    fn find_web_login_for_hostname() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+
+        let mut vault = Vault::new();
+        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+
+        vault
+            .add_entry(SecretEntryInput {
+                title: "Example".into(),
+                folder: None,
+                tags: vec![],
+                expires_at: None,
+                payload: SecretPayload::WebLogin {
+                    url: "https://example.com/login".into(),
+                    username: "alice".into(),
+                    password: "s3cret".into(),
+                    notes: None,
+                },
+            })
+            .unwrap();
+
+        let found = vault
+            .find_web_login_for_hostname("example.com")
+            .unwrap()
+            .expect("match");
+        assert_eq!(found.0, "alice");
+        assert_eq!(found.1.as_str(), "s3cret");
+
+        assert!(vault
+            .find_web_login_for_hostname("unknown.example.org")
+            .unwrap()
+            .is_none());
     }
 }

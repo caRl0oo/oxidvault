@@ -7,6 +7,7 @@ pub mod audit;
 pub mod expiry;
 pub mod policy;
 pub mod probe;
+pub mod url_match;
 pub mod vault;
 
 pub use audit::{audit_entries, SecurityAuditReport};
@@ -17,6 +18,7 @@ pub use entry::{
     SecretField, SecretKindTag, SecretPayload, REVEAL_SECRET_WARNING,
 };
 pub use probe::{resolve_probe_target, ProbeTarget};
+pub use url_match::{normalize_hostname, score_web_login_url_match, UrlMatchScore};
 pub use error::VaultError;
 pub use generator::{generate_password, PasswordGenOptions, DEFAULT_PASSWORD_LENGTH};
 pub use vault::{Vault, VaultInfo};

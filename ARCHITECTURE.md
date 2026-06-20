@@ -4,7 +4,7 @@
 > Dieses Dokument ist die zentrale Referenz für die technische Architektur von OxidVault.  
 > Bei jeder Ergänzung von Kernfunktionen, Tauri Commands, Dateiformaten oder sicherheitsrelevanten Änderungen ist **ARCHITECTURE.md** synchron mit dem Code zu aktualisieren.
 
-**Version:** 1.0.0 · **Stand:** 2025-06-19 (Security-Härtung K1–K4)
+**Version:** 1.0.0 · **Stand:** 2025-06-19 (Native Messaging Phase 2)
 
 ---
 
@@ -19,7 +19,8 @@
 7. [Dateiformate](#7-dateiformate)
 8. [Frontend-Architektur](#8-frontend-architektur)
 9. [Build, Deployment & Betrieb](#9-build-deployment--betrieb)
-10. [Dokumentationspflicht & Changelog](#10-dokumentationspflicht--changelog)
+10. [Browser-Erweiterung — Native Messaging (Phase 1–2)](#10-browser-erweiterung--native-messaging-phase-12)
+11. [Dokumentationspflicht & Changelog](#11-dokumentationspflicht--changelog)
 
 ---
 
@@ -512,8 +513,9 @@ OxidVault/
 │   │   └── default.json     ← Tauri v2 Permission-Capabilities
 │   ├── icons/               ← App-Icons (via `npm run icons` aus `logo.png`)
 │   └── src/
-│       ├── main.rs          ← Binary-Einstiegspunkt
+│       ├── main.rs          ← Binary-Einstiegspunkt (--native-messaging → Headless)
 │       ├── lib.rs           ← Tauri Builder, Plugin-Init, State
+│       ├── native_messaging.rs ← Chrome/Firefox Native Messaging Host (stdio)
 │       ├── clipboard.rs     ← SecureClipboard (arboard, 30s Auto-Clear)
 │       ├── probe/           ← Async TCP-Reachability-Checks
 │       │   └── mod.rs
@@ -527,9 +529,20 @@ OxidVault/
 │           ├── open_url.rs  ← Sicheres Öffnen von http(s)-URLs
 │           └── ssh.rs       ← ssh_connect / ssh_write / ssh_disconnect
 │
-├── public/                  ← Statische Assets (SVG, etc.)
-├── scripts/                 ← Build-Hilfsskripte
+├── browser-extension/       ← ★ Browser-Erweiterung (Phase 2: MV3 + Background)
+│   ├── manifest.json        ← Manifest V3 (nativeMessaging)
+│   ├── background.js        ← connectNative, Ping beim Start
+│   ├── README.md            ← 3-Schritte E2E-Anleitung (Ping/Pong)
+│   └── host/
+│       └── com.oxidvault.app.json  ← Native-Host-Manifest (via PS-Skript)
+│
+├── scripts/
+│   ├── register_native_host.ps1   ← Registry + Host-Manifest (Chrome/Edge)
+│   ├── tauri-dev.ps1
+│   ├── tauri-build.ps1
 │   └── generate-icons.mjs
+│
+├── public/                  ← Statische Assets (SVG, etc.)
 └── dist/                    ← Vite-Production-Build (generiert)
 ```
 
@@ -1281,9 +1294,219 @@ Siehe auch [Production (Release v1.0.0)](#production-release-v100) für den fina
 
 OxidVault ist **offline-first** konzipiert. Vault-Dateien (`.oxid`) liegen im Dateisystem des Betreibers. Für Team-Sync oder Backup über öffentliche Git-Server steht die **Git-Synchronisation** (Runde 4) zur Verfügung — die verschlüsselte `.oxid`-Datei kann sicher in jedem Git-Remote liegen.
 
+Siehe auch [Browser-Erweiterung — Native Messaging (Phase 1–2)](#10-browser-erweiterung--native-messaging-phase-12) für die Headless-Registrierung und den Ping/Pong-E2E-Test.
+
 ---
 
-## 10. Dokumentationspflicht & Changelog
+## 10. Browser-Erweiterung — Native Messaging (Phase 1–3)
+
+> **Status:** ✅ Phase 1 — Headless-Host, stdio-Protokoll, Dummy-Handler (`ping` → `pong`)  
+> **Status:** ✅ Phase 2 — Manifest-V3-Extension, `background.js`, Registry-Skript, E2E-Anleitung  
+> **Status:** ✅ Phase 3 — `content.js` AutoFill-Chamäleon, `get_login` Least-Privilege, localhost-IPC zur GUI  
+> **Stil:** RoboForm-ähnlich — Browser-Erweiterung kommuniziert mit der Desktop-App über Native Messaging, nicht über Tauri-IPC.
+
+> **Schnellstart (Ping/Pong):** Exakte 3-Schritte-Anleitung in [`browser-extension/README.md`](browser-extension/README.md).
+
+### Ziel
+
+Die Browser-Erweiterung (spätere Phasen) soll Formular-Autofill und Vault-Integration im Browser ermöglichen. Phase 1 legt die **Backend-Schnittstelle** in Rust: ein headless Prozess ohne WebView, der über stdin/stdout mit Chrome/Firefox spricht.
+
+### CLI-Flag: `--native-messaging`
+
+| Modus | Start | Verhalten |
+|---|---|---|
+| **Normal** | `oxidvault.exe` (GUI) | Tauri-Fenster, WebView, volle Desktop-App |
+| **Headless** | `oxidvault-nmh.exe` (empfohlen, Windows) oder `oxidvault.exe --native-messaging` | Kein Fenster, kein Tauri-Builder — nur Native-Messaging-Loop |
+
+Unter Windows muss das Host-Manifest auf **`oxidvault-nmh.exe`** zeigen: die Release-GUI (`oxidvault.exe`) wird mit `windows_subsystem = "windows"` gebaut; Chrome/Edge können dann stdout-Antworten nicht zuverlässig empfangen (Ping wird gesendet, kein `pong` in der Konsole).
+
+Der Einstiegspunkt in `src-tauri/src/main.rs` prüft `std::env::args()` **vor** `oxidvault_lib::run()`. Bei `--native-messaging` wird `run_native_messaging()` aufgerufen und der Prozess beendet sich nach Pipe-EOF.
+
+```rust
+// main.rs (vereinfacht)
+if args.contains("--native-messaging") {
+    oxidvault_lib::run_native_messaging()?;
+    return;
+}
+oxidvault_lib::run();
+```
+
+### Architektur
+
+```mermaid
+flowchart LR
+    subgraph Browser["Browser (Chrome / Edge)"]
+        CS[content.js]
+        BG[background.js]
+        CS -->|"hostname"| BG
+    end
+
+    subgraph Host["oxidvault-nmh.exe"]
+        NM[native_messaging.rs]
+    end
+
+    subgraph Desktop["OxidVault GUI"]
+        BR[nm_bridge/server.rs]
+        V[(Vault RAM)]
+        BR --> V
+    end
+
+    BG -- "stdio JSON get_login" --> NM
+    NM -- "127.0.0.1 IPC" --> BR
+    BR -- "username + password" --> NM
+    NM -- "stdio JSON" --> BG
+    BG -- "credentials" --> CS
+```
+
+| Komponente | Pfad | Verantwortung |
+|---|---|---|
+| **Binary-Einstieg** | `src-tauri/src/main.rs` | CLI-Abzweigung (GUI) |
+| **NM-Host-Binary** | `src-tauri/src/bin/native_messaging_main.rs` | Console-`oxidvault-nmh.exe` für Browser-stdio (Windows) |
+| **Public API** | `src-tauri/src/lib.rs` | `run_native_messaging()` |
+| **Protokoll-Loop** | `src-tauri/src/native_messaging.rs` | Lesen/Schreiben, JSON-Dispatch (`ping`, `get_login`) |
+| **IPC-Brücke (GUI)** | `src-tauri/src/nm_bridge/` | localhost TCP, Session-Token, Vault-Zugriff |
+| **URL-Matching** | `crates/vault-core/src/url_match.rs` | Host/Substring-Score für Web-Logins |
+| **Extension (MV3)** | `browser-extension/manifest.json` | `nativeMessaging`, Service Worker, `content_scripts` |
+| **Background** | `browser-extension/background.js` | `connectNative`, `get_login`-Relay |
+| **Content Script** | `browser-extension/content.js` | Login-Formular-Erkennung, AutoFill |
+| **Host-Manifest** | `browser-extension/host/com.oxidvault.app.json` | Browser-Registrierung (Pfad + `allowed_origins`) |
+| **Registry-Skript** | `scripts/register_native_host.ps1` | Schreibt Host-Manifest + HKCU Chrome/Edge |
+
+### Native-Messaging-Protokoll (stdio)
+
+Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
+
+1. **Eingehend:** 4 Bytes **Little-Endian** `u32` = Payload-Länge in Bytes, danach UTF-8-JSON.
+2. **Ausgehend:** identisches Format auf **stdout**.
+3. **stdout ist reserviert** — kein `println!`, kein Logging auf stdout im Headless-Modus (würde das Protokoll zerstören). Fehler → `eprintln!` auf stderr.
+
+**Schutzgrenzen (Phase 1):**
+
+| Grenze | Wert | Zweck |
+|---|---|---|
+| `MAX_MESSAGE_LEN` | 1 MiB | DoS-Schutz bei fehlerhaftem Längen-Header |
+
+### Phase-1/2-Nachrichten
+
+| Request (JSON) | Response (JSON) |
+|---|---|
+| `{ "action": "ping" }` | `{ "status": "pong" }` |
+| `{ "action": "get_login", "url": "<hostname>" }` | siehe Phase 3 |
+| Unbekannte `action` | `{ "status": "error", "error": "unknown action" }` |
+| Ungültiges JSON | `{ "status": "error", "error": "invalid json: …" }` |
+
+### Phase 3 — `get_login` (Least Privilege)
+
+**Ablauf:**
+
+1. **`content.js`** (matches `<all_urls>`): erkennt `input[type=password]`, liest `window.location.hostname`, sendet `{ type: "GET_LOGIN", hostname }` an den Service Worker.
+2. **`background.js`**: leitet `{ "action": "get_login", "url": "<hostname>" }` über Native Messaging an `oxidvault-nmh.exe` weiter.
+3. **`native_messaging.rs`**: leitet die Anfrage per localhost-IPC an die laufende GUI (`nm_bridge/server.rs`) weiter — **nur** wenn OxidVault Desktop aktiv ist.
+4. **`Vault::find_web_login_for_hostname`**: durchsucht entsperrte Web-Logins (`url_match.rs`: exakter Host > Subdomain > Substring), extrahiert Passwort via `extract_secret` (`Zeroizing`).
+5. Antwort zurück zur Extension; **`content.js`** füllt User-/Passwort-Felder nur bei `{ "status": "ok" }`.
+
+**Antworten `get_login`:**
+
+| Status | Bedeutung |
+|---|---|
+| `ok` | `{ "status": "ok", "username": "…", "password": "…" }` — genau ein passender Eintrag |
+| `not_found` | Kein Web-Login für diese Domain |
+| `locked` | Vault gesperrt — Desktop-App entsperren |
+| `unavailable` | Desktop-App nicht gestartet / IPC nicht erreichbar |
+| `error` | Protokoll- oder Autorisierungsfehler |
+
+**Sicherheit:**
+
+- NM-Host-Prozess hat **keinen** eigenen Vault — Zugriff nur über GUI-Prozess mit entsperrtem `AppState`.
+- Session-Datei `%APPDATA%/com.oxidvault.app/native_messaging_session.json` enthält Port + Token (127.0.0.1 only).
+- Passwörter in Rust via `Zeroizing<String>` bis zur JSON-Serialisierung; Extension füllt Felder, speichert nicht dauerhaft.
+
+### Host-Manifest
+
+Datei: `browser-extension/host/com.oxidvault.app.json`
+
+```json
+{
+  "name": "com.oxidvault.app",
+  "description": "OxidVault Native Messaging Host (Phase 1 — ping/pong)",
+  "path": "C:\\Path\\To\\oxidvault-nmh.exe",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
+}
+```
+
+| Feld | Hinweis |
+|---|---|
+| `name` | Muss mit Registry-/Manifest-Schlüssel übereinstimmen (`com.oxidvault.app`) |
+| `path` | Absoluter Pfad zu `target/release/oxidvault-nmh.exe` (Console-Binary; `register_native_host.ps1` setzt dies automatisch) |
+| `args` | Entfällt bei `oxidvault-nmh.exe` (dedizierter Einstieg). Legacy: `oxidvault.exe` mit `["--native-messaging"]` |
+| `allowed_origins` | Extension-ID der WebExtension — wird von `register_native_host.ps1` gesetzt |
+
+### Phase 2 — Extension-Skeleton & Registry-Skript
+
+**Extension (`browser-extension/`):**
+
+- `manifest.json` — Manifest V3, Permission `nativeMessaging`, Background Service Worker
+- `background.js` — beim Start: `chrome.runtime.connectNative("com.oxidvault.app")`, `postMessage({ action: "ping" })`, Listener für `onMessage` / `onDisconnect`, Ausgabe per `console.log`
+
+**Registry-Skript (`scripts/register_native_host.ps1`):**
+
+```powershell
+.\scripts\register_native_host.ps1 -ExtensionId "<32-Zeichen-ID von chrome://extensions>"
+```
+
+| Aktion | Detail |
+|---|---|
+| Binary-Pfad | Schreibt absoluten Pfad zu `target/release/oxidvault-nmh.exe` in `com.oxidvault.app.json` |
+| `allowed_origins` | Setzt `chrome-extension://<ExtensionId>/` |
+| Registry Chrome | `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.oxidvault.app` → Pfad zur JSON |
+| Registry Edge | `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.oxidvault.app` → Pfad zur JSON |
+
+Optional: `-BuildProfile debug` für `target/debug/oxidvault-nmh.exe`.
+
+### Ping/Pong E2E-Test (3 Schritte)
+
+1. **Binary bauen:** `cargo build --release`
+2. **Extension laden:** `chrome://extensions` → Entwicklermodus → Entpackte Erweiterung → Ordner `browser-extension` → Extension-ID kopieren
+3. **Host registrieren:** `.\scripts\register_native_host.ps1 -ExtensionId "<ID>"` → Extension neu laden → Service-Worker-Konsole: `{ status: "pong" }`
+
+Details und Fehlerbehebung: [`browser-extension/README.md`](browser-extension/README.md).
+
+### Registrierung (Windows, manuell)
+
+**Chrome** — Registry (HKCU):
+
+```
+Software\Google\Chrome\NativeMessagingHosts\com.oxidvault.app
+  (Default) = Vollständiger Pfad zu com.oxidvault.app.json
+```
+
+**Firefox** — Registry (HKCU):
+
+```
+Software\Mozilla\NativeMessagingHosts\com.oxidvault.app
+  (Default) = Vollständiger Pfad zu com.oxidvault.app.json
+```
+
+Nach Anpassung von `path` und `allowed_origins` kann die Extension `chrome.runtime.connectNative("com.oxidvault.app")` bzw. Firefox-Äquivalent nutzen.
+
+### Manueller Test (ohne Extension)
+
+PowerShell (Payload-Länge + JSON an stdin pipen):
+
+```powershell
+$json = '{"action":"ping"}'
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+$len = [BitConverter]::GetBytes([uint32]$bytes.Length)
+$input = $len + $bytes
+$input | & ".\target\release\oxidvault.exe" --native-messaging
+```
+
+Erwartete stdout-Antwort (hex-dekodiert): 4-Byte-Länge + `{"status":"pong"}`.
+
+---
+
+## 11. Dokumentationspflicht & Changelog
 
 ### Pflicht zur Synchronisation
 
@@ -1324,6 +1547,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
 | 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |
+| 2025-06-19 | 1.0.0 | **Native Messaging Phase 1:** CLI `--native-messaging` (Headless), `native_messaging.rs` (stdio LE-Framing), Dummy `ping`→`pong`, Manifest `browser-extension/host/com.oxidvault.app.json` |
+| 2025-06-19 | 1.0.0 | **Native Messaging Phase 2:** MV3-Extension (`manifest.json`, `background.js`), `register_native_host.ps1` (Chrome/Edge Registry), E2E-Anleitung in `browser-extension/README.md` |
+| 2025-06-20 | 1.0.0 | **Native Messaging Windows-Fix:** dedizierte Console-Binary `oxidvault-nmh.exe` (stdout-Pipe mit Chrome/Edge), Register-Skript + Extension-Timeout-Logging |
+| 2025-06-20 | 1.0.0 | **Native Messaging Phase 3:** `content.js` Login-Erkennung + AutoFill, `get_login` über NM→localhost-IPC→Vault, `url_match.rs`, `find_web_login_for_hostname` |
 
 ---
 

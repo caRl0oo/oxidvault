@@ -1,11 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for OxidVault",
+  "description": "Minimal capabilities for OxidVault (least privilege)",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "shell:allow-open",
-    "dialog:default"
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }

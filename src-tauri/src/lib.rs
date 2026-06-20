@@ -1,6 +1,8 @@
 mod commands;
 mod clipboard;
 mod git_sync;
+mod native_messaging;
+mod nm_bridge;
 mod probe;
 mod settings;
 mod ssh;
@@ -11,11 +13,19 @@ use ssh::SshManager;
 use tauri::Manager;
 use vault_core::Vault;
 
+/// Headless Native Messaging host for the browser extension (no WebView).
+pub fn run_native_messaging() -> std::io::Result<()> {
+    native_messaging::run()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            nm_bridge::spawn_server(app.handle().clone());
+            Ok(())
+        })
         .manage(AppState {
             vault: std::sync::Mutex::new(Vault::new()),
             ssh: SshManager::new(),
@@ -47,14 +57,6 @@ pub fn run() {
             commands::ssh::ssh_write,
             commands::ssh::ssh_disconnect,
         ])
-        .setup(|app| {
-            #[cfg(debug_assertions)]
-            {
-                let window = app.get_webview_window("main").expect("main window");
-                window.open_devtools();
-            }
-            Ok(())
-        })
         .on_window_event(|window, event| {
             if let Some(state) = window.try_state::<AppState>() {
                 window_events::on_main_window_event(window, event, &state);

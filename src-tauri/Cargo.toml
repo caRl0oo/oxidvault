@@ -6,10 +6,15 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+default-run = "oxidvault"
 
 [lib]
 name = "oxidvault_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "oxidvault-nmh"
+path = "src/bin/native_messaging_main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -18,7 +23,6 @@ tauri-build = { version = "2", features = [] }
 vault-core = { path = "../crates/vault-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-shell = "2"
 serde.workspace = true
 serde_json.workspace = true
 open = "5"
