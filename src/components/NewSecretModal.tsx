@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { PasswordGenerateButton } from "@/components/PasswordGenerateButton";
 import { TagInput } from "@/components/TagInput";
 import type {
-  SecretEntryFull,
   SecretEntryInputFull,
+  SecretEntryPublic,
   SecretKind,
   SecretPayload,
 } from "@/types/vault";
+import { revealSecret } from "@/lib/ipc";
 import {
   DB_TYPE_OPTIONS,
   SECRET_TYPE_LABELS,
@@ -17,7 +18,7 @@ interface NewSecretModalProps {
   open: boolean;
   loading: boolean;
   mode?: "create" | "edit";
-  editEntry?: SecretEntryFull;
+  editEntry?: SecretEntryPublic;
   onClose: () => void;
   onSubmit: (input: SecretEntryInputFull) => void;
   onUpdate?: (id: string, input: SecretEntryInputFull) => void;
@@ -47,7 +48,7 @@ const emptyDb = {
 const emptyWifi = { ssid: "", encryptionType: "wpa2", password: "" };
 const emptyNote = { content: "" };
 
-function entryToFormState(entry: SecretEntryFull) {
+async function loadEditFormState(entry: SecretEntryPublic) {
   const base = {
     title: entry.title,
     folder: entry.folder ?? "",
@@ -62,35 +63,46 @@ function entryToFormState(entry: SecretEntryFull) {
   };
 
   switch (entry.type) {
-    case "web_login":
+    case "web_login": {
+      const password = entry.has_password
+        ? (await revealSecret(entry.id, "password")).value
+        : "";
+      const notes = entry.has_notes
+        ? (await revealSecret(entry.id, "notes")).value
+        : "";
       return {
         ...base,
         kind: "web_login" as const,
-        web: {
-          url: entry.url,
-          username: entry.username,
-          password: entry.password,
-          notes: entry.notes ?? "",
-        },
+        web: { url: entry.url, username: entry.username, password, notes },
       };
-    case "ssh_key":
+    }
+    case "ssh_key": {
+      const privateKey = entry.has_private_key
+        ? (await revealSecret(entry.id, "private_key")).value
+        : "";
+      const passphrase = entry.has_passphrase
+        ? (await revealSecret(entry.id, "passphrase")).value
+        : "";
       return {
         ...base,
         kind: "ssh_key" as const,
-        ssh: {
-          host: entry.host,
-          username: entry.username,
-          privateKey: entry.private_key,
-          passphrase: entry.passphrase ?? "",
-        },
+        ssh: { host: entry.host, username: entry.username, privateKey, passphrase },
       };
-    case "api_token":
+    }
+    case "api_token": {
+      const token = entry.has_token
+        ? (await revealSecret(entry.id, "token")).value
+        : "";
       return {
         ...base,
         kind: "api_token" as const,
-        api: { service: entry.service, token: entry.token },
+        api: { service: entry.service, token },
       };
-    case "database":
+    }
+    case "database": {
+      const password = entry.has_password
+        ? (await revealSecret(entry.id, "password")).value
+        : "";
       return {
         ...base,
         kind: "database" as const,
@@ -100,25 +112,34 @@ function entryToFormState(entry: SecretEntryFull) {
           dbType: entry.db_type,
           databaseName: entry.database_name,
           username: entry.username,
-          password: entry.password,
+          password,
         },
       };
-    case "network_wifi":
+    }
+    case "network_wifi": {
+      const password = entry.has_password
+        ? (await revealSecret(entry.id, "password")).value
+        : "";
       return {
         ...base,
         kind: "network_wifi" as const,
         wifi: {
           ssid: entry.ssid,
           encryptionType: entry.encryption_type,
-          password: entry.password,
+          password,
         },
       };
-    case "secure_note":
+    }
+    case "secure_note": {
+      const content = entry.has_content
+        ? (await revealSecret(entry.id, "content")).value
+        : "";
       return {
         ...base,
         kind: "secure_note" as const,
-        note: { content: entry.content },
+        note: { content },
       };
+    }
   }
 }
 
@@ -144,23 +165,35 @@ export function NewSecretModal({
   const [folder, setFolder] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
+  const [loadingSecrets, setLoadingSecrets] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     if (isEdit && editEntry) {
-      const state = entryToFormState(editEntry);
-      setKind(state.kind);
-      setTitle(state.title);
-      setFolder(state.folder);
-      setTags(state.tags);
-      setExpiresAt(state.expiresAt);
-      setWeb(state.web);
-      setSsh(state.ssh);
-      setApi(state.api);
-      setDb(state.db);
-      setWifi(state.wifi);
-      setNote(state.note);
+      let cancelled = false;
+      setLoadingSecrets(true);
+      void loadEditFormState(editEntry)
+        .then((state) => {
+          if (cancelled) return;
+          setKind(state.kind);
+          setTitle(state.title);
+          setFolder(state.folder);
+          setTags(state.tags);
+          setExpiresAt(state.expiresAt);
+          setWeb(state.web);
+          setSsh(state.ssh);
+          setApi(state.api);
+          setDb(state.db);
+          setWifi(state.wifi);
+          setNote(state.note);
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingSecrets(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     } else {
       setKind("web_login");
       setTitle("");
@@ -642,10 +675,12 @@ export function NewSecretModal({
           <button
             type="submit"
             form="secret-form"
-            disabled={loading || !canSubmit}
+            disabled={loading || loadingSecrets || !canSubmit}
             className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
           >
-            {loading
+            {loadingSecrets
+              ? "Secrets laden…"
+              : loading
               ? isEdit
                 ? "Verschlüsseln & Aktualisieren…"
                 : "Verschlüsseln & Speichern…"

@@ -1,6 +1,5 @@
 use serde::Serialize;
 use tauri::State;
-use vault_core::resolve_probe_target;
 
 use crate::commands::AppState;
 use crate::probe::tcp_reachable;
@@ -27,15 +26,11 @@ pub async fn check_entries_reachability(
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
         let mut resolved = Vec::new();
         for id in entry_ids {
-            match vault.get_entry(&id) {
-                Ok(entry) => {
-                    if let Some(target) = resolve_probe_target(&entry.payload) {
-                        resolved.push((id, target.host, target.port));
-                    } else {
-                        resolved.push((id, String::new(), 0));
-                    }
+            match vault.probe_target_for_entry(&id) {
+                Some(target) => {
+                    resolved.push((id, target.host, target.port));
                 }
-                Err(_) => {
+                None => {
                     resolved.push((id, String::new(), 0));
                 }
             }

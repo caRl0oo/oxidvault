@@ -99,7 +99,7 @@ pub fn audit_entries(entries: &[SecretEntry]) -> SecurityAuditReport {
             count: group.len(),
         });
     }
-    duplicate_groups.sort_by(|a, b| b.count.cmp(&a.count));
+    duplicate_groups.sort_by_key(|b| std::cmp::Reverse(b.count));
 
     let mut expiring_entries = Vec::new();
     for entry in entries {
@@ -120,7 +120,7 @@ pub fn audit_entries(entries: &[SecretEntry]) -> SecurityAuditReport {
             days_until_expiry: status.days_until_expiry,
         });
     }
-    expiring_entries.sort_by(|a, b| a.days_until_expiry.cmp(&b.days_until_expiry));
+    expiring_entries.sort_by_key(|a| a.days_until_expiry);
 
     let score_percent = if total_audited == 0 {
         100

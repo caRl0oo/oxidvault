@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { copyToClipboard } from "@/lib/ipc";
 import {
   copySecureToClipboard,
+  notifyBackendSecureCopy,
   subscribeSecureClipboard,
 } from "@/lib/secureClipboard";
+import type { SecretField } from "@/types/vault";
 
 export function useSecureCopy() {
   const [activeField, setActiveField] = useState<string | null>(null);
@@ -25,10 +28,21 @@ export function useSecureCopy() {
     return ok;
   };
 
+  const copySecret = async (
+    fieldId: string,
+    entryId: string,
+    field: SecretField = "primary",
+  ) => {
+    await copyToClipboard(entryId, field);
+    notifyBackendSecureCopy();
+    setActiveField(fieldId);
+    return true;
+  };
+
   const getLabel = (fieldId: string) => {
     if (activeField !== fieldId) return "Kopieren";
     return secondsLeft > 0 ? `Kopiert! (${secondsLeft}s)` : "Kopiert!";
   };
 
-  return { copy, getLabel, activeField };
+  return { copy, copySecret, getLabel, activeField };
 }

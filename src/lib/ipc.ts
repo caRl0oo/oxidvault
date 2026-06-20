@@ -3,9 +3,11 @@ import type { SecurityAuditReport } from "@/types/audit";
 import type { AppSettings, GitSyncResult } from "@/types/settings";
 import type {
   PasswordGenOptions,
-  SecretEntryFull,
+  RevealedSecret,
   SecretEntryInputFull,
+  SecretEntryPublic,
   SecretEntrySummary,
+  SecretField,
   VaultInfo,
 } from "@/types/vault";
 
@@ -65,8 +67,22 @@ export async function updateEntry(
   return invoke<SecretEntrySummary>("update_entry", { id, input });
 }
 
-export async function getEntry(id: string): Promise<SecretEntryFull> {
-  return invoke<SecretEntryFull>("get_entry", { id });
+export async function getEntry(id: string): Promise<SecretEntryPublic> {
+  return invoke<SecretEntryPublic>("get_entry", { id });
+}
+
+export async function revealSecret(
+  entryId: string,
+  field: SecretField = "primary",
+): Promise<RevealedSecret> {
+  return invoke<RevealedSecret>("reveal_secret", { entryId, field });
+}
+
+export async function copyToClipboard(
+  entryId: string,
+  field: SecretField = "primary",
+): Promise<void> {
+  return invoke<void>("copy_to_clipboard", { entryId, field });
 }
 
 export async function generatePassword(options: PasswordGenOptions): Promise<string> {

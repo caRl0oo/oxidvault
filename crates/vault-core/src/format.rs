@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::crypto::{self, KdfParams, MasterKey, NONCE_LEN, SALT_LEN};
 use crate::entry::SecretEntry;
@@ -23,18 +24,30 @@ pub struct VaultFileMeta {
     pub salt: [u8; SALT_LEN],
 }
 
+#[derive(Serialize)]
+struct VaultPayloadRef<'a> {
+    entries: &'a [SecretEntry],
+}
+
+fn serialize_entries_zeroizing(entries: &[SecretEntry]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    Ok(Zeroizing::new(
+        serde_json::to_vec(&VaultPayloadRef { entries })
+            .map_err(|e| VaultError::Other(e.to_string()))?,
+    ))
+}
+
 pub fn write_vault_file(
     path: &Path,
     name: &str,
     kdf: KdfParams,
     salt: &[u8; SALT_LEN],
     key: &MasterKey,
-    payload: &VaultPayload,
+    entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
     if path.exists() {
         return Err(VaultError::FileExists);
     }
-    atomic_write_vault(path, name, kdf, salt, key, payload)
+    atomic_write_vault(path, name, kdf, salt, key, entries)
 }
 
 pub fn update_vault_file(
@@ -43,9 +56,9 @@ pub fn update_vault_file(
     kdf: KdfParams,
     salt: &[u8; SALT_LEN],
     key: &MasterKey,
-    payload: &VaultPayload,
+    entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
-    atomic_write_vault(path, name, kdf, salt, key, payload)
+    atomic_write_vault(path, name, kdf, salt, key, entries)
 }
 
 /// Writes encrypted vault data atomically: temp file → fsync → rename over target.
@@ -55,10 +68,10 @@ fn atomic_write_vault(
     kdf: KdfParams,
     salt: &[u8; SALT_LEN],
     key: &MasterKey,
-    payload: &VaultPayload,
+    entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
     let tmp_path = temp_vault_path(path);
-    if let Err(e) = write_vault_bytes(&tmp_path, name, kdf, salt, key, payload) {
+    if let Err(e) = write_vault_bytes(&tmp_path, name, kdf, salt, key, entries) {
         let _ = fs::remove_file(&tmp_path);
         return Err(e);
     }
@@ -80,10 +93,10 @@ fn write_vault_bytes(
     kdf: KdfParams,
     salt: &[u8; SALT_LEN],
     key: &MasterKey,
-    payload: &VaultPayload,
+    entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
-    let plaintext = serde_json::to_vec(payload).map_err(|e| VaultError::Other(e.to_string()))?;
-    let (nonce, ciphertext) = crypto::encrypt(key, &plaintext)?;
+    let plaintext = serialize_entries_zeroizing(entries)?;
+    let (nonce, ciphertext) = crypto::encrypt(key, plaintext.as_ref())?;
 
     let mut file = fs::File::create(path)?;
     write_header(&mut file, name, kdf, salt)?;
@@ -107,7 +120,7 @@ pub fn read_vault_file(path: &Path, key: &MasterKey) -> Result<(VaultFileMeta, V
 
     let plaintext = crypto::decrypt(key, &nonce, &ciphertext)?;
     let payload: VaultPayload =
-        serde_json::from_slice(&plaintext).map_err(|_| VaultError::InvalidFormat)?;
+        serde_json::from_slice(plaintext.as_ref()).map_err(|_| VaultError::InvalidFormat)?;
 
     Ok((meta, payload))
 }
@@ -213,7 +226,7 @@ mod tests {
 
         let dir = tempdir().unwrap();
         let path = dir.path().join("test.oxid");
-        write_vault_file(&path, "MyVault", kdf, &salt, &key, &payload).unwrap();
+        write_vault_file(&path, "MyVault", kdf, &salt, &key, &payload.entries).unwrap();
 
         let (meta, loaded) = read_vault_file(&path, &key).unwrap();
         assert_eq!(meta.name, "MyVault");
@@ -232,11 +245,19 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        write_vault_file(&path, "MyVault", kdf, &salt, &key, &sample_payload()).unwrap();
+        write_vault_file(&path, "MyVault", kdf, &salt, &key, &sample_payload().entries).unwrap();
         assert!(path.exists());
         assert!(!temp_vault_path(&path).exists());
 
-        update_vault_file(&path, "MyVault", kdf, &salt, &key, &sample_payload()).unwrap();
+        update_vault_file(
+            &path,
+            "MyVault",
+            kdf,
+            &salt,
+            &key,
+            &sample_payload().entries,
+        )
+        .unwrap();
         assert!(path.exists());
         assert!(!temp_vault_path(&path).exists());
     }

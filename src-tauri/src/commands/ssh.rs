@@ -1,5 +1,5 @@
 use tauri::{AppHandle, State};
-use vault_core::{SecretPayload, Vault};
+use vault_core::Vault;
 
 use crate::commands::AppState;
 
@@ -39,16 +39,9 @@ fn extract_ssh_credentials(
     vault: &Vault,
     entry_id: &str,
 ) -> Result<(String, String, String, Option<String>), String> {
-    let entry = vault.get_entry(entry_id).map_err(|e| e.to_string())?;
-    match entry.payload {
-        SecretPayload::SshKey {
-            host,
-            username,
-            private_key,
-            passphrase,
-        } => Ok((host, username, private_key, passphrase)),
-        _ => Err("entry is not an SSH key".into()),
-    }
+    vault
+        .extract_ssh_credentials(entry_id)
+        .map_err(|e| e.to_string())
 }
 
 pub fn disconnect_all_ssh(state: &AppState) {

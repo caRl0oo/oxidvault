@@ -13,7 +13,8 @@ pub use audit::{audit_entries, SecurityAuditReport};
 pub use policy::{validate_master_password, MIN_MASTER_PASSWORD_LEN};
 
 pub use entry::{
-    SecretEntry, SecretEntryInput, SecretEntrySummary, SecretKindTag, SecretPayload,
+    RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
+    SecretField, SecretKindTag, SecretPayload, REVEAL_SECRET_WARNING,
 };
 pub use probe::{resolve_probe_target, ProbeTarget};
 pub use error::VaultError;

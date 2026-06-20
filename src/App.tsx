@@ -20,12 +20,12 @@ import { SidebarEntryList } from "@/components/SidebarEntryList";
 import { SecurityDashboard } from "@/components/SecurityDashboard";
 import { DashboardFilterBar } from "@/components/DashboardFilterBar";
 import { SidebarTagFilter } from "@/components/SidebarTagFilter";
-import { useSecureCopy } from "@/hooks/useSecureCopy";
 import { openWebsiteUrl } from "@/lib/openWebsite";
 import { sshConnect } from "@/lib/ssh";
 import {
   addEntry,
   bootstrapVault,
+  copyToClipboard,
   createVault,
   detachVault,
   getAppSettings,
@@ -40,11 +40,12 @@ import {
   unlockVault,
   updateEntry,
 } from "@/lib/ipc";
+import { notifyBackendSecureCopy } from "@/lib/secureClipboard";
 import type { GitSyncSettings } from "@/types/settings";
 import type { DashboardFilter } from "@/types/dashboardFilter";
 import type {
-  SecretEntryFull,
   SecretEntryInputFull,
+  SecretEntryPublic,
   SecretEntrySummary,
   VaultInfo,
 } from "@/types/vault";
@@ -65,9 +66,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<SecretEntrySummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedEntry, setSelectedEntry] = useState<SecretEntryFull | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<SecretEntryPublic | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editEntry, setEditEntry] = useState<SecretEntryFull | null>(null);
+  const [editEntry, setEditEntry] = useState<SecretEntryPublic | null>(null);
   const [showPasswordGenerator, setShowPasswordGenerator] = useState(false);
   const [generatorApply, setGeneratorApply] = useState<((pwd: string) => void) | null>(null);
   const [search, setSearch] = useState("");
@@ -81,7 +82,6 @@ export default function App() {
   const [gitSyncing, setGitSyncing] = useState(false);
   const [gitSyncMessage, setGitSyncMessage] = useState<string | null>(null);
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
-  const { copy: secureCopy } = useSecureCopy();
   const passwordRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -349,16 +349,15 @@ export default function App() {
       setSidebarCopyingId(entryId);
       setError(null);
       try {
-        const entry = await getEntry(entryId);
-        if (entry.type !== "web_login") return;
-        await secureCopy(`sidebar-${entryId}-password`, entry.password);
+        await copyToClipboard(entryId, "password");
+        notifyBackendSecureCopy();
       } catch (e) {
         setError(formatVaultError(e));
       } finally {
         setSidebarCopyingId(null);
       }
     },
-    [secureCopy],
+    [],
   );
 
   const handleSidebarOpenWebsite = useCallback(async (summary: SecretEntrySummary) => {

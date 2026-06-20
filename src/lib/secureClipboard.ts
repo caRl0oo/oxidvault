@@ -73,9 +73,18 @@ export function cancelSecureClipboardClear(): void {
 export async function copySecureToClipboard(text: string): Promise<boolean> {
   const ok = await writeClipboard(text);
   if (!ok) return false;
+  startClearTimer(text);
+  return true;
+}
 
+/** Starts the auto-clear countdown after the Rust backend copied a secret. */
+export function notifyBackendSecureCopy(): void {
+  startClearTimer("\0backend-managed");
+}
+
+function startClearTimer(copiedValue: string): void {
   resetTimers();
-  lastCopied = text;
+  lastCopied = copiedValue;
 
   let secondsLeft = CLIPBOARD_CLEAR_SECONDS;
   notify({ active: true, secondsLeft });
@@ -94,6 +103,4 @@ export async function copySecureToClipboard(text: string): Promise<boolean> {
     resetTimers();
     void clearIfUnchanged();
   }, CLIPBOARD_CLEAR_SECONDS * 1000);
-
-  return true;
 }

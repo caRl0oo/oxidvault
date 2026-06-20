@@ -6,6 +6,73 @@ export type SecretKind =
   | "network_wifi"
   | "secure_note";
 
+export type SecretField =
+  | "primary"
+  | "password"
+  | "token"
+  | "private_key"
+  | "passphrase"
+  | "content"
+  | "notes";
+
+export interface RevealedSecret {
+  value: string;
+  warning: string;
+}
+
+export interface WebLoginPublic {
+  type: "web_login";
+  url: string;
+  username: string;
+  has_notes: boolean;
+  has_password: boolean;
+}
+
+export interface SshKeyPublic {
+  type: "ssh_key";
+  host: string;
+  username: string;
+  has_private_key: boolean;
+  has_passphrase: boolean;
+}
+
+export interface ApiTokenPublic {
+  type: "api_token";
+  service: string;
+  has_token: boolean;
+}
+
+export interface DatabasePublic {
+  type: "database";
+  host: string;
+  port: number;
+  db_type: string;
+  database_name: string;
+  username: string;
+  has_password: boolean;
+}
+
+export interface NetworkWifiPublic {
+  type: "network_wifi";
+  ssid: string;
+  encryption_type: string;
+  has_password: boolean;
+}
+
+export interface SecureNotePublic {
+  type: "secure_note";
+  preview?: string;
+  has_content: boolean;
+}
+
+export type SecretPayloadPublic =
+  | WebLoginPublic
+  | SshKeyPublic
+  | ApiTokenPublic
+  | DatabasePublic
+  | NetworkWifiPublic
+  | SecureNotePublic;
+
 export interface WebLoginPayload {
   type: "web_login";
   url: string;
@@ -88,7 +155,10 @@ export interface SecretEntry {
   updated_at: string;
 }
 
-export type SecretEntryFull = SecretEntry & SecretPayload;
+export type SecretEntryPublic = SecretEntry & SecretPayloadPublic;
+
+/** @deprecated Use SecretEntryPublic — IPC no longer sends plaintext secrets. */
+export type SecretEntryFull = SecretEntryPublic;
 
 export interface SecretEntryInput {
   title: string;

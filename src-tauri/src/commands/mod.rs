@@ -1,14 +1,21 @@
 use tauri::State;
 use vault_core::{
-    generate_password, PasswordGenOptions, SecretEntry, SecretEntryInput, SecretEntrySummary,
-    Vault, VaultInfo,
+    generate_password, PasswordGenOptions, RevealedSecret, SecretEntryInput, SecretEntryPublic,
+    SecretEntrySummary, SecretField, VaultInfo,
 };
+use zeroize::Zeroizing;
 
 use crate::ssh::SshManager;
+use crate::clipboard::SecureClipboard;
 
 pub struct AppState {
-    pub vault: std::sync::Mutex<Vault>,
+    pub vault: std::sync::Mutex<vault_core::Vault>,
     pub ssh: SshManager,
+    pub clipboard: SecureClipboard,
+}
+
+fn wrap_password(password: String) -> Zeroizing<String> {
+    Zeroizing::new(password)
 }
 
 #[tauri::command]
@@ -30,6 +37,7 @@ pub fn create_vault(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<VaultInfo, String> {
+    let password = wrap_password(password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault
         .create(&path, name, &password)
@@ -46,6 +54,7 @@ pub fn open_vault(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<VaultInfo, String> {
+    let password = wrap_password(password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.open(&path, &password).map_err(|e| e.to_string())?;
     let info = vault.info();
@@ -55,6 +64,7 @@ pub fn open_vault(
 
 #[tauri::command]
 pub fn unlock_vault(password: String, state: State<'_, AppState>) -> Result<VaultInfo, String> {
+    let password = wrap_password(password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.unlock(&password).map_err(|e| e.to_string())?;
     Ok(vault.info())
@@ -90,10 +100,44 @@ pub fn update_entry(
     vault.update_entry(&id, input).map_err(|e| e.to_string())
 }
 
+/// Metadata-only entry view — no plaintext secrets over IPC.
 #[tauri::command]
-pub fn get_entry(id: String, state: State<'_, AppState>) -> Result<SecretEntry, String> {
+pub fn get_entry(id: String, state: State<'_, AppState>) -> Result<SecretEntryPublic, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.get_entry(&id).map_err(|e| e.to_string())
+    vault.get_entry_public(&id).map_err(|e| e.to_string())
+}
+
+/// One-shot secret reveal for UI display — frontend must discard value immediately.
+#[tauri::command]
+pub fn reveal_secret(
+    entry_id: String,
+    field: Option<SecretField>,
+    state: State<'_, AppState>,
+) -> Result<RevealedSecret, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault
+        .reveal_secret(&entry_id, field.unwrap_or(SecretField::Primary))
+        .map_err(|e| e.to_string())
+}
+
+/// Copies a secret to the OS clipboard and auto-clears after 30 seconds (Rust-side).
+#[tauri::command]
+pub fn copy_to_clipboard(
+    app: tauri::AppHandle,
+    entry_id: String,
+    field: Option<SecretField>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let secret = {
+        let vault = state.vault.lock().map_err(|e| e.to_string())?;
+        vault
+            .extract_secret(
+                &entry_id,
+                field.unwrap_or(SecretField::Primary),
+            )
+            .map_err(|e| e.to_string())?
+    };
+    state.clipboard.copy(&app, secret)
 }
 
 #[tauri::command]

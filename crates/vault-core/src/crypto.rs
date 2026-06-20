@@ -4,7 +4,7 @@ use aes_gcm::{
 };
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::RngCore;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::VaultError;
 
@@ -32,6 +32,7 @@ impl Default for KdfParams {
     }
 }
 
+/// Sensitive key material — never `Clone`, never `Debug`.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct MasterKey([u8; KEY_LEN]);
 
@@ -53,12 +54,12 @@ impl MasterKey {
             .map_err(|e| VaultError::Crypto(e.to_string()))?,
         );
 
-        let mut key = [0u8; KEY_LEN];
+        let mut key = Zeroizing::new([0u8; KEY_LEN]);
         argon2
-            .hash_password_into(password.as_bytes(), salt, &mut key)
+            .hash_password_into(password.as_bytes(), salt, key.as_mut())
             .map_err(|e| VaultError::Crypto(e.to_string()))?;
 
-        Ok(Self(key))
+        Ok(Self(*key))
     }
 
     pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
@@ -78,7 +79,10 @@ pub fn random_nonce() -> [u8; NONCE_LEN] {
     nonce
 }
 
-pub fn encrypt(key: &MasterKey, plaintext: &[u8]) -> Result<( [u8; NONCE_LEN], Vec<u8>), VaultError> {
+pub fn encrypt(
+    key: &MasterKey,
+    plaintext: &[u8],
+) -> Result<([u8; NONCE_LEN], Vec<u8>), VaultError> {
     let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
         .map_err(|e| VaultError::Crypto(e.to_string()))?;
     let nonce_bytes = random_nonce();
@@ -89,17 +93,19 @@ pub fn encrypt(key: &MasterKey, plaintext: &[u8]) -> Result<( [u8; NONCE_LEN], V
     Ok((nonce_bytes, ciphertext))
 }
 
+/// Plaintext is wrapped in `Zeroizing` — heap is overwritten on drop.
 pub fn decrypt(
     key: &MasterKey,
     nonce: &[u8; NONCE_LEN],
     ciphertext: &[u8],
-) -> Result<Vec<u8>, VaultError> {
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
         .map_err(|e| VaultError::Crypto(e.to_string()))?;
     let nonce = Nonce::from_slice(nonce);
-    cipher
+    let plaintext = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|_| VaultError::InvalidPassword)
+        .map_err(|_| VaultError::InvalidPassword)?;
+    Ok(Zeroizing::new(plaintext))
 }
 
 #[cfg(test)]
@@ -113,7 +119,7 @@ mod tests {
             .unwrap();
         let (nonce, ct) = encrypt(&key, b"secret payload").unwrap();
         let pt = decrypt(&key, &nonce, &ct).unwrap();
-        assert_eq!(pt, b"secret payload");
+        assert_eq!(&pt[..], b"secret payload");
     }
 
     #[test]

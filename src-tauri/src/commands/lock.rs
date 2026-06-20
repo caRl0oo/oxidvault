@@ -6,6 +6,7 @@ use crate::commands::AppState;
 /// Locks the vault (RAM purge + SSH disconnect). No-op if already locked.
 pub fn perform_lock(state: &AppState) -> Result<VaultInfo, String> {
     crate::commands::ssh::disconnect_all_ssh(state);
+    state.clipboard.cancel_pending();
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     if vault.info().locked {
         return Ok(vault.info());

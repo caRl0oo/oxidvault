@@ -1,4 +1,5 @@
 mod commands;
+mod clipboard;
 mod git_sync;
 mod probe;
 mod settings;
@@ -18,6 +19,7 @@ pub fn run() {
         .manage(AppState {
             vault: std::sync::Mutex::new(Vault::new()),
             ssh: SshManager::new(),
+            clipboard: clipboard::SecureClipboard::new(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::health_check,
@@ -30,6 +32,8 @@ pub fn run() {
             commands::add_entry,
             commands::update_entry,
             commands::get_entry,
+            commands::reveal_secret,
+            commands::copy_to_clipboard,
             commands::generate_password_cmd,
             commands::bootstrap::bootstrap_vault,
             commands::bootstrap::detach_vault,
@@ -43,7 +47,7 @@ pub fn run() {
             commands::ssh::ssh_write,
             commands::ssh::ssh_disconnect,
         ])
-        .setup(|_app| {
+        .setup(|app| {
             #[cfg(debug_assertions)]
             {
                 let window = app.get_webview_window("main").expect("main window");

@@ -91,8 +91,8 @@ pub fn parse_host_port(host: &str, default_port: u16) -> Option<(String, u16)> {
         if let Some(bracket_end) = host.find(']') {
             let addr = host[1..bracket_end].to_string();
             let rest = &host[bracket_end + 1..];
-            if rest.starts_with(':') {
-                let port: u16 = rest[1..].parse().ok()?;
+            if let Some(port_str) = rest.strip_prefix(':') {
+                let port: u16 = port_str.parse().ok()?;
                 return Some((addr, port));
             }
             return Some((addr, default_port));

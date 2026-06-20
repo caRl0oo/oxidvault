@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecretKindTag {
@@ -61,6 +61,87 @@ pub enum SecretPayload {
         content: String,
     },
 }
+
+/// Identifies which sensitive field to reveal or copy to clipboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretField {
+    /// Default secret for the entry type (password, token, private key, etc.).
+    Primary,
+    Password,
+    Token,
+    PrivateKey,
+    Passphrase,
+    Content,
+    Notes,
+}
+
+/// IPC-safe entry view — never contains plaintext secrets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretEntryPublic {
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(flatten)]
+    pub payload: SecretPayloadPublic,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SecretPayloadPublic {
+    WebLogin {
+        url: String,
+        username: String,
+        has_notes: bool,
+        has_password: bool,
+    },
+    SshKey {
+        host: String,
+        username: String,
+        has_private_key: bool,
+        has_passphrase: bool,
+    },
+    ApiToken {
+        service: String,
+        has_token: bool,
+    },
+    Database {
+        host: String,
+        port: u16,
+        db_type: String,
+        database_name: String,
+        username: String,
+        has_password: bool,
+    },
+    NetworkWifi {
+        ssid: String,
+        encryption_type: String,
+        has_password: bool,
+    },
+    SecureNote {
+        preview: Option<String>,
+        has_content: bool,
+    },
+}
+
+/// Short-lived secret returned over IPC — frontend must discard immediately after use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevealedSecret {
+    pub value: String,
+    pub warning: String,
+}
+
+pub const REVEAL_SECRET_WARNING: &str = "Dieser Wert wurde kurzzeitig entschlüsselt. \
+    Überschreiben und verwerfen Sie ihn im Frontend unmittelbar nach der Anzeige — \
+    der JavaScript-Heap kann nicht zuverlässig zeroisiert werden.";
+
 impl SecretPayload {
     /// Overwrites sensitive string fields in RAM before lock/drop.
     pub fn zeroize_secrets(&mut self) {
@@ -105,6 +186,108 @@ impl SecretPayload {
             Self::SecureNote { .. } => SecretKindTag::SecureNote,
         }
     }
+
+    pub fn primary_field(&self) -> SecretField {
+        match self {
+            Self::WebLogin { .. } | Self::Database { .. } | Self::NetworkWifi { .. } => {
+                SecretField::Password
+            }
+            Self::SshKey { .. } => SecretField::PrivateKey,
+            Self::ApiToken { .. } => SecretField::Token,
+            Self::SecureNote { .. } => SecretField::Content,
+        }
+    }
+
+    pub fn resolve_field(&self, field: SecretField) -> SecretField {
+        if field == SecretField::Primary {
+            self.primary_field()
+        } else {
+            field
+        }
+    }
+
+    /// Extracts a sensitive field into a zeroizing buffer (still clones from in-memory entry).
+    pub fn extract_field(&self, field: SecretField) -> Result<Zeroizing<String>, crate::error::VaultError> {
+        let field = self.resolve_field(field);
+        let value = match (self, field) {
+            (Self::WebLogin { password, .. }, SecretField::Password) => password.clone(),
+            (Self::WebLogin { notes: Some(n), .. }, SecretField::Notes) => n.clone(),
+            (Self::SshKey { private_key, .. }, SecretField::PrivateKey) => private_key.clone(),
+            (Self::SshKey {
+                passphrase: Some(p), ..
+            }, SecretField::Passphrase) => p.clone(),
+            (Self::ApiToken { token, .. }, SecretField::Token) => token.clone(),
+            (Self::Database { password, .. }, SecretField::Password) => password.clone(),
+            (Self::NetworkWifi { password, .. }, SecretField::Password) => password.clone(),
+            (Self::SecureNote { content, .. }, SecretField::Content) => content.clone(),
+            _ => {
+                return Err(crate::error::VaultError::Other(
+                    "requested secret field is not available for this entry".into(),
+                ));
+            }
+        };
+        Ok(Zeroizing::new(value))
+    }
+
+    pub fn to_public(&self) -> SecretPayloadPublic {
+        match self {
+            Self::WebLogin {
+                url,
+                username,
+                password,
+                notes,
+            } => SecretPayloadPublic::WebLogin {
+                url: url.clone(),
+                username: username.clone(),
+                has_notes: notes.as_ref().is_some_and(|n| !n.trim().is_empty()),
+                has_password: !password.is_empty(),
+            },
+            Self::SshKey {
+                host,
+                username,
+                private_key,
+                passphrase,
+            } => SecretPayloadPublic::SshKey {
+                host: host.clone(),
+                username: username.clone(),
+                has_private_key: !private_key.is_empty(),
+                has_passphrase: passphrase.as_ref().is_some_and(|p| !p.is_empty()),
+            },
+            Self::ApiToken { service, token } => SecretPayloadPublic::ApiToken {
+                service: service.clone(),
+                has_token: !token.is_empty(),
+            },
+            Self::Database {
+                host,
+                port,
+                db_type,
+                database_name,
+                username,
+                password,
+            } => SecretPayloadPublic::Database {
+                host: host.clone(),
+                port: *port,
+                db_type: db_type.clone(),
+                database_name: database_name.clone(),
+                username: username.clone(),
+                has_password: !password.is_empty(),
+            },
+            Self::NetworkWifi {
+                ssid,
+                encryption_type,
+                password,
+            } => SecretPayloadPublic::NetworkWifi {
+                ssid: ssid.clone(),
+                encryption_type: encryption_type.clone(),
+                has_password: !password.is_empty(),
+            },
+            Self::SecureNote { content } => SecretPayloadPublic::SecureNote {
+                preview: self.subtitle(),
+                has_content: !content.trim().is_empty(),
+            },
+        }
+    }
+
     pub fn subtitle(&self) -> Option<String> {
         match self {
             Self::WebLogin { url, .. } => Some(url.clone()),
@@ -228,6 +411,19 @@ impl SecretEntry {
             tags: self.tags.clone(),
             subtitle: self.payload.subtitle(),
             username: self.payload.username(),
+            updated_at: self.updated_at.clone(),
+        }
+    }
+
+    pub fn to_public(&self) -> SecretEntryPublic {
+        SecretEntryPublic {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            folder: self.folder.clone(),
+            tags: self.tags.clone(),
+            expires_at: self.expires_at.clone(),
+            payload: self.payload.to_public(),
+            created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
         }
     }

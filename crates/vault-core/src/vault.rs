@@ -1,11 +1,17 @@
 use std::path::{Path, PathBuf};
 
+use zeroize::Zeroizing;
+
 use crate::audit::{audit_entries, SecurityAuditReport};
 use crate::crypto::{self, KdfParams, MasterKey};
-use crate::entry::{SecretEntry, SecretEntryInput, SecretEntrySummary};
+use crate::entry::{
+    RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
+    SecretField, SecretPayload, REVEAL_SECRET_WARNING,
+};
 use crate::error::VaultError;
-use crate::format::{self, VaultPayload};
+use crate::format;
 use crate::policy::validate_master_password;
+use crate::probe::{resolve_probe_target, ProbeTarget};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VaultInfo {
@@ -26,6 +32,12 @@ pub struct Vault {
     master_key: Option<MasterKey>,
     entries: Vec<SecretEntry>,
     cached_entry_count: usize,
+}
+
+impl Default for Vault {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Vault {
@@ -58,16 +70,15 @@ impl Vault {
         let name = name.into();
         let salt = crypto::random_salt();
         let key = MasterKey::derive_from_password(password, &salt, self.kdf)?;
-        let payload = VaultPayload { entries: vec![] };
 
-        format::write_vault_file(&path, &name, self.kdf, &salt, &key, &payload)?;
+        format::write_vault_file(&path, &name, self.kdf, &salt, &key, &[])?;
 
         self.path = Some(path);
         self.name = name;
         self.salt = Some(salt);
         self.master_key = Some(key);
-        self.entries = payload.entries;
-        self.cached_entry_count = self.entries.len();
+        self.entries.clear();
+        self.cached_entry_count = 0;
         self.locked = false;
         Ok(())
     }
@@ -175,13 +186,75 @@ impl Vault {
         Ok(self.entries.iter().map(SecretEntry::summary).collect())
     }
 
-    pub fn get_entry(&self, id: &str) -> Result<SecretEntry, VaultError> {
+    /// IPC-safe metadata view — no plaintext secrets cross the bridge.
+    pub fn get_entry_public(&self, id: &str) -> Result<SecretEntryPublic, VaultError> {
         self.ensure_unlocked()?;
         self.entries
             .iter()
             .find(|e| e.id == id)
-            .cloned()
+            .map(SecretEntry::to_public)
             .ok_or(VaultError::EntryNotFound)
+    }
+
+    /// Extracts a sensitive field into a zeroizing buffer for clipboard or one-shot reveal.
+    pub fn extract_secret(
+        &self,
+        id: &str,
+        field: SecretField,
+    ) -> Result<Zeroizing<String>, VaultError> {
+        self.ensure_unlocked()?;
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .ok_or(VaultError::EntryNotFound)?;
+        entry.payload.extract_field(field)
+    }
+
+    /// One-shot reveal over IPC — value is still cloned for serialization; frontend must discard.
+    pub fn reveal_secret(
+        &self,
+        id: &str,
+        field: SecretField,
+    ) -> Result<RevealedSecret, VaultError> {
+        let value = self.extract_secret(id, field)?;
+        Ok(RevealedSecret {
+            value: value.to_string(),
+            warning: REVEAL_SECRET_WARNING.to_string(),
+        })
+    }
+
+    pub fn probe_target_for_entry(&self, id: &str) -> Option<ProbeTarget> {
+        self.entries
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| resolve_probe_target(&e.payload))
+    }
+
+    pub fn extract_ssh_credentials(
+        &self,
+        entry_id: &str,
+    ) -> Result<(String, String, String, Option<String>), VaultError> {
+        self.ensure_unlocked()?;
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.id == entry_id)
+            .ok_or(VaultError::EntryNotFound)?;
+        match &entry.payload {
+            SecretPayload::SshKey {
+                host,
+                username,
+                private_key,
+                passphrase,
+            } => Ok((
+                host.clone(),
+                username.clone(),
+                private_key.clone(),
+                passphrase.clone(),
+            )),
+            _ => Err(VaultError::Other("entry is not an SSH key".into())),
+        }
     }
 
     pub fn audit_security(&self) -> Result<SecurityAuditReport, VaultError> {
@@ -233,10 +306,7 @@ impl Vault {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
         let salt = self.salt.ok_or(VaultError::NotInitialized)?;
-        let payload = VaultPayload {
-            entries: self.entries.clone(),
-        };
-        format::update_vault_file(path, &self.name, self.kdf, &salt, key, &payload)
+        format::update_vault_file(path, &self.name, self.kdf, &salt, key, &self.entries)
     }
 }
 
@@ -342,12 +412,12 @@ mod tests {
             )
             .unwrap();
 
-        let entry = vault.get_entry(&summary.id).unwrap();
-        assert_eq!(entry.title, "GitHub Prod");
-        assert!(matches!(
-            entry.payload,
-            SecretPayload::WebLogin { ref password, .. } if password == "new-secret"
-        ));
+        let public = vault.get_entry_public(&summary.id).unwrap();
+        assert_eq!(public.title, "GitHub Prod");
+        let password = vault
+            .extract_secret(&summary.id, SecretField::Password)
+            .unwrap();
+        assert_eq!(password.as_str(), "new-secret");
 
         vault.lock();
         let mut vault2 = Vault::new();
@@ -355,7 +425,7 @@ mod tests {
         vault2.name = "TestVault".into();
         vault2.locked = true;
         vault2.unlock("correct-horse-battery-staple").unwrap();
-        let reloaded = vault2.get_entry(&summary.id).unwrap();
+        let reloaded = vault2.get_entry_public(&summary.id).unwrap();
         assert_eq!(reloaded.title, "GitHub Prod");
     }
 }

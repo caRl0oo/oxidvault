@@ -3,11 +3,10 @@ use std::io::Cursor;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use russh::client;
+use russh::client::{self};
+use russh::keys::{self, PrivateKey, PrivateKeyWithHashAlg};
 use russh::ChannelMsg;
-use russh_keys::key::KeyPair;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
@@ -94,13 +93,15 @@ impl SshManager {
                     .build()
                     .map_err(|e| format!("Tokio runtime failed: {e}"))?;
                 rt.block_on(run_interactive_session(
-                    &app,
-                    &sid,
-                    &host_name,
-                    port,
-                    &user,
-                    &key_material,
-                    pass.as_deref(),
+                    InteractiveSessionContext {
+                        app: &app,
+                        session_id: &sid,
+                        host: &host_name,
+                        port,
+                        username: &user,
+                        private_key: &key_material,
+                        passphrase: pass.as_deref(),
+                    },
                     write_rx,
                 ))
             })();
@@ -144,42 +145,57 @@ impl SshManager {
 
 struct SshClientHandler;
 
-#[async_trait]
 impl client::Handler for SshClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh_keys::key::PublicKey,
+        _server_public_key: &keys::PublicKey,
     ) -> Result<bool, Self::Error> {
         // Admin quick-connect: accept host keys (TOFU may follow in a later release).
         Ok(true)
     }
 }
 
-async fn run_interactive_session(
-    app: &AppHandle,
-    session_id: &str,
-    host: &str,
+struct InteractiveSessionContext<'a> {
+    app: &'a AppHandle,
+    session_id: &'a str,
+    host: &'a str,
     port: u16,
-    username: &str,
-    private_key: &str,
-    passphrase: Option<&str>,
+    username: &'a str,
+    private_key: &'a str,
+    passphrase: Option<&'a str>,
+}
+
+async fn run_interactive_session(
+    ctx: InteractiveSessionContext<'_>,
     mut write_rx: mpsc::Receiver<Vec<u8>>,
 ) -> Result<(), String> {
+    let InteractiveSessionContext {
+        app,
+        session_id,
+        host,
+        port,
+        username,
+        private_key,
+        passphrase,
+    } = ctx;
     let addr = resolve_socket_addr(host, port)?;
     let config = Arc::new(client::Config::default());
     let mut handle = client::connect(config, addr, SshClientHandler)
         .await
         .map_err(|e| format!("SSH connect failed: {e}"))?;
 
-    let key_pair = load_key_pair(private_key, passphrase)?;
-    let authenticated = handle
-        .authenticate_publickey(username, Arc::new(key_pair))
+    let private_key = load_private_key(private_key, passphrase)?;
+    let auth = handle
+        .authenticate_publickey(
+            username,
+            PrivateKeyWithHashAlg::new(Arc::new(private_key), None),
+        )
         .await
         .map_err(|e| format!("SSH authentication failed: {e}"))?;
 
-    if !authenticated {
+    if !auth.success() {
         return Err("SSH authentication rejected".into());
     }
 
@@ -239,8 +255,8 @@ async fn run_interactive_session(
     Ok(())
 }
 
-fn load_key_pair(private_key: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
-    russh_keys::decode_secret_key(private_key, passphrase)
+fn load_private_key(private_key: &str, passphrase: Option<&str>) -> Result<PrivateKey, String> {
+    keys::decode_secret_key(private_key, passphrase)
         .map_err(|e| format!("Invalid private key: {e}"))
 }
 

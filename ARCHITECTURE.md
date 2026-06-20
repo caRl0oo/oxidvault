@@ -4,7 +4,7 @@
 > Dieses Dokument ist die zentrale Referenz für die technische Architektur von OxidVault.  
 > Bei jeder Ergänzung von Kernfunktionen, Tauri Commands, Dateiformaten oder sicherheitsrelevanten Änderungen ist **ARCHITECTURE.md** synchron mit dem Code zu aktualisieren.
 
-**Version:** 1.0.0 · **Stand:** 2025-06-19
+**Version:** 1.0.0 · **Stand:** 2025-06-19 (Security-Härtung K1–K4)
 
 ---
 
@@ -44,7 +44,7 @@
 | **Offline-First** | Keine Cloud-Abhängigkeit. Der Vault läuft vollständig lokal bzw. self-hosted. Netzwerkzugriff ist optional, niemals vorausgesetzt. |
 | **Ultraschnell** | Speichersicherer Rust-Kern, schlanke UI, optimierte Release-Profile (`LTO`, `opt-level = "z"`). Latenz-kritische Pfade verbleiben im Backend. |
 | **Tastaturoptimiert** | Alle Kernaktionen per Shortcut erreichbar. Mausbedienung ist Ergänzung, nicht Voraussetzung. |
-| **Zero-Knowledge** | Der Master-Key verlässt den Rust-Kern nie im Klartext. Das Frontend sieht nur explizit freigegebene, entschlüsselte Daten — und nur solange der Vault entsperrt ist. |
+| **Zero-Knowledge** | Der Master-Key und alle Secret-Payloads verbleiben im Rust-Kern. Plaintext-Secrets **dürfen standardmäßig nicht** über die Tauri-IPC-Bridge in den JavaScript-Heap (V8) gelangen — nur Metadaten, explizites `reveal_secret` oder OS-Clipboard via `copy_to_clipboard`. |
 | **Minimalismus** | Keine Feature-Bloat. Jede Komponente hat eine klar abgegrenzte Verantwortung. |
 
 ---
@@ -65,7 +65,7 @@
 │  Tauri v2 · Rust · tauri-plugin-shell                   │
 ├─────────────────────────────────────────────────────────┤
 │  Vault-Kern (Domain / Crypto Layer)                     │
-│  vault-core · argon2 · aes-gcm · zeroize · serde          │
+│  vault-core · argon2 · aes-gcm · zeroize · arboard · serde │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -83,7 +83,7 @@
 | Technologie | Version | Rolle |
 |---|---|---|
 | **Tauri** | 2.x | Native Desktop-Runtime, WebView, IPC |
-| **Rust** | stable (≥ 1.77) | Speichersichere Backend-Logik |
+| **Rust** | stable (≥ 1.85) | Speichersichere Backend-Logik |
 | **tauri-plugin-shell** | 2.x | Kontrollierter System-Shell-Zugriff |
 
 ### Rust Workspace
@@ -118,7 +118,7 @@ Master-Passwort
 │  (KDF)      │     │  (32 Byte, RAM)  │     │  Daten-Vault    │
 └─────────────┘     └──────────────────┘     └─────────────────┘
       │                       │                        │
-      │ Salt (pro Vault)      │ zeroize on lock         │ Nonce (pro Blob)
+      │ Salt (pro Vault)      │ ZeroizeOnDrop on lock   │ Nonce (pro Blob, OsRng)
       ▼                       ▼                        ▼
   .oxid Header            Nie ans Frontend         Verschlüsselte Datei
 ```
@@ -126,9 +126,42 @@ Master-Passwort
 **Garantien:**
 
 - Das Master-Passwort wird **nicht** persistiert, geloggt oder an das Frontend übergeben.
-- Der Master-Key wird bei `lock_vault` via `zeroize` aus dem Speicher entfernt.
+- Eingehende Master-Passwörter in Tauri Commands werden sofort in **`zeroize::Zeroizing<String>`** gewrappt und nach der KDF-Nutzung überschrieben.
+- Der Master-Key wird bei `lock_vault` via `zeroize` aus dem Speicher entfernt (`MasterKey`: `Zeroize` + `ZeroizeOnDrop`).
 - Das Frontend kommuniziert ausschließlich über typisierte Tauri Commands — kein direkter Datei- oder Krypto-Zugriff.
 - CSP in `tauri.conf.json` beschränkt Script- und Style-Quellen auf `'self'`.
+
+#### IPC-Bridge & V8-Heap-Schutz (Enterprise Hardening — K4)
+
+> **Status:** ✅ `SecretEntryPublic` · `reveal_secret` · `copy_to_clipboard` · `src-tauri/src/clipboard.rs`
+
+Der **JavaScript-Heap (V8)** im WebView kann nicht deterministisch zeroisiert werden. OxidVault behandelt daher den React-Frontend-Speicher als **nicht vertrauenswürdig** für Secret-Plaintext:
+
+| Regel | Umsetzung |
+|---|---|
+| **Kein Standard-IPC für Secrets** | `get_entry` liefert nur **`SecretEntryPublic`** — Metadaten (Titel, URL, Username, Host, …) ohne Passwort, Token, Private Key oder Notiz-Inhalt |
+| **Reveal on Demand** | `reveal_secret(entry_id, field?)` — kurzlebiger Klartext + `warning`-String; Frontend muss Wert nach Anzeige verwerfen |
+| **Clipboard nur via Rust** | `copy_to_clipboard(entry_id, field?)` — Secret wird im Rust-Kern entschlüsselt, via **`arboard`** in die OS-Zwischenablage geschrieben, **30 s Auto-Clear** durch Rust-Background-Thread |
+| **Edit-Modus** | `NewSecretModal` lädt Secrets beim Öffnen per `reveal_secret` — temporär im Form-State, nicht in der Detail-IPC |
+
+```
+Detailansicht / Sidebar
+        │
+        ├── list_entries / get_entry ──► SecretEntrySummary / SecretEntryPublic
+        │                                 (kein password, token, private_key, content)
+        │
+        ├── Anzeigen (Auge) ──► reveal_secret ──► kurzlebig im React-State
+        │
+        └── Kopieren ──► copy_to_clipboard ──► arboard (OS) ──► 30s Rust-Timer ──► Clear
+```
+
+**Warum Plaintext nicht standardmäßig ans Frontend darf:**
+
+- Jede IPC-Serialisierung erzeugt `String`-Kopien im Rust- **und** JS-Heap ohne `ZeroizeOnDrop`.
+- Garbage Collection in V8 gibt Speicherseiten nicht garantiert frei — Plaintext-Fragmente können lange verbleiben.
+- DevTools, Browser-Extensions und Crash-Dumps im WebView-Kontext erhöhen das Angriffsfenster.
+
+**Einschränkung (ehrlich dokumentiert):** `reveal_secret` und der Edit-Formular-Flow erzeugen unvermeidbar kurzlebige Plaintext-Kopien über IPC bzw. im React-State. Das Bedrohungsmodell minimiert Dauer und Häufigkeit — Clipboard und Bulk-Export laufen ausschließlich über Rust.
 
 ### Schlüsselableitung (KDF): Argon2id
 
@@ -142,6 +175,8 @@ Master-Passwort
 | **Parallelism (p)** | 4 | Ausgewogen für Desktop-Hardware |
 
 **Implementierungsstatus:** ✅ Implementiert in `crates/vault-core/src/crypto.rs` (`MasterKey::derive_from_password`).
+
+**Speicher-Härtung (K2):** Der Stack-Puffer für die KDF-Ausgabe wird als **`Zeroizing<[u8; 32]>`** gehalten — bei Erfolg **und** Fehler (Early Return via `?`) wird der Puffer beim Drop überschrieben, bevor er an `MasterKey` übergeben wird.
 
 ### Master-Passwort-Richtlinie (Password Policy)
 
@@ -171,15 +206,24 @@ Master-Passwort
 | **Algorithmus** | AES-256-GCM (AEAD) |
 | **Schlüssel** | Abgeleiteter 256-Bit-Master-Key |
 | **Nonce / IV** | 12 Byte, pro verschlüsseltem Blob einmalig (nie wiederverwenden) |
+| **Nonce-Quelle** | `aes_gcm::aead::OsRng` — OS-CSPRNG, frisch pro `encrypt()`-Aufruf |
 | **Auth-Tag** | 128 Bit (Standard GCM) |
-| **AAD** | Optional: Vault-ID + Entry-ID als zusätzlich authentifizierte Metadaten |
+| **AAD** | Optional: Vault-ID + Entry-ID als zusätzlich authentifizierte Metadaten (geplant) |
 
 **Einsatzbereiche:**
 
 - Vault-Datei-Body (Secret-Einträge, Notizen, Anhänge)
 - Export-Bundles (optional passwortgeschützt mit separatem Ephemeral-Key)
 
-**Implementierungsstatus:** ✅ Implementiert in `crates/vault-core/src/crypto.rs` (`encrypt` / `decrypt`). Falsches Passwort führt zu GCM-Auth-Fehler → `VaultError::InvalidPassword`.
+**Implementierungsstatus:** ✅ Implementiert in `crates/vault-core/src/crypto.rs` (`encrypt` / `decrypt`).
+
+| Funktion | Rückgabe / Verhalten |
+|---|---|
+| `encrypt(key, plaintext)` | Frische 12-Byte-Nonce + Ciphertext |
+| `decrypt(key, nonce, ciphertext)` | **`Zeroizing<Vec<u8>>`** — Plaintext-Heap wird beim Drop überschrieben (K1) |
+| Falsches Passwort | GCM-Auth-Fehler → `VaultError::InvalidPassword` (keine Unterscheidung auf API-Ebene) |
+
+**Konsument:** `format.rs` deserialisiert aus `plaintext.as_ref()` und gibt `Zeroizing<Vec<u8>>` beim Scope-Ende frei.
 
 ### Speichersicherheit
 
@@ -187,10 +231,75 @@ Master-Passwort
 |---|---|
 | Schlüssel-Löschung bei Lock | `zeroize` + `ZeroizeOnDrop` auf `MasterKey` |
 | Secret-Purge bei Lock | `SecretPayload::zeroize_secrets()` vor `entries.clear()` |
+| **Plaintext-Heap nach Decrypt (K1)** | `decrypt()` → `Zeroizing<Vec<u8>>` in `crypto.rs` |
+| **KDF-Stack-Puffer (K2)** | `Zeroizing<[u8; 32]>` in `derive_from_password` — alle Exit-Pfade |
+| **Zero-Clone Persist (K3)** | `persist()` serialisiert `&self.entries` in-place — kein `entries.clone()` |
+| **Serialisierungs-Puffer (K3)** | `serialize_entries_zeroizing()` in `format.rs` → `Zeroizing<Vec<u8>>` vor `encrypt` |
+| **IPC ohne Secrets (K4)** | `get_entry` → `SecretEntryPublic`; Secrets nur via `reveal_secret` / `copy_to_clipboard` |
+| **Eingehende Passwörter (K4)** | `Zeroizing<String>` in `create_vault`, `open_vault`, `unlock_vault` |
 | **Atomic Writes** | Temp-Datei `.oxid.tmp` → `fsync` → `rename` (crash-safe) |
 | **Lock-on-Minimize** | Tauri `WindowEvent::Focused(false)` + `is_minimized()` → sofortiger Lock |
-| Kein Klartext in Logs | Kein `Debug`-Output für sensitive Structs |
+| Kein Klartext in Logs | Kein `Debug`-Output für sensitive Structs (`MasterKey` ohne `Debug`) |
 | Release-Härtung | `panic = "abort"`, `strip = true`, `LTO` |
+
+#### Zeroizing im Krypto-Kern (K1 & K2)
+
+> **Status:** ✅ `crates/vault-core/src/crypto.rs`
+
+| Speicherort | Typ | Wann zeroisiert |
+|---|---|---|
+| KDF-Ausgabe (Stack) | `Zeroizing<[u8; 32]>` | Drop nach `hash_password_into` (Ok **und** Err) |
+| Master-Key (Heap) | `MasterKey` mit `ZeroizeOnDrop` | `lock_vault` → `master_key = None` |
+| Decrypt-Plaintext (Heap) | `Zeroizing<Vec<u8>>` | Nach Deserialisierung in `read_vault_file` |
+| Persist-JSON (Heap) | `Zeroizing<Vec<u8>>` | Nach `encrypt()` in `write_vault_bytes` |
+| Extract/Reveal (Rust) | `Zeroizing<String>` | Drop nach Clipboard-Write oder IPC-Serialisierung |
+
+```
+decrypt(ciphertext)
+      │
+      ▼
+Zeroizing<Vec<u8>>  ──► serde_json::from_slice ──► VaultPayload
+      │                                              (Strings im Vault-RAM)
+      ▼
+Drop → Heap überschrieben (K1)
+
+derive_from_password(password)
+      │
+      ▼
+Zeroizing<[u8; 32]> on stack ──► Ok(MasterKey) / Err(?)
+      │
+      ▼
+Drop → Stack überschrieben (K2)
+```
+
+#### Zero-Clone-Policy beim Persistieren (K3)
+
+> **Status:** ✅ `crates/vault-core/src/vault.rs` · `format.rs`
+
+Früher kopierte `persist()` alle Einträge via `entries.clone()` — eine Deep-Copy aller `String`-Passwörter im RAM bei jedem Speichervorgang. Das widerspricht dem Zero-Knowledge-Versprechen (zusätzliche Plaintext-Fragmente außerhalb der autoritativen `entries`-Liste).
+
+**Aktuelles Verhalten:**
+
+```rust
+// vault.rs — persist()
+format::update_vault_file(path, &self.name, self.kdf, &salt, key, &self.entries)
+//                                                                      ^^^^^^^^^^^^^
+//                                                              Borrow, kein Clone
+```
+
+```rust
+// format.rs
+serialize_entries_zeroizing(entries: &[SecretEntry]) → Zeroizing<Vec<u8>>
+crypto::encrypt(key, plaintext.as_ref())
+// plaintext (Zeroizing) wird nach encrypt() dropped und überschrieben
+```
+
+| Aspekt | Detail |
+|---|---|
+| **Serialisierung** | `VaultPayloadRef { entries: &'a [SecretEntry] }` — serde serialisiert per Referenz |
+| **Kein Deep-Clone** | Kein `.clone()` auf `entries`, Passwörter oder Payloads in `persist()` |
+| **Plaintext-Lebensdauer** | JSON-Puffer existiert nur für die Dauer von `write_vault_bytes` |
+| **Atomic Write** | Unverändert: `.oxid.tmp` → `fsync` → `rename` |
 
 #### Atomic Writes (Enterprise Hardening)
 
@@ -273,7 +382,7 @@ Backend: Vault::lock()
 | **Master-Key** | `#[derive(Zeroize, ZeroizeOnDrop)]` auf `MasterKey([u8; 32])` |
 | **Secret-Strings** | `String::zeroize()` auf Passwort, Token, Keys vor Drop |
 | **Frontend-State** | Einträge, Detail-View, Formular-State zurücksetzen |
-| **Clipboard** | Laufender Auto-Clear-Timer wird abgebrochen |
+| **Clipboard (Backend)** | `SecureClipboard::cancel_pending()` bei `perform_lock()` |
 
 **Auto-Lock-Parameter:**
 
@@ -303,34 +412,50 @@ Backend: Vault::lock()
 
 **Hinweis:** Der Generator benötigt keinen entsperrten Vault — reine Utility-Funktion im Rust-Kern.
 
-### Clipboard Auto-Clear (v0.1.0)
+### Clipboard Auto-Clear (v1.0.0 — Security-Härtung K4)
 
-> **Status:** ✅ Implementiert in `src/lib/secureClipboard.ts`
+> **Status:** ✅ Rust: `src-tauri/src/clipboard.rs` (`arboard`) · Frontend-Toast: `src/lib/secureClipboard.ts`
 
-OxidVault behandelt die System-Zwischenablage als **ephemeren Kanal** — kopierte Secrets dürfen nicht dauerhaft außerhalb des Vaults verbleiben.
+OxidVault behandelt die System-Zwischenablage als **ephemeren Kanal**. Secrets werden **nicht** mehr über `navigator.clipboard` aus dem Frontend kopiert — der Rust-Kern schreibt direkt ins OS.
 
 | Parameter | Wert |
 |---|---|
 | **Auto-Clear-Delay** | 30 Sekunden (exakt) |
-| **Implementierung** | Frontend (`navigator.clipboard`) |
-| **Clear-Strategie** | Überschreiben mit leerem String — nur wenn Zwischenablage noch den kopierten Wert enthält |
-| **Timer-Reset** | Neuer Kopiervorgang ersetzt laufenden Timer |
-| **Abbruch bei Lock** | `cancelSecureClipboardClear()` beim Vault-Sperren |
+| **Schreiben** | Rust-Crate **`arboard`** (native OS-Clipboard) |
+| **Timer** | `std::thread::spawn` + `sleep(30s)` — unabhängig vom JS-Event-Loop |
+| **Clear-Strategie** | `get_text()` === gespeichertes Secret → `set_text("")` |
+| **Generation-Counter** | Neuer Kopiervorgang invalidiert ältere Clear-Timer |
+| **Abbruch bei Lock** | `SecureClipboard::cancel_pending()` in `perform_lock()` |
 
-**UX-Feedback:**
+**UX-Feedback (Frontend):**
 
+- Nach `copy_to_clipboard`: `notifyBackendSecureCopy()` startet Countdown-UI (Toast + Button-Label)
 - Button-Label: `Kopiert! (29s)` … Countdown bis Clear
 - Toast (`ClipboardToast`): „In Zwischenablage kopiert — wird in Xs automatisch geleert“
-- Grüne Button-Hervorhebung während Countdown aktiv
+- **Usernames / URLs** (nicht geheim): weiterhin Frontend-`navigator.clipboard` via `useSecureCopy().copy()`
 
-**Ablauf:**
+**Ablauf (Secret-Kopieren):**
 
 ```
-Kopieren → writeText(secret) → Timer 30s starten
-         → Countdown UI (1s-Ticks)
-         → Nach 30s: readText() === secret ? writeText("") : skip
-         → Bei lock_vault: Timer abbrechen
+Frontend: copy_to_clipboard(entry_id, field?)
+        │
+        ▼
+Rust: Vault::extract_secret → Zeroizing<String>
+        │
+        ▼
+arboard::Clipboard::set_text(secret)
+        │
+        ▼
+Background-Thread: sleep(30s) → Clear wenn unverändert
+        │
+        ▼
+Frontend: notifyBackendSecureCopy() → Toast-Countdown
+        │
+        ▼
+Bei lock_vault: cancel_pending() — Timer wird invalidiert
 ```
+
+**Legacy-Hinweis:** `copySecureToClipboard()` in `secureClipboard.ts` bleibt für **nicht-sensitive** Felder (Benutzername). Passwörter, Tokens und Keys nutzen ausschließlich `copy_to_clipboard`.
 
 ---
 
@@ -353,7 +478,7 @@ OxidVault/
 │           ├── lib.rs       ← Re-Exports
 │           ├── crypto.rs    ← Argon2id KDF, AES-256-GCM
 │           ├── format.rs    ← .oxid Lesen/Schreiben
-│           ├── entry.rs     ← SecretEntry-Typen
+│           ├── entry.rs     ← SecretEntry, SecretEntryPublic, SecretField
 │           ├── vault.rs     ← Vault-Lifecycle, Persistenz
 │           ├── policy.rs    ← Master-Passwort-Richtlinie
 │           ├── generator.rs ← CSPRNG Passwort-Generator
@@ -370,7 +495,7 @@ OxidVault/
 │   ├── hooks/               ← Custom React Hooks
 │   │   ├── useKeyboardShortcuts.ts
 │   │   ├── useAutoLock.ts
-│   │   └── useSecureCopy.ts
+│   │   └── useSecureCopy.ts  ← copySecret → copy_to_clipboard IPC
 │   ├── lib/                 ← IPC, Dialoge, Theme, Suche, Clipboard
 │   │   ├── ipc.ts
 │   │   └── dialog.ts
@@ -389,8 +514,8 @@ OxidVault/
 │   └── src/
 │       ├── main.rs          ← Binary-Einstiegspunkt
 │       ├── lib.rs           ← Tauri Builder, Plugin-Init, State
-│       ├── probe/             ← Async TCP-Reachability-Checks
-│       │   └── mod.rs
+│       ├── clipboard.rs     ← SecureClipboard (arboard, 30s Auto-Clear)
+│       ├── probe/           ← Async TCP-Reachability-Checks
 │       │   └── mod.rs
 │       ├── window_events.rs ← Lock-on-Minimize (Tauri Window Events)
 │       ├── settings.rs      ← App-Einstellungen (Vault-Pfad, Git-Sync, kein Secret)
@@ -412,8 +537,8 @@ OxidVault/
 
 | Schicht | Pfad | Darf wissen / tun |
 |---|---|---|
-| **Frontend** | `src/` | UI rendern, Shortcuts, IPC-Aufrufe |
-| **IPC** | `src/lib/ipc.ts` ↔ `src-tauri/src/commands/` | Typisierte Request/Response-Grenze |
+| **Frontend** | `src/` | UI rendern, Shortcuts, IPC-Aufrufe — **kein Plaintext-Secret-State by default** |
+| **IPC** | `src/lib/ipc.ts` ↔ `src-tauri/src/commands/` | Typisierte Request/Response-Grenze; Secrets nur via `reveal_secret` / `copy_to_clipboard` |
 | **Shell** | `src-tauri/` | Window-Management, Plugins, App-State |
 | **Kern** | `crates/vault-core/` | Krypto, Persistenz, Business-Logik |
 
@@ -450,27 +575,27 @@ flowchart TB
 
 1. User legt Secret im Frontend an (`Ctrl+N` → Formular).
 2. Frontend ruft `add_entry({ input })` auf.
-3. `vault-core` erstellt `SecretEntry`, serialisiert Payload als JSON.
-4. Payload wird mit AES-256-GCM verschlüsselt und atomar in die `.oxid`-Datei geschrieben.
-5. Frontend erhält nur `SecretEntrySummary` (ohne `secret`-Feld).
+3. `vault-core` erstellt `SecretEntry`, serialisiert Payload als JSON (in `Zeroizing<Vec<u8>>`).
+4. Payload wird mit AES-256-GCM verschlüsselt und atomar in die `.oxid`-Datei geschrieben (`persist()` ohne `entries.clone()`).
+5. Frontend erhält nur `SecretEntrySummary` (ohne Secret-Felder).
 
 ### Datenfluss: Secret bearbeiten (Data Mutation)
 
-1. User wählt Eintrag in der Sidebar → `EntryDetail` zeigt Details.
-2. Klick auf **Bearbeiten** → `NewSecretModal` im Modus `edit`, vorausgefüllt via `get_entry`.
+1. User wählt Eintrag in der Sidebar → `EntryDetail` zeigt **Metadaten** via `get_entry` (`SecretEntryPublic`).
+2. Klick auf **Bearbeiten** → `NewSecretModal` lädt Secrets per **`reveal_secret`** (kurzlebig im Form-State).
 3. User passt Felder an (optional: Passwort-Generator → direkte Feldübernahme).
-4. Frontend ruft `update_entry({ id, input })` auf.
+4. Frontend ruft `update_entry({ id, input })` auf — Secrets fließen **in** den Rust-Kern (Eingabe, nicht Listen-IPC).
 5. `vault-core::Vault::update_entry`:
    - Validiert Eingabe, prüft unveränderten Eintragstyp
    - Behält `id` + `created_at`, setzt `updated_at` neu
-   - Ersetzt Eintrag im RAM, ruft `persist()` auf
+   - Ersetzt Eintrag im RAM, ruft `persist()` auf (Borrow, kein Clone)
 6. Gesamter Vault-Body wird AES-256-GCM neu verschlüsselt und in `.oxid` geschrieben.
-7. Frontend aktualisiert Sidebar (`list_entries`) und Detailansicht (`get_entry`).
+7. Frontend aktualisiert Sidebar (`list_entries`) und Detailansicht (`get_entry` → Public).
 
 ```
-Bearbeiten → Modal (edit) → update_entry → persist() → AES-256-GCM → .oxid
+Bearbeiten → reveal_secret (Form) → update_entry → persist(&entries) → AES-256-GCM → .oxid
                               ↓
-                    list_entries + get_entry → Sidebar + Detail refresh
+                    list_entries + get_entry (Public) → Sidebar + Detail refresh
 ```
 
 ### Datenfluss: SSH Quick Connect
@@ -481,7 +606,7 @@ Bearbeiten → Modal (edit) → update_entry → persist() → AES-256-GCM → .
 Quick Connect (entry_id)
         │
         ▼
-ssh_connect ──► Vault::get_entry(id)  [Key bleibt im Rust-RAM]
+ssh_connect ──► Vault::extract_ssh_credentials(id)  [Key bleibt im Rust-RAM]
         │              │
         │              ▼
         │         russh: TCP → Handshake → Pubkey-Auth → PTY Shell
@@ -497,8 +622,8 @@ SshTerminalModal (xterm.js)
 
 | Aspekt | Detail |
 |---|---|
-| **SSH-Crate** | `russh` + `russh-keys` (Pure Rust, kein OpenSSL/Perl nötig) |
-| **Credentials** | Nur via `entry_id` — Private Key **nie** ans Frontend |
+| **SSH-Crate** | `russh` 0.61+ (`ring`-Feature, kein `rsa` in Dependency-Tree) |
+| **Credentials** | `Vault::extract_ssh_credentials` — Private Key **nie** ans Frontend |
 | **Streaming** | Bidirektional: Events (Out) + `ssh_write` Command (In) |
 | **Terminal-UI** | `@xterm/xterm` + `@xterm/addon-fit`, Theme aus CSS-Variablen |
 | **Session-Ende** | Server `exit` → `ssh-closed` → Modal schließt automatisch |
@@ -552,7 +677,7 @@ Frontend (alle 10s, non-blocking)
         ▼
 check_entries_reachability(entry_ids[])
         │
-        ├── Vault::get_entry → resolve_probe_target()
+        ├── Vault::probe_target_for_entry(id) → resolve_probe_target()
         │       web_login  → URL → Host + Port (80/443)
         │       ssh_key    → Host + Port (22 oder :Port)
         │       database   → Host + konfigurierter Port
@@ -584,7 +709,7 @@ ReachabilityDot — Sidebar + Detailansicht
 2. Frontend ruft `open_vault` (Erstöffnung) oder `unlock_vault` (Re-Unlock nach Lock) auf.
 3. Tauri Command leitet an `vault-core::Vault` weiter.
 4. `vault-core` leitet via Argon2id den Master-Key ab und entschlüsselt die `.oxid`-Datei.
-5. `VaultInfo` kehrt ans Frontend zurück — Secrets nur über `get_entry(id)` auf explizite Anfrage.
+5. `VaultInfo` kehrt ans Frontend zurück — Secret-Metadaten über `get_entry` (Public); Klartext nur via `reveal_secret` / Clipboard via `copy_to_clipboard`.
 
 ---
 
@@ -598,14 +723,16 @@ ReachabilityDot — Sidebar + Detailansicht
 | `get_vault_info` | — | `VaultInfo` | Metadaten des aktuellen Vaults | ✅ |
 | `bootstrap_vault` | — | `VaultInfo` | App-Start: gespeicherten Vault-Pfad laden (falls Datei existiert) | ✅ |
 | `detach_vault` | — | `()` | In-Memory-Vault zurücksetzen (für „Anderen Tresor öffnen“) | ✅ |
-| `create_vault` | `path`, `name`, `password` | `VaultInfo` | Neue `.oxid`-Datei anlegen und entsperren; Pfad speichern | ✅ |
-| `open_vault` | `path`, `password` | `VaultInfo` | Bestehende `.oxid`-Datei öffnen; Pfad speichern | ✅ |
-| `unlock_vault` | `password` | `VaultInfo` | Gesperrten Vault erneut entsperren (Pfad im State) | ✅ |
-| `lock_vault` | — | `VaultInfo` | Vault sperren, Key + Einträge aus RAM löschen | ✅ |
+| `create_vault` | `path`, `name`, `password` | `VaultInfo` | Neue `.oxid`-Datei; Passwort → `Zeroizing<String>` | ✅ |
+| `open_vault` | `path`, `password` | `VaultInfo` | `.oxid` öffnen; Passwort → `Zeroizing<String>` | ✅ |
+| `unlock_vault` | `password` | `VaultInfo` | Re-Unlock; Passwort → `Zeroizing<String>` | ✅ |
+| `lock_vault` | — | `VaultInfo` | RAM-Purge + Clipboard-Timer abbrechen | ✅ |
 | `list_entries` | — | `SecretEntrySummary[]` | Eintragsliste ohne Secrets | ✅ |
 | `add_entry` | `input: SecretEntryInput` | `SecretEntrySummary` | Secret hinzufügen und Vault persistieren | ✅ |
-| `update_entry` | `id`, `input: SecretEntryInput` | `SecretEntrySummary` | Bestehendes Secret aktualisieren und persistieren | ✅ |
-| `get_entry` | `id: String` | `SecretEntry` | Vollständigen Eintrag inkl. Secret laden | ✅ |
+| `update_entry` | `id`, `input: SecretEntryInput` | `SecretEntrySummary` | Secret aktualisieren und persistieren (Zero-Clone) | ✅ |
+| `get_entry` | `id: String` | `SecretEntryPublic` | Metadaten ohne Klartext-Secrets | ✅ |
+| `reveal_secret` | `entry_id`, `field?` | `RevealedSecret` | Kurzlebiger Klartext + Warnung | ✅ |
+| `copy_to_clipboard` | `entry_id`, `field?` | `()` | OS-Clipboard via `arboard`, 30s Rust-Clear | ✅ |
 | `generate_password_cmd` | `options: PasswordGenOptions` | `String` | CSPRNG-Passwort generieren (kein Vault nötig) | ✅ |
 | `open_website_url` | `url: String` | `()` | Validierte http(s)-URL im Standard-Browser öffnen | ✅ |
 | `check_entries_reachability` | `entry_ids: String[]` | `EntryReachabilityStatus[]` | Async TCP-Reachability für Infrastruktur-Einträge | ✅ |
@@ -641,21 +768,43 @@ ReachabilityDot — Sidebar + Detailansicht
 | `locked` | `boolean` | `true` = Vault gesperrt |
 | `initialized` | `boolean` | `true` = Vault-Datei geladen/angelegt |
 
-#### Secret-Typen (`SecretPayload`)
+#### Secret-Typen (`SecretPayload` — on-disk / Rust-RAM)
 
 > **Status:** ✅ Implementiert in `crates/vault-core/src/entry.rs`  
-> Serialisierung als **internally-tagged JSON** mit `"type"`-Feld (flach in `SecretEntry` via `#[serde(flatten)]`).
+> Serialisierung als **internally-tagged JSON** mit `"type"`-Feld (flach in `SecretEntry` via `#[serde(flatten)]`).  
+> **IPC-Hinweis:** Über Tauri wird **`SecretEntryPublic`** / **`SecretPayloadPublic`** ausgeliefert — sensitive Felder durch `has_password`, `has_token`, … ersetzt.
 
-| `type` | Label | Pflichtfelder | Optionale Felder |
+| `type` | Label | Pflichtfelder (Vault-RAM) | IPC-Public (Frontend) |
 |---|---|---|---|
-| `web_login` | Web-Login | `title`, `url`, `username`, `password` | `notes` |
-| `ssh_key` | SSH-Key | `title`, `host`, `username`, `private_key` | `passphrase` |
-| `api_token` | API-Token | `title`, `service`, `token` | — |
-| `database` | Datenbank | `title`, `host`, `port`, `db_type`, `database_name`, `username`, `password` | — |
-| `network_wifi` | Netzwerk / WLAN | `title`, `ssid`, `encryption_type`, `password` | — |
-| `secure_note` | Sichere Notiz | `title`, `content` | — |
+| `web_login` | Web-Login | `url`, `username`, `password` | `url`, `username`, `has_password`, `has_notes` |
+| `ssh_key` | SSH-Key | `host`, `username`, `private_key` | `host`, `username`, `has_private_key`, `has_passphrase` |
+| `api_token` | API-Token | `service`, `token` | `service`, `has_token` |
+| `database` | Datenbank | `host`, `port`, …, `password` | Metadaten + `has_password` |
+| `network_wifi` | Netzwerk / WLAN | `ssid`, `encryption_type`, `password` | `ssid`, `encryption_type`, `has_password` |
+| `secure_note` | Sichere Notiz | `content` | `preview?`, `has_content` |
 
-**Beispiel `web_login` (Klartext vor Verschlüsselung):**
+#### `SecretField` (Reveal / Clipboard)
+
+| Wert | Verwendung |
+|---|---|
+| `primary` | Standard-Secret des Eintragstyps (Default für `reveal_secret` / `copy_to_clipboard`) |
+| `password` | Web-Login, DB, WLAN |
+| `token` | API-Token |
+| `private_key` | SSH Private Key |
+| `passphrase` | SSH Passphrase |
+| `content` | Sichere Notiz |
+| `notes` | Web-Login Notizen (sensibel — nicht in Public-IPC) |
+
+#### `RevealedSecret`
+
+```json
+{
+  "value": "…",
+  "warning": "Dieser Wert wurde kurzzeitig entschlüsselt. …"
+}
+```
+
+#### Secret-Typen — Beispiele on-disk (`SecretPayload`)
 
 ```json
 {
@@ -833,7 +982,7 @@ ReachabilityDot — Sidebar + Detailansicht
 
 | Eintragstyp | Quick-Actions (Sidebar-Zeile) |
 |---|---|
-| `web_login` | **⎘** Passwort kopieren (`get_entry` → Secure Clipboard) · **↗** Website öffnen (`open_website_url`, URL aus `subtitle`) |
+| `web_login` | **⎘** Passwort kopieren (`copy_to_clipboard`, Rust/arboard) · **↗** Website öffnen (`open_website_url`, URL aus `subtitle`) |
 | `ssh_key` | **▶** Quick Connect (`ssh_connect`, Key bleibt im Rust-RAM) |
 | andere | keine Inline-Aktionen (Detailansicht) |
 
@@ -847,9 +996,11 @@ ReachabilityDot — Sidebar + Detailansicht
 
 | Typ | Verwendung |
 |---|---|
-| `SecretEntryInput` + `SecretPayload` | Eingabe via `add_entry` / `update_entry` |
+| `SecretEntryInput` + `SecretPayload` | Eingabe via `add_entry` / `update_entry` (Secrets **in** Rust) |
 | `SecretEntrySummary` | Sidebar-Liste, Rückgabe von `add_entry` / `update_entry` |
-| `SecretEntry` (vollständig, inkl. Payload) | Detailansicht via `get_entry` |
+| `SecretEntryPublic` + `SecretPayloadPublic` | Detailansicht via `get_entry` — **ohne Klartext-Secrets** |
+| `RevealedSecret` | Kurzzeit-Anzeige via `reveal_secret` |
+| `SecretField` | Feld-Auswahl für `reveal_secret` / `copy_to_clipboard` |
 
 ### Frontend-IPC-Mapping
 
@@ -866,7 +1017,9 @@ ReachabilityDot — Sidebar + Detailansicht
 | `listEntries()` | `list_entries` |
 | `addEntry(input)` | `add_entry` |
 | `updateEntry(id, input)` | `update_entry` |
-| `getEntry(id)` | `get_entry` |
+| `getEntry(id)` | `get_entry` → `SecretEntryPublic` |
+| `revealSecret(entryId, field?)` | `reveal_secret` |
+| `copyToClipboard(entryId, field?)` | `copy_to_clipboard` |
 | `generatePassword(options)` | `generate_password_cmd` |
 | `openWebsiteUrl(url)` | `open_website_url` |
 | `checkEntriesReachability(entryIds)` | `check_entries_reachability` |
@@ -980,8 +1133,7 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 4. Backend (`create_vault`):
    - 16-Byte Salt generieren (`crypto::random_salt`)
    - Argon2id → 256-Bit Master-Key
-   - Leere `VaultPayload { entries: [] }` als JSON serialisieren
-   - AES-256-GCM verschlüsseln → Datei schreiben
+   - Leerer Vault-Body (`&[]`) serialisiert → `Zeroizing<Vec<u8>>` → AES-256-GCM → Datei schreiben
 5. Status-Badge: **entsperrt** (grün) → Tresor-Ansicht  
 6. Absoluter Dateipfad wird in `settings.json` (App-Data) gespeichert — **nur der Pfad, keine Secrets**
 
@@ -1044,7 +1196,7 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | `NewSecretModal` | `src/components/NewSecretModal.tsx` | Create + Edit (`mode: create \| edit`), Typ-Auswahl, Generator-Integration |
 | `PasswordGenerateButton` | `src/components/PasswordGenerateButton.tsx` | Schlüssel-Icon neben Passwort/Token/Passphrase-Feldern |
 | `PasswordGeneratorModal` | `src/components/PasswordGeneratorModal.tsx` | CSPRNG-Generator (`Ctrl+G`), Feldübernahme via `onApply` |
-| `EntryDetail` | `src/components/EntryDetail.tsx` | Detailansicht aller 6 Secret-Typen, Live-Status, Quick Connect, Website öffnen |
+| `EntryDetail` | `src/components/EntryDetail.tsx` | Metadaten + `SecureField` (reveal/copy via Rust-IPC) |
 | `ReachabilityDot` | `src/components/ReachabilityDot.tsx` | Status-Punkt (online/offline/checking) für Infrastruktur |
 | `useReachabilityPolling` | `src/hooks/useReachabilityPolling.ts` | 10s-Hintergrund-Polling via `check_entries_reachability` |
 | `SecurityDashboard` | `src/components/SecurityDashboard.tsx` | Offline Security Audit — Score, klickbare Kacheln, To-Do-Listen |
@@ -1122,7 +1274,7 @@ Siehe auch [Production (Release v1.0.0)](#production-release-v100) für den fina
 | Tool | Mindestversion |
 |---|---|
 | Node.js | 20+ |
-| Rust (stable) | 1.77+ |
+| Rust (stable) | 1.85+ |
 | WebView2 (Windows) | System-abhängig |
 
 ### Self-Hosted-Betrieb
@@ -1170,6 +1322,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 0.1.0 | Passwort-Ablauf: `expires_at`, `ExpiryBadge`, Security-Dashboard To-Do-Liste |
 | 2025-06-19 | 0.1.0 | Dashboard-Kacheln als Sidebar-Filter: klickbare Metriken, `DashboardFilterBar` |
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
+| 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
+| 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |
 
 ---
 

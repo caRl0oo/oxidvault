@@ -1,21 +1,30 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
 import { useSecureCopy } from "@/hooks/useSecureCopy";
 import { formatVaultError } from "@/lib/errors";
+import { revealSecret } from "@/lib/ipc";
 import { openWebsiteUrl, validateHttpUrl } from "@/lib/openWebsite";
 import { ReachabilityDot } from "@/components/ReachabilityDot";
 import { ExpiryBadge } from "@/components/ExpiryBadge";
 import type { ReachabilityState } from "@/types/reachability";
-import type { SecretEntryFull } from "@/types/vault";
+import type { SecretEntryPublic, SecretField } from "@/types/vault";
 import { dbTypeLabel, isProbeableEntryType, wifiEncryptionLabel } from "@/types/vault";
 
 interface EntryDetailProps {
-  entry: SecretEntryFull;
+  entry: SecretEntryPublic;
   onLock: () => void;
   onEdit: () => void;
   onQuickConnect?: (entryId: string) => void;
   sshConnecting?: boolean;
   reachability?: ReachabilityState;
+}
+
+/** Best-effort overwrite of a short-lived secret string in JS memory. */
+function discardRevealed(value: string | null): null {
+  if (value) {
+    value.replace(/./g, "\0");
+  }
+  return null;
 }
 
 export function EntryDetail({
@@ -26,7 +35,7 @@ export function EntryDetail({
   sshConnecting,
   reachability,
 }: EntryDetailProps) {
-  const { copy, getLabel } = useSecureCopy();
+  const { copy, copySecret, getLabel } = useSecureCopy();
   const prefix = entry.id;
   const [openingWebsite, setOpeningWebsite] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
@@ -113,22 +122,34 @@ export function EntryDetail({
                 <p className="font-mono text-xs text-vault-danger">{websiteError}</p>
               )}
             </div>
-            <SecretField
+            <PlainField
               label="Benutzername"
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
               onCopy={() => void copy(`${prefix}-username`, entry.username)}
             />
-            <SecretField
-              label="Passwort"
-              value={entry.password}
-              secret
-              copyable
-              copyLabel={getLabel(`${prefix}-password`)}
-              onCopy={() => void copy(`${prefix}-password`, entry.password)}
-            />
-            {entry.notes && <SecretField label="Notizen" value={entry.notes} multiline />}
+            {entry.has_password && (
+              <SecureField
+                entryId={entry.id}
+                field="password"
+                label="Passwort"
+                copyFieldId={`${prefix}-password`}
+                copyLabel={getLabel(`${prefix}-password`)}
+                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+              />
+            )}
+            {entry.has_notes && (
+              <SecureField
+                entryId={entry.id}
+                field="notes"
+                label="Notizen"
+                multiline
+                copyFieldId={`${prefix}-notes`}
+                copyLabel={getLabel(`${prefix}-notes`)}
+                onCopy={() => void copySecret(`${prefix}-notes`, entry.id, "notes")}
+              />
+            )}
           </>
         )}
 
@@ -144,29 +165,31 @@ export function EntryDetail({
                 {sshConnecting ? "Verbinde…" : "Quick Connect"}
               </button>
             </div>
-            <SecretField label="Server / IP" value={entry.host} />
-            <SecretField
+            <PlainField label="Server / IP" value={entry.host} />
+            <PlainField
               label="Benutzername"
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
               onCopy={() => void copy(`${prefix}-username`, entry.username)}
             />
-            <SecretField
-              label="Private Key"
-              value={entry.private_key}
-              secret
-              multiline
-              revealOnly
-            />
-            {entry.passphrase && (
-              <SecretField
+            {entry.has_private_key && (
+              <SecureField
+                entryId={entry.id}
+                field="private_key"
+                label="Private Key"
+                multiline
+                revealOnly
+              />
+            )}
+            {entry.has_passphrase && (
+              <SecureField
+                entryId={entry.id}
+                field="passphrase"
                 label="Passphrase"
-                value={entry.passphrase}
-                secret
-                copyable
+                copyFieldId={`${prefix}-passphrase`}
                 copyLabel={getLabel(`${prefix}-passphrase`)}
-                onCopy={() => void copy(`${prefix}-passphrase`, entry.passphrase!)}
+                onCopy={() => void copySecret(`${prefix}-passphrase`, entry.id, "passphrase")}
               />
             )}
           </>
@@ -174,68 +197,77 @@ export function EntryDetail({
 
         {entry.type === "api_token" && (
           <>
-            <SecretField label="Service" value={entry.service} />
-            <SecretField
-              label="API-Key / Token"
-              value={entry.token}
-              secret
-              copyable
-              copyLabel={getLabel(`${prefix}-token`)}
-              onCopy={() => void copy(`${prefix}-token`, entry.token)}
-            />
+            <PlainField label="Service" value={entry.service} />
+            {entry.has_token && (
+              <SecureField
+                entryId={entry.id}
+                field="token"
+                label="API-Key / Token"
+                copyFieldId={`${prefix}-token`}
+                copyLabel={getLabel(`${prefix}-token`)}
+                onCopy={() => void copySecret(`${prefix}-token`, entry.id, "token")}
+              />
+            )}
           </>
         )}
 
         {entry.type === "database" && (
           <>
-            <SecretField label="Host / IP" value={entry.host} />
+            <PlainField label="Host / IP" value={entry.host} />
             <div className="grid grid-cols-2 gap-3">
-              <SecretField label="Port" value={String(entry.port)} />
-              <SecretField label="DB-Typ" value={dbTypeLabel(entry.db_type)} />
+              <PlainField label="Port" value={String(entry.port)} />
+              <PlainField label="DB-Typ" value={dbTypeLabel(entry.db_type)} />
             </div>
-            <SecretField label="Datenbank" value={entry.database_name} />
-            <SecretField
+            <PlainField label="Datenbank" value={entry.database_name} />
+            <PlainField
               label="Benutzername"
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
               onCopy={() => void copy(`${prefix}-username`, entry.username)}
             />
-            <SecretField
-              label="Passwort"
-              value={entry.password}
-              secret
-              copyable
-              copyLabel={getLabel(`${prefix}-password`)}
-              onCopy={() => void copy(`${prefix}-password`, entry.password)}
-            />
+            {entry.has_password && (
+              <SecureField
+                entryId={entry.id}
+                field="password"
+                label="Passwort"
+                copyFieldId={`${prefix}-password`}
+                copyLabel={getLabel(`${prefix}-password`)}
+                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+              />
+            )}
           </>
         )}
 
         {entry.type === "network_wifi" && (
           <>
-            <SecretField label="SSID" value={entry.ssid} />
-            <SecretField label="Verschlüsselung" value={wifiEncryptionLabel(entry.encryption_type)} />
-            <SecretField
-              label="Passwort / Key"
-              value={entry.password}
-              secret
-              copyable
-              copyLabel={getLabel(`${prefix}-password`)}
-              onCopy={() => void copy(`${prefix}-password`, entry.password)}
+            <PlainField label="SSID" value={entry.ssid} />
+            <PlainField
+              label="Verschlüsselung"
+              value={wifiEncryptionLabel(entry.encryption_type)}
             />
+            {entry.has_password && (
+              <SecureField
+                entryId={entry.id}
+                field="password"
+                label="Passwort / Key"
+                copyFieldId={`${prefix}-password`}
+                copyLabel={getLabel(`${prefix}-password`)}
+                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+              />
+            )}
           </>
         )}
 
-        {entry.type === "secure_note" && (
-          <SecretField
+        {entry.type === "secure_note" && entry.has_content && (
+          <SecureField
+            entryId={entry.id}
+            field="content"
             label="Inhalt"
-            value={entry.content}
-            secret
             multiline
-            copyable
+            copyFieldId={`${prefix}-content`}
             copyLabel={getLabel(`${prefix}-content`)}
-            onCopy={() => void copy(`${prefix}-content`, entry.content)}
+            onCopy={() => void copySecret(`${prefix}-content`, entry.id, "content")}
           />
         )}
 
@@ -251,36 +283,96 @@ export function EntryDetail({
   );
 }
 
-function SecretField({
+function PlainField({
   label,
   value,
-  secret,
-  multiline,
   copyable,
   copyLabel,
   onCopy,
-  revealOnly,
 }: {
   label: string;
   value: string;
-  secret?: boolean;
-  multiline?: boolean;
   copyable?: boolean;
   copyLabel?: string;
   onCopy?: () => void;
-  /** Secret fields that must never be copied (e.g. SSH private keys). */
-  revealOnly?: boolean;
 }) {
-  const [revealed, setRevealed] = useState(!secret);
-  const display = secret && !revealed ? "••••••••••••" : value;
   const copied = copyLabel?.startsWith("Kopiert");
 
   return (
     <div className="space-y-1">
       <span className="font-mono text-[11px] text-vault-muted">{label}</span>
       <div className="flex items-start gap-2">
+        <code className="flex-1 truncate rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm">
+          {value}
+        </code>
+        {copyable && onCopy && (
+          <button
+            type="button"
+            onClick={onCopy}
+            className={`shrink-0 rounded border px-2 py-1.5 font-mono text-[10px] transition ${
+              copied
+                ? "border-vault-success text-vault-success"
+                : "border-vault-border text-vault-muted hover:border-vault-accent hover:text-vault-accent"
+            }`}
+          >
+            {copyLabel ?? "Kopieren"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecureField({
+  entryId,
+  field,
+  label,
+  multiline,
+  copyFieldId,
+  copyLabel,
+  onCopy,
+  revealOnly,
+}: {
+  entryId: string;
+  field: SecretField;
+  label: string;
+  multiline?: boolean;
+  copyFieldId?: string;
+  copyLabel?: string;
+  onCopy?: () => void;
+  revealOnly?: boolean;
+}) {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const copied = copyLabel?.startsWith("Kopiert");
+
+  const handleReveal = useCallback(async () => {
+    if (revealed !== null) {
+      setRevealed((v) => discardRevealed(v));
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await revealSecret(entryId, field);
+      console.warn(result.warning);
+      setRevealed(result.value);
+    } catch (e) {
+      setError(formatVaultError(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [entryId, field, revealed]);
+
+  const display = revealed ?? "••••••••••••";
+
+  return (
+    <div className="space-y-1">
+      <span className="font-mono text-[11px] text-vault-muted">{label}</span>
+      <div className="flex items-start gap-2">
         {multiline ? (
-          <pre className={`flex-1 overflow-auto rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all ${secret ? "max-h-96" : "max-h-48"}`}>
+          <pre className="max-h-96 flex-1 overflow-auto rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all">
             {display}
           </pre>
         ) : (
@@ -289,16 +381,15 @@ function SecretField({
           </code>
         )}
         <div className="flex shrink-0 flex-col gap-1">
-          {secret && (
-            <button
-              type="button"
-              onClick={() => setRevealed((r) => !r)}
-              className="rounded border border-vault-border px-2 py-1.5 font-mono text-[10px] text-vault-muted hover:text-vault-text"
-            >
-              {revealed ? "Verbergen" : "Anzeigen"}
-            </button>
-          )}
-          {copyable && onCopy && !revealOnly && (
+          <button
+            type="button"
+            onClick={() => void handleReveal()}
+            disabled={loading}
+            className="rounded border border-vault-border px-2 py-1.5 font-mono text-[10px] text-vault-muted hover:text-vault-text disabled:opacity-50"
+          >
+            {loading ? "…" : revealed ? "Verbergen" : "Anzeigen"}
+          </button>
+          {onCopy && copyFieldId && !revealOnly && (
             <button
               type="button"
               onClick={onCopy}
@@ -313,6 +404,7 @@ function SecretField({
           )}
         </div>
       </div>
+      {error && <p className="font-mono text-xs text-vault-danger">{error}</p>}
     </div>
   );
 }
