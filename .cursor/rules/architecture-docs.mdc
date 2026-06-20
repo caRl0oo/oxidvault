@@ -1,0 +1,31 @@
+---
+description: ARCHITECTURE.md als Single Source of Truth synchron halten
+alwaysApply: true
+---
+
+# OxidVault — Architektur-Dokumentation
+
+`ARCHITECTURE.md` im Projektroot ist die **Single Source of Truth** für die technische Dokumentation.
+
+## Pflicht bei jeder relevanten Änderung
+
+Aktualisiere `ARCHITECTURE.md` **im selben Arbeitsgang** (Commit/PR), wenn du hinzufügst oder änderst:
+
+- Tauri Commands (`src-tauri/src/commands/`)
+- Rust-/TypeScript-Typen an der IPC-Grenze (`VaultInfo`, Entry-Typen, …)
+- Dateiformate (`.oxid` Header, Versionen)
+- Krypto-Parameter (Argon2id, AES-256-GCM, Key-Rotation)
+- Verzeichnisstruktur (neue Crates, Module, Plugins)
+- Architektur-Entscheidungen
+
+## Was aktualisieren
+
+1. Betroffene Tabellen/Abschnitte in `ARCHITECTURE.md`
+2. Implementierungsstatus (✅ / 🔲 / geplant)
+3. Eintrag im **Changelog** (Abschnitt 10) mit Datum und Kurzbeschreibung
+
+## Qualitätsniveau
+
+- Professionelles B2B-Niveau, präzise Tabellen, klare Status-Markierung
+- Spezifikation vs. Implementierung klar trennen
+- Keine veralteten Commands oder Typen im Dokument belassen

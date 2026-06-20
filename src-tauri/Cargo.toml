@@ -1,0 +1,32 @@
+[package]
+name = "oxidvault"
+description = "OxidVault desktop shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "oxidvault_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+vault-core = { path = "../crates/vault-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde.workspace = true
+serde_json.workspace = true
+open = "5"
+url = "2"
+russh = "0.46"
+russh-keys = "0.46"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+zeroize.workspace = true

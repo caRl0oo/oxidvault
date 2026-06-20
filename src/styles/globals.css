@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --color-vault-bg: #0a0b0d;
+  --color-vault-surface: #12141a;
+  --color-vault-border: #1e222b;
+  --color-vault-muted: #6b7280;
+  --color-vault-text: #e5e7eb;
+  --color-vault-accent: #3b82f6;
+  --color-vault-accent-hover: #2563eb;
+  --color-vault-success: #22c55e;
+  --color-vault-danger: #ef4444;
+  --color-vault-tag: #a78bfa;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+/* Oxid Default — values match @theme defaults */
+[data-theme="oxid"] {
+  --color-vault-bg: #0a0b0d;
+  --color-vault-surface: #12141a;
+  --color-vault-border: #1e222b;
+  --color-vault-muted: #6b7280;
+  --color-vault-text: #e5e7eb;
+  --color-vault-accent: #3b82f6;
+  --color-vault-accent-hover: #2563eb;
+  --color-vault-success: #22c55e;
+  --color-vault-danger: #ef4444;
+}
+
+[data-theme="dracula"] {
+  --color-vault-bg: #282a36;
+  --color-vault-surface: #21222c;
+  --color-vault-border: #44475a;
+  --color-vault-muted: #6272a4;
+  --color-vault-text: #f8f8f2;
+  --color-vault-accent: #bd93f9;
+  --color-vault-accent-hover: #a77ff6;
+  --color-vault-success: #50fa7b;
+  --color-vault-danger: #ff5555;
+  --color-vault-tag: #ff79c6;
+}
+
+[data-theme="nord"] {
+  --color-vault-bg: #2e3440;
+  --color-vault-surface: #3b4252;
+  --color-vault-border: #4c566a;
+  --color-vault-muted: #81a1c1;
+  --color-vault-text: #eceff4;
+  --color-vault-accent: #88c0d0;
+  --color-vault-accent-hover: #5e81ac;
+  --color-vault-success: #a3be8c;
+  --color-vault-danger: #bf616a;
+}
+
+[data-theme="matrix"] {
+  --color-vault-bg: #0a0a0a;
+  --color-vault-surface: #0d120d;
+  --color-vault-border: #1a3d1a;
+  --color-vault-muted: #2d6b2d;
+  --color-vault-text: #00ff41;
+  --color-vault-accent: #00ff41;
+  --color-vault-accent-hover: #39ff14;
+  --color-vault-success: #00ff41;
+  --color-vault-danger: #ff1744;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-vault-bg text-vault-text font-sans;
+  }
+
+  [data-theme="matrix"] body {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    @apply bg-vault-accent/30;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-vault-accent;
+  }
+}

@@ -1,0 +1,23 @@
+[package]
+name = "vault-core"
+description = "Memory-safe cryptographic core for OxidVault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize.workspace = true
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+tempfile = "3"
