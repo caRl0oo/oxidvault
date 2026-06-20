@@ -10,6 +10,8 @@ jobs:
   audit:
     name: Security and Code Verification
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       # 1. Quellcode von GitHub auschecken
@@ -27,10 +29,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Run Cargo Audit (Vulnerability Scan)
-        uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit
 
       # 5. PRÜFUNG 2: Code-Formatierung erzwingen (Verhindert unsauberen KI-Code)
       - name: Check Rust Code Formatting
