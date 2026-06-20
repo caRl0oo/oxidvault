@@ -1,90 +1,45 @@
-Name: OxidVault Security & Quality Audit
-
-
+name: OxidVault Security & Quality Audit
 
 on:
-
-push:
-
-branches: [ "main", "master" ]
-
-pull_request:
-
-branches: [ "main", "master" ]
-
-
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 jobs:
+  audit:
+    name: Security and Code Verification
+    runs-on: ubuntu-latest
 
-audit:
+    steps:
+      # 1. Quellcode von GitHub auschecken
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-name: Security and Code Verification
+      # 2. Rust-Toolchain installieren (wird aus deiner rust-toolchain.toml gelesen)
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
-runs-on: ubuntu-latest
+      # 3. Cache einrichten, damit zukünftige Überprüfungen blitzschnell gehen
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
 
+      # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
+      - name: Run Cargo Audit (Vulnerability Scan)
+        uses: rustsec/audit-check-action@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5. PRÜFUNG 2: Code-Formatierung erzwingen (Verhindert unsauberen KI-Code)
+      - name: Check Rust Code Formatting
+        run: cargo fmt --check
 
-steps:
+      # 6. PRÜFUNG 3: Code-Qualität & Memory-Leaks scannen (Clippy fängt unerlaubte Klone ab)
+      - name: Run Cargo Clippy (Linter)
+        run: cargo clippy --all-targets -- -D warnings
 
-# 1. Quellcode von GitHub auschecken
-
-- name: Checkout repository
-
-uses: actions/checkout@v4
-
-
-
-# 2. Rust-Toolchain installieren (wird aus deiner rust-toolchain.toml gelesen)
-
-- name: Setup Rust toolchain
-
-uses: dtolnay/rust-toolchain@stable
-
-with:
-
-components: clippy, rustfmt
-
-
-
-# 3. Cache einrichten, damit zukünftige Überprüfungen blitzschnell gehen
-
-- name: Rust Cache
-
-uses: Swatinem/rust-cache@v2
-
-
-
-# 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
-
-- name: Run Cargo Audit (Vulnerability Scan)
-
-uses: rustsec/audit-check-action@v2
-
-with:
-
-token: ${{ secrets.GITHUB_TOKEN }}
-
-
-
-# 5. PRÜFUNG 2: Code-Formatierung erzwingen (Verhindert unsauberen KI-Code)
-
-- name: Check Rust Code Formatting
-
-run: cargo fmt --check
-
-
-
-# 6. PRÜFUNG 3: Code-Qualität & Memory-Leaks scannen (Clippy fängt unerlaubte Klone ab)
-
-- name: Run Cargo Clippy (Linter)
-
-run: cargo clippy --all-targets -- -D warnings
-
-
-
-# 7. PRÜFUNG 4: Automatisierte Krypto- und Funktionstests ausführen
-
-- name: Run Cargo Tests
-
-run: cargo test
-
+      # 7. PRÜFUNG 4: Automatisierte Krypto- und Funktionstests ausführen
+      - name: Run Cargo Tests
+        run: cargo test
