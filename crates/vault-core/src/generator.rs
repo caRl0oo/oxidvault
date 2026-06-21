@@ -124,7 +124,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(pwd.len(), 32);
-        assert!(pwd.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+        assert!(pwd
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
     }
 
     #[test]

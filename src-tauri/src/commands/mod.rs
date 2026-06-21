@@ -5,8 +5,8 @@ use vault_core::{
 };
 use zeroize::Zeroizing;
 
-use crate::ssh::SshManager;
 use crate::clipboard::SecureClipboard;
+use crate::ssh::SshManager;
 
 pub struct AppState {
     pub vault: std::sync::Mutex<vault_core::Vault>,
@@ -131,10 +131,7 @@ pub fn copy_to_clipboard(
     let secret = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
         let secret = vault
-            .extract_secret(
-                &entry_id,
-                field.unwrap_or(SecretField::Primary),
-            )
+            .extract_secret(&entry_id, field.unwrap_or(SecretField::Primary))
             .map_err(|e| e.to_string())?;
         vault
             .record_audit(vault_core::AuditAction::SecretCopied, Some(&entry_id))

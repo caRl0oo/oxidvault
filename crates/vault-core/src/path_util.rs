@@ -75,9 +75,6 @@ mod tests {
     #[test]
     fn unc_parent_directory() {
         let path = PathBuf::from(r"\\fileserver\team\vault.oxid");
-        assert_eq!(
-            path.parent(),
-            Some(Path::new(r"\\fileserver\team"))
-        );
+        assert_eq!(path.parent(), Some(Path::new(r"\\fileserver\team")));
     }
 }

@@ -118,10 +118,7 @@ pub fn lock_path_for(vault_path: &Path) -> PathBuf {
 }
 
 fn create_lock_file(path: &Path, metadata: &LockMetadata) -> Result<(), VaultError> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
 
     let json = serde_json::to_string_pretty(metadata)
         .map_err(|err| VaultError::Other(format!("failed to serialize lock metadata: {err}")))?;
@@ -132,9 +129,8 @@ fn create_lock_file(path: &Path, metadata: &LockMetadata) -> Result<(), VaultErr
 
 fn read_lock_metadata(path: &Path) -> Result<LockMetadata, VaultError> {
     let raw = fs::read_to_string(path)?;
-    serde_json::from_str(&raw).map_err(|err| {
-        VaultError::Other(format!("invalid vault lock file {path:?}: {err}"))
-    })
+    serde_json::from_str(&raw)
+        .map_err(|err| VaultError::Other(format!("invalid vault lock file {path:?}: {err}")))
 }
 
 fn is_stale_lock(metadata: &LockMetadata) -> bool {
@@ -158,9 +154,7 @@ fn process_is_running(pid: u32) -> bool {
 
 fn holder_matches_current_process(metadata: &LockMetadata) -> bool {
     let current = current_lock_metadata();
-    metadata.pid == current.pid
-        && metadata.host == current.host
-        && metadata.user == current.user
+    metadata.pid == current.pid && metadata.host == current.host && metadata.user == current.user
 }
 
 fn current_lock_metadata() -> LockMetadata {
@@ -257,6 +251,9 @@ mod tests {
     #[test]
     fn lock_path_replaces_oxid_extension() {
         let path = PathBuf::from(r"\\fileserver\team\vault.oxid");
-        assert_eq!(lock_path_for(&path), PathBuf::from(r"\\fileserver\team\vault.lock"));
+        assert_eq!(
+            lock_path_for(&path),
+            PathBuf::from(r"\\fileserver\team\vault.lock")
+        );
     }
 }

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use zeroize::Zeroizing;
 
-use crate::audit::{AuditAction, AuditLog, AuditLogger};
+use crate::audit::{AuditAction, AuditLogger};
 use crate::crypto::{self, KdfParams, MasterKey};
 use crate::entry::{
     RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
@@ -12,9 +12,7 @@ use crate::error::VaultError;
 use crate::format;
 use crate::lock::VaultLock;
 use crate::path_util::normalize_vault_path;
-use crate::policy::{
-    admin_policy, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN,
-};
+use crate::policy::{admin_policy, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN};
 use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 
@@ -192,10 +190,7 @@ impl Vault {
         if let Some(path) = self.path.clone() {
             self.bind_audit_logger(&path)?;
         }
-        self.audit(
-            AuditAction::VaultUnlocked,
-            Some(&lock_meta.lock_id()),
-        )?;
+        self.audit(AuditAction::VaultUnlocked, Some(&lock_meta.lock_id()))?;
         Ok(())
     }
 
@@ -466,7 +461,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "TestVault", "correct-horse-battery-staple")
+            .unwrap();
         vault.lock();
 
         let mut cold = Vault::new();
@@ -485,7 +482,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "TestVault", "correct-horse-battery-staple")
+            .unwrap();
         assert!(!vault.info().locked);
 
         vault
@@ -521,7 +520,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "TestVault", "correct-horse-battery-staple")
+            .unwrap();
 
         let summary = vault
             .add_entry(SecretEntryInput {
@@ -579,7 +580,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "TestVault", "correct-horse-battery-staple")
+            .unwrap();
 
         vault
             .add_entry(SecretEntryInput {
@@ -617,7 +620,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "AuditVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "AuditVault", "correct-horse-battery-staple")
+            .unwrap();
         vault.lock();
 
         let log_path = audit_log_path(&path);
@@ -656,7 +661,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut owner = Vault::new();
-        owner.create(&path, "LockVault", "correct-horse-battery-staple").unwrap();
+        owner
+            .create(&path, "LockVault", "correct-horse-battery-staple")
+            .unwrap();
         owner.open(&path, "correct-horse-battery-staple").unwrap();
         assert!(lock_path_for(&path).is_file());
 
@@ -683,7 +690,9 @@ mod tests {
         let path = dir.path().join("vault.oxid");
 
         let mut vault = Vault::new();
-        vault.create(&path, "TestVault", "correct-horse-battery-staple").unwrap();
+        vault
+            .create(&path, "TestVault", "correct-horse-battery-staple")
+            .unwrap();
         vault.lock();
 
         let mut session = Vault::new();

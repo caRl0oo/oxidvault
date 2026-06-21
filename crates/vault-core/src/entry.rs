@@ -146,7 +146,9 @@ impl SecretPayload {
     /// Overwrites sensitive string fields in RAM before lock/drop.
     pub fn zeroize_secrets(&mut self) {
         match self {
-            Self::WebLogin { password, notes, .. } => {
+            Self::WebLogin {
+                password, notes, ..
+            } => {
                 password.zeroize();
                 if let Some(n) = notes {
                     n.zeroize();
@@ -207,15 +209,22 @@ impl SecretPayload {
     }
 
     /// Extracts a sensitive field into a zeroizing buffer (still clones from in-memory entry).
-    pub fn extract_field(&self, field: SecretField) -> Result<Zeroizing<String>, crate::error::VaultError> {
+    pub fn extract_field(
+        &self,
+        field: SecretField,
+    ) -> Result<Zeroizing<String>, crate::error::VaultError> {
         let field = self.resolve_field(field);
         let value = match (self, field) {
             (Self::WebLogin { password, .. }, SecretField::Password) => password.clone(),
             (Self::WebLogin { notes: Some(n), .. }, SecretField::Notes) => n.clone(),
             (Self::SshKey { private_key, .. }, SecretField::PrivateKey) => private_key.clone(),
-            (Self::SshKey {
-                passphrase: Some(p), ..
-            }, SecretField::Passphrase) => p.clone(),
+            (
+                Self::SshKey {
+                    passphrase: Some(p),
+                    ..
+                },
+                SecretField::Passphrase,
+            ) => p.clone(),
             (Self::ApiToken { token, .. }, SecretField::Token) => token.clone(),
             (Self::Database { password, .. }, SecretField::Password) => password.clone(),
             (Self::NetworkWifi { password, .. }, SecretField::Password) => password.clone(),
@@ -300,11 +309,19 @@ impl SecretPayload {
                 db_type,
                 ..
             } => Some(format!("{db_type} · {host}:{port}/{database_name}")),
-            Self::NetworkWifi { ssid, encryption_type, .. } => {
-                Some(format!("{ssid} ({encryption_type})"))
-            }
+            Self::NetworkWifi {
+                ssid,
+                encryption_type,
+                ..
+            } => Some(format!("{ssid} ({encryption_type})")),
             Self::SecureNote { content } => {
-                let preview: String = content.lines().next().unwrap_or("").chars().take(48).collect();
+                let preview: String = content
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(48)
+                    .collect();
                 if preview.is_empty() {
                     None
                 } else if content.len() > preview.len() {
@@ -445,7 +462,10 @@ fn normalize_tags(tags: Vec<String>) -> Vec<String> {
         if trimmed.is_empty() {
             continue;
         }
-        if !out.iter().any(|existing: &String| existing.eq_ignore_ascii_case(trimmed)) {
+        if !out
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(trimmed))
+        {
             out.push(trimmed.to_string());
         }
     }

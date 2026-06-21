@@ -146,7 +146,10 @@ fn write_vault_bytes(
     Ok(())
 }
 
-pub fn read_vault_file(path: &Path, key: &MasterKey) -> Result<(VaultFileMeta, VaultPayload), VaultError> {
+pub fn read_vault_file(
+    path: &Path,
+    key: &MasterKey,
+) -> Result<(VaultFileMeta, VaultPayload), VaultError> {
     let mut file = fs::File::open(path)?;
     let meta = read_header(&mut file)?;
     let mut nonce = [0u8; NONCE_LEN];
@@ -236,7 +239,7 @@ fn read_header(reader: &mut impl Read) -> Result<VaultFileMeta, VaultError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{MasterKey, random_salt};
+    use crate::crypto::{random_salt, MasterKey};
     use crate::entry::{SecretEntry, SecretEntryInput, SecretPayload};
     use std::io::Write;
     use tempfile::tempdir;
@@ -286,7 +289,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        write_vault_file(&path, "MyVault", kdf, &salt, &key, &sample_payload().entries).unwrap();
+        write_vault_file(
+            &path,
+            "MyVault",
+            kdf,
+            &salt,
+            &key,
+            &sample_payload().entries,
+        )
+        .unwrap();
         assert!(path.exists());
         assert!(!temp_vault_path(&path).unwrap().exists());
 
@@ -312,7 +323,11 @@ mod tests {
 
         let tmp = temp_vault_path(&path).unwrap();
         assert_eq!(tmp.parent(), path.parent());
-        assert!(tmp.file_name().unwrap().to_string_lossy().ends_with(".oxid.tmp"));
+        assert!(tmp
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(".oxid.tmp"));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAuditLogs } from "@/lib/ipc";
+import { pickAuditExportPath } from "@/lib/dialog";
+import { exportAuditLog, getAuditLogs } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
 import {
   formatAuditAction,
@@ -19,6 +20,8 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -32,6 +35,24 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
       setLoading(false);
     }
   }, [limit]);
+
+  const handleExport = useCallback(async () => {
+    setExportMessage(null);
+    const selection = await pickAuditExportPath();
+    if (!selection) {
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await exportAuditLog(selection.path, selection.format);
+      setExportMessage(`Export gespeichert: ${selection.path}`);
+    } catch (e) {
+      setExportMessage(formatVaultError(e));
+    } finally {
+      setExporting(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadLogs();
@@ -161,6 +182,14 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
         />
         <button
           type="button"
+          onClick={() => void handleExport()}
+          disabled={exporting || loading}
+          className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
+        >
+          {exporting ? "Export…" : "Export"}
+        </button>
+        <button
+          type="button"
           onClick={() => void loadLogs()}
           disabled={loading}
           className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
@@ -168,6 +197,20 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
           Aktualisieren
         </button>
       </div>
+
+      {exportMessage ? (
+        <div className="border-b border-vault-border px-6 py-2">
+          <p
+            className={`font-mono text-xs ${
+              exportMessage.startsWith("Export gespeichert")
+                ? "text-vault-success"
+                : "text-vault-danger"
+            }`}
+          >
+            {exportMessage}
+          </p>
+        </div>
+      ) : null}
 
       {renderBody()}
     </div>

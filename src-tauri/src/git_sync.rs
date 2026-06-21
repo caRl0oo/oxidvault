@@ -85,12 +85,10 @@ fn is_benign_pull_error(err: &str) -> bool {
     lower.contains("no tracking information")
         || lower.contains("couldn't find remote ref")
         || lower.contains("does not appear to be a git repository")
-        || lower.contains("could not read from remote")
-        && lower.contains("empty")
+        || lower.contains("could not read from remote") && lower.contains("empty")
         || lower.contains("fatal: not a git repository")
         || lower.contains("no commits yet")
-        || lower.contains("refspec")
-        && lower.contains("not found")
+        || lower.contains("refspec") && lower.contains("not found")
 }
 
 fn git_has_local_changes(repo: &Path) -> Result<bool, String> {
@@ -162,6 +160,8 @@ mod tests {
         assert!(is_benign_pull_error(
             "There is no tracking information for the current branch."
         ));
-        assert!(!is_benign_pull_error("fatal: unable to access 'https://github.com/': Could not resolve host"));
+        assert!(!is_benign_pull_error(
+            "fatal: unable to access 'https://github.com/': Could not resolve host"
+        ));
     }
 }

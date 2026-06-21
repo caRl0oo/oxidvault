@@ -57,11 +57,13 @@ struct AuditedCredential<'a> {
 pub fn audit_entries(entries: &[SecretEntry]) -> SecurityAuditReport {
     let credentials: Vec<AuditedCredential<'_>> = entries
         .iter()
-        .filter_map(|entry| extract_credential(entry).map(|secret| AuditedCredential {
-            entry_id: &entry.id,
-            title: &entry.title,
-            secret,
-        }))
+        .filter_map(|entry| {
+            extract_credential(entry).map(|secret| AuditedCredential {
+                entry_id: &entry.id,
+                title: &entry.title,
+                secret,
+            })
+        })
         .collect();
 
     let total_audited = credentials.len();
@@ -95,7 +97,10 @@ pub fn audit_entries(entries: &[SecretEntry]) -> SecurityAuditReport {
         duplicate_entry_count += group.len();
         duplicate_groups.push(DuplicatePasswordGroup {
             entry_ids: group.iter().map(|(id, _)| (*id).to_string()).collect(),
-            titles: group.iter().map(|(_, title)| (*title).to_string()).collect(),
+            titles: group
+                .iter()
+                .map(|(_, title)| (*title).to_string())
+                .collect(),
             count: group.len(),
         });
     }
@@ -181,7 +186,10 @@ fn compute_score(
     let weak_ratio = weak_count as f64 / total as f64;
     let weak_penalty = (weak_ratio * 45.0).min(45.0);
 
-    let duplicate_excess: usize = duplicate_groups.iter().map(|g| g.count.saturating_sub(1)).sum();
+    let duplicate_excess: usize = duplicate_groups
+        .iter()
+        .map(|g| g.count.saturating_sub(1))
+        .sum();
     let dup_penalty = (duplicate_excess as f64 * 8.0).min(45.0);
 
     let score = (100.0 - weak_penalty - dup_penalty).round();

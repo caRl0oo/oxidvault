@@ -92,10 +92,7 @@ pub fn load_admin_policy() -> Result<Option<AdminPolicy>, VaultError> {
 
     let raw = fs::read_to_string(&path)?;
     let policy = serde_json::from_str(&raw).map_err(|err| {
-        VaultError::Other(format!(
-            "invalid admin policy at {}: {err}",
-            path.display()
-        ))
+        VaultError::Other(format!("invalid admin policy at {}: {err}", path.display()))
     })?;
     Ok(Some(policy))
 }
@@ -128,7 +125,10 @@ pub fn resolve_config_with_admin(
 ) -> ResolvedConfig {
     ResolvedConfig {
         admin_policy_active: admin_policy_active(),
-        force_lock_on_minimize: merge_bool(user.force_lock_on_minimize, admin.force_lock_on_minimize),
+        force_lock_on_minimize: merge_bool(
+            user.force_lock_on_minimize,
+            admin.force_lock_on_minimize,
+        ),
         auto_lock_seconds: merge_u32(user.auto_lock_seconds, admin.auto_lock_seconds),
         git_sync_enabled: merge_bool(user.git_sync_enabled, admin.git_sync_enabled),
         min_master_password_len: merge_u32(

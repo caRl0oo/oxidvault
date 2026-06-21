@@ -113,6 +113,13 @@ export async function getAuditLogs(limit: number): Promise<AuditLogEntry[]> {
   return invoke<AuditLogEntry[]>("get_audit_logs", { limit });
 }
 
+export async function exportAuditLog(
+  targetPath: string,
+  format: "json" | "csv",
+): Promise<void> {
+  return invoke<void>("export_audit_log", { targetPath, format });
+}
+
 export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }

@@ -34,9 +34,8 @@ pub fn write_message(stdout: &mut impl Write, json: &[u8]) -> io::Result<()> {
         ));
     }
 
-    let len = u32::try_from(json.len()).map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "response length overflow")
-    })?;
+    let len = u32::try_from(json.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "response length overflow"))?;
 
     stdout.write_all(&len.to_le_bytes())?;
     stdout.write_all(json)?;

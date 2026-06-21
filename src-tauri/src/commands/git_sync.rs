@@ -65,11 +65,10 @@ pub async fn sync_vault_git(
     };
 
     let vault_path_buf = PathBuf::from(vault_path);
-    let result = tokio::task::spawn_blocking(move || {
-        git_sync::sync_vault(&vault_path_buf, &remote_url)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let result =
+        tokio::task::spawn_blocking(move || git_sync::sync_vault(&vault_path_buf, &remote_url))
+            .await
+            .map_err(|e| e.to_string())??;
 
     if result.vault_reloaded {
         let mut vault = state.vault.lock().map_err(|e| e.to_string())?;

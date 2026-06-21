@@ -83,8 +83,8 @@ pub fn encrypt(
     key: &MasterKey,
     plaintext: &[u8],
 ) -> Result<([u8; NONCE_LEN], Vec<u8>), VaultError> {
-    let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
-        .map_err(|e| VaultError::Crypto(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|e| VaultError::Crypto(e.to_string()))?;
     let nonce_bytes = random_nonce();
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
@@ -99,8 +99,8 @@ pub fn decrypt(
     nonce: &[u8; NONCE_LEN],
     ciphertext: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, VaultError> {
-    let cipher = Aes256Gcm::new_from_slice(key.as_bytes())
-        .map_err(|e| VaultError::Crypto(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|e| VaultError::Crypto(e.to_string()))?;
     let nonce = Nonce::from_slice(nonce);
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
@@ -157,13 +157,17 @@ mod tests {
     #[test]
     fn test_nonce_uniqueness() {
         let salt = [0xABu8; SALT_LEN];
-        let key = MasterKey::derive_from_password("nonce-test", &salt, KdfParams::default()).unwrap();
+        let key =
+            MasterKey::derive_from_password("nonce-test", &salt, KdfParams::default()).unwrap();
         let plaintext = b"same plaintext for both encryptions";
 
         let (nonce_a, ciphertext_a) = encrypt(&key, plaintext).unwrap();
         let (nonce_b, ciphertext_b) = encrypt(&key, plaintext).unwrap();
 
-        assert_ne!(nonce_a, nonce_b, "each encrypt must draw a fresh random nonce");
+        assert_ne!(
+            nonce_a, nonce_b,
+            "each encrypt must draw a fresh random nonce"
+        );
         assert_ne!(
             ciphertext_a, ciphertext_b,
             "identical plaintext must produce distinct ciphertext when nonces differ"

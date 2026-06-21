@@ -1,7 +1,7 @@
 //! Hostname / URL matching for web-login autofill (least-privilege lookup).
 
-use crate::probe::resolve_probe_target;
 use crate::entry::SecretPayload;
+use crate::probe::resolve_probe_target;
 
 /// Normalizes a hostname for comparison (`WWW.` stripped, lowercase).
 pub fn normalize_hostname(host: &str) -> String {
@@ -42,7 +42,8 @@ pub fn score_web_login_url_match(entry_url: &str, page_hostname: &str) -> UrlMat
             if entry_host == page {
                 return UrlMatchScore::ExactHost;
             }
-            if page.ends_with(&format!(".{entry_host}")) || entry_host.ends_with(&format!(".{page}"))
+            if page.ends_with(&format!(".{entry_host}"))
+                || entry_host.ends_with(&format!(".{page}"))
             {
                 return UrlMatchScore::Subdomain;
             }

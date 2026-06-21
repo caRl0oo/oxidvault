@@ -765,6 +765,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `check_entries_reachability` | `entry_ids: String[]` | `EntryReachabilityStatus[]` | Async TCP-Reachability für Infrastruktur-Einträge | ✅ |
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
+| `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?` | `AppSettings` | Git-Sync-Konfiguration speichern | ✅ |
@@ -1054,6 +1055,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `checkEntriesReachability(entryIds)` | `check_entries_reachability` |
 | `auditVaultSecurity()` | `audit_vault_security` |
 | `getAuditLogs(limit)` | `get_audit_logs` |
+| `exportAuditLog(targetPath, format)` | `export_audit_log` |
 | `getAppSettings()` | `get_app_settings` |
 | `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
@@ -1617,6 +1619,7 @@ self.audit_logger.log(AuditAction::EntryCreated, Some(&summary.id))?;
 | **Aktionen** | Technische `AuditAction`-Enums → deutsche Beschreibungstexte (`auditLogLabels.ts`) |
 | **Suche** | Clientseitiger Filter nach Aktion, Eintrag-ID, Hash, formatiertem Zeitstempel |
 | **Sicherheitshinweis** | Info-Banner: keine Passwörter oder Benutzernamen im Log |
+| **Export** | Button **Export** → Save-Dialog (JSON/CSV-Filter) → `export_audit_log` |
 
 ---
 
@@ -1789,6 +1792,39 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 - [ ] **Verzeichnisstruktur** (neue Crates, Module, Plugins)
 - [ ] **Architektur-Entscheidungen** (ADRs inline dokumentieren)
 
+### Dual-Format Audit Reporting & Integritätsprüfung
+
+> **Status:** ✅ `audit_export.rs` · `export_audit_log` · Export-Button im Tab **Aktivität**
+
+| Aspekt | Detail |
+|---|---|
+| **Module** | `crates/vault-core/src/audit_export.rs` |
+| **Formate** | `ExportFormat::Json` · `ExportFormat::Csv` |
+| **API** | `export_audit_report(vault_path, target_path, format) -> Result<PathBuf, VaultError>` |
+| **Integritätsprüfung** | Vor Export: `verify_audit_chain` über gesamtes `{vault}.audit.log` — Abbruch mit `VaultError::AuditLogCorrupted` bei unterbrochener Hash-Kette |
+| **JSON-Report** | Objekt mit kryptographischem `integrity`-Header (`reportHash` = SHA-256 über Version, Zeitstempel, Chain-Tail-Hash, Einträge) plus `entries[]` inkl. `prevHash` |
+| **CSV-Report** | Spalten: `timestamp_utc`, `action`, `entry_id`, `prev_hash`, `entry_hash` |
+| **Tauri Command** | `export_audit_log(target_path, format)` — `format`: `"json"` oder `"csv"` |
+| **UI** | Save-Dialog (`dialog::save`) mit Filter **JSON Audit Report (.json)** / **CSV Audit Report (.csv)**; Dateiendung bestimmt `format` |
+
+**JSON-Integritätsheader (Auszug):**
+
+```json
+{
+  "integrity": {
+    "reportVersion": "1.0",
+    "exportedAtUtc": "2025-06-20T21:00:00.123Z",
+    "sourceVaultPath": "C:/vault/team.oxid",
+    "sourceLogPath": "C:/vault/team.audit.log",
+    "entryCount": 42,
+    "chainVerified": true,
+    "chainTailHash": "a1b2…",
+    "reportHash": "c3d4…"
+  },
+  "entries": [ … ]
+}
+```
+
 ### Changelog
 
 | Datum | Version | Änderung |
@@ -1828,6 +1864,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Lock-Assertion:** `unlock` + Smart-Start (`attach_locked`) mit `assert_lock_valid`, `LockLost`, Audit `VaultUnlocked` mit Lock-ID |
 | 2025-06-20 | 1.0.0 | **Admin-GPO:** `policy/admin.rs`, `policy.json` (ProgramData/etc), `ResolvedConfig`, `get_resolved_config`, UI-`disabled`-Flags |
 | 2025-06-20 | 1.0.0 | **Audit-Log UI:** `get_audit_logs`, `read_audit_logs`/`AuditLogEntry`, Tab **Aktivität**, `AuditLogTable.tsx` (Suche, lokale Zeit, DE-Labels) |
+| 2025-06-20 | 1.0.0 | **Dual-Format Audit Export:** `audit_export.rs`, `export_audit_log`, Hash-Ketten-Validierung, JSON-Integritätsheader, CSV-Export, UI Save-Dialog |
 
 ---
 

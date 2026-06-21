@@ -20,6 +20,8 @@ pub enum VaultError {
     FileExists,
     #[error("entry not found")]
     EntryNotFound,
+    #[error("audit log corrupted — hash chain integrity check failed")]
+    AuditLogCorrupted,
     #[error("invalid vault file")]
     InvalidFormat,
     #[error("weak master password: {0}")]

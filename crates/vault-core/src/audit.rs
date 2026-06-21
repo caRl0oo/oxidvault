@@ -85,7 +85,12 @@ impl AuditLogger {
         }
     }
 
-    fn build_record(timestamp: &str, action: AuditAction, entry_id: &str, prev_hash: &str) -> String {
+    fn build_record(
+        timestamp: &str,
+        action: AuditAction,
+        entry_id: &str,
+        prev_hash: &str,
+    ) -> String {
         format!(
             "[{timestamp}] [{action}] [{entry_id}] prev_hash={prev_hash}",
             timestamp = timestamp,
@@ -106,20 +111,16 @@ impl AuditLogger {
             .as_ref()
             .ok_or_else(|| VaultError::Other("audit log not configured".into()))?;
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
         file.write_all(line.as_bytes())?;
         file.write_all(b"\n")?;
         file.flush()?;
         Ok(())
     }
-}
 
-impl AuditLog for AuditLogger {
-    fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
+    /// Records a metadata-only audit event (no secrets).
+    pub fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
         if self.path.is_none() {
             return Ok(());
         }
@@ -139,6 +140,12 @@ impl AuditLog for AuditLogger {
         self.append_line(&line)?;
         *last_hash = entry_hash;
         Ok(())
+    }
+}
+
+impl AuditLog for AuditLogger {
+    fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
+        AuditLogger::log(self, action, entry_id)
     }
 }
 
@@ -174,10 +181,8 @@ pub fn read_audit_logs(vault_path: &Path, limit: usize) -> Result<Vec<AuditLogEn
     }
 
     let content = std::fs::read_to_string(&log_path)?;
-    let mut entries: Vec<AuditLogEntry> = content
-        .lines()
-        .filter_map(parse_audit_log_line)
-        .collect();
+    let mut entries: Vec<AuditLogEntry> =
+        content.lines().filter_map(parse_audit_log_line).collect();
 
     if entries.len() > limit {
         entries = entries.split_off(entries.len().saturating_sub(limit));
@@ -225,10 +230,8 @@ fn parse_bracket_field(line: &str, index: usize) -> Option<&str> {
 /// Creates a temporary probe file, applies platform ACLs/permissions, verifies them, and removes
 /// the probe. Per-vault `{vault}.audit.log` files are secured again in [`AuditLogger::for_vault`].
 pub fn init() -> Result<(), VaultError> {
-    let probe_path = std::env::temp_dir().join(format!(
-        "oxidvault-audit-init-{}.log",
-        std::process::id()
-    ));
+    let probe_path =
+        std::env::temp_dir().join(format!("oxidvault-audit-init-{}.log", std::process::id()));
 
     audit_secure::verify_platform_audit_security(&probe_path)?;
 
@@ -266,9 +269,8 @@ fn read_last_entry_hash(path: &Path) -> Result<String, VaultError> {
         .find(|line| !line.trim().is_empty())
         .ok_or_else(|| VaultError::Other("audit log contains no parseable lines".into()))?;
 
-    parse_entry_hash(last_line).ok_or_else(|| {
-        VaultError::Other(format!("audit log line missing entry_hash: {last_line}"))
-    })
+    parse_entry_hash(last_line)
+        .ok_or_else(|| VaultError::Other(format!("audit log line missing entry_hash: {last_line}")))
 }
 
 fn parse_entry_hash(line: &str) -> Option<String> {
@@ -283,9 +285,8 @@ pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
     let mut prev_hash = GENESIS_HASH.to_string();
 
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
-        let entry_hash = parse_entry_hash(line).ok_or_else(|| {
-            VaultError::Other(format!("malformed audit log line: {line}"))
-        })?;
+        let entry_hash = parse_entry_hash(line)
+            .ok_or_else(|| VaultError::Other(format!("malformed audit log line: {line}")))?;
 
         let record = line
             .rsplit_once(" entry_hash=")
@@ -293,16 +294,12 @@ pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
             .ok_or_else(|| VaultError::Other(format!("malformed audit log line: {line}")))?;
 
         if !record.contains(&format!("prev_hash={prev_hash}")) {
-            return Err(VaultError::Other(
-                "audit log chain broken — prev_hash mismatch".into(),
-            ));
+            return Err(VaultError::AuditLogCorrupted);
         }
 
         let expected = AuditLogger::compute_hash(record);
         if expected != entry_hash {
-            return Err(VaultError::Other(
-                "audit log chain broken — entry_hash mismatch".into(),
-            ));
+            return Err(VaultError::AuditLogCorrupted);
         }
 
         prev_hash = entry_hash;
@@ -314,6 +311,7 @@ pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::VaultError;
     use tempfile::tempdir;
 
     #[test]
@@ -405,6 +403,6 @@ mod tests {
         std::fs::write(&log_path, content).unwrap();
 
         let err = verify_audit_chain(&log_path).expect_err("tampered chain");
-        assert!(err.to_string().contains("chain broken"));
+        assert!(matches!(err, VaultError::AuditLogCorrupted));
     }
 }

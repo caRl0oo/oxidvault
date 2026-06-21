@@ -9,6 +9,7 @@ const ERROR_MAP: Record<string, string> = {
   "invalid vault file": "Ungültige oder beschädigte .oxid-Datei.",
   "vault not initialized": "Vault ist nicht initialisiert.",
   "no vault file loaded": "Keine Vault-Datei geladen.",
+  "audit log corrupted": "Audit-Log ist beschädigt — Export abgebrochen (Hash-Kette unterbrochen).",
   "url ist leer": "URL ist leer.",
   "url ist ungültig": "URL ist ungültig.",
   "url muss mit http:// oder https:// beginnen": "URL muss mit http:// oder https:// beginnen.",

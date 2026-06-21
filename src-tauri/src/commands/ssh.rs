@@ -15,17 +15,17 @@ pub fn ssh_connect(
         extract_ssh_credentials(&vault, &entry_id)?
     };
 
-    state.ssh.connect(
-        app,
-        &host,
-        &username,
-        &private_key,
-        passphrase.as_deref(),
-    )
+    state
+        .ssh
+        .connect(app, &host, &username, &private_key, passphrase.as_deref())
 }
 
 #[tauri::command]
-pub fn ssh_write(state: State<'_, AppState>, session_id: String, data: String) -> Result<(), String> {
+pub fn ssh_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
     state.ssh.write(&session_id, data.as_bytes())
 }
 

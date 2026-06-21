@@ -19,3 +19,42 @@ export async function pickVaultOpenPath(): Promise<string | null> {
   });
   return typeof path === "string" ? path : null;
 }
+
+export type AuditExportFormat = "json" | "csv";
+
+export interface AuditExportSelection {
+  path: string;
+  format: AuditExportFormat;
+}
+
+function normalizeAuditExportPath(path: string, format: AuditExportFormat): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".json") || lower.endsWith(".csv")) {
+    return path;
+  }
+  return `${path}.${format}`;
+}
+
+function auditExportFormatFromPath(path: string): AuditExportFormat {
+  return path.toLowerCase().endsWith(".csv") ? "csv" : "json";
+}
+
+export async function pickAuditExportPath(): Promise<AuditExportSelection | null> {
+  const path = await save({
+    defaultPath: "audit-report.json",
+    filters: [
+      { name: "JSON Audit Report (.json)", extensions: ["json"] },
+      { name: "CSV Audit Report (.csv)", extensions: ["csv"] },
+    ],
+  });
+
+  if (!path) {
+    return null;
+  }
+
+  const format = auditExportFormatFromPath(path);
+  return {
+    path: normalizeAuditExportPath(path, format),
+    format,
+  };
+}

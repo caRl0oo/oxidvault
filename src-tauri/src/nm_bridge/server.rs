@@ -22,10 +22,7 @@ async fn run_server(app: AppHandle) -> Result<(), String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("bridge bind failed: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| e.to_string())?
-        .port();
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let token = Uuid::new_v4().to_string();
     session::remove_session();
     session::write_session(port, &token)?;
@@ -95,7 +92,8 @@ async fn write_message_async(
         return Err("bridge response too large".into());
     }
 
-    let len = u32::try_from(json.len()).map_err(|_| "bridge response length overflow".to_string())?;
+    let len =
+        u32::try_from(json.len()).map_err(|_| "bridge response length overflow".to_string())?;
     stream
         .write_all(&len.to_le_bytes())
         .await

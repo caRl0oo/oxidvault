@@ -91,10 +91,10 @@ fn set_windows_dacl(path: &Path) -> Result<(), VaultError> {
     use windows_sys::Win32::Security::Authorization::{SetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
         AddAccessAllowedAce, CreateWellKnownSid, GetLengthSid, GetTokenInformation, InitializeAcl,
-        InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser, ACL, ACL_REVISION,
-        ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-        SECURITY_DESCRIPTOR, SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_USER,
-        WinBuiltinAdministratorsSid,
+        InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser,
+        WinBuiltinAdministratorsSid, ACCESS_ALLOWED_ACE, ACL, ACL_REVISION,
+        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_DESCRIPTOR,
+        SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_GENERIC_WRITE};
     use windows_sys::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
@@ -107,9 +107,8 @@ fn set_windows_dacl(path: &Path) -> Result<(), VaultError> {
         .collect();
 
     let mut process_token: HANDLE = ptr::null_mut();
-    let token_opened = unsafe {
-        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut process_token) != 0
-    };
+    let token_opened =
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut process_token) != 0 };
     if !token_opened {
         return Err(win32_error("OpenProcessToken"));
     }
@@ -170,8 +169,9 @@ fn set_windows_dacl(path: &Path) -> Result<(), VaultError> {
         let user_sid_len = unsafe { GetLengthSid(user_sid) };
         let admin_sid_len = unsafe { GetLengthSid(admin_sid) };
         let ace_size = size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>();
-        let acl_size = (size_of::<ACL>() + ace_size * 2 + user_sid_len as usize + admin_sid_len as usize)
-            as u32;
+        let acl_size =
+            (size_of::<ACL>() + ace_size * 2 + user_sid_len as usize + admin_sid_len as usize)
+                as u32;
 
         let mut acl_buf = vec![0u8; acl_size as usize];
         let acl = acl_buf.as_mut_ptr().cast::<ACL>();
@@ -249,8 +249,8 @@ fn verify_windows_dacl(path: &Path) -> Result<(), VaultError> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        ACL, CreateWellKnownSid, EqualSid, GetAce, DACL_SECURITY_INFORMATION,
-        SECURITY_MAX_SID_SIZE, WinBuiltinGuestsSid, WinWorldSid,
+        CreateWellKnownSid, EqualSid, GetAce, WinBuiltinGuestsSid, WinWorldSid, ACL,
+        DACL_SECURITY_INFORMATION, SECURITY_MAX_SID_SIZE,
     };
     use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
 

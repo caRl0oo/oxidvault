@@ -1,5 +1,5 @@
-mod commands;
 mod clipboard;
+mod commands;
 mod git_sync;
 mod native_messaging;
 mod nm_bridge;
@@ -51,6 +51,7 @@ pub fn run() {
             commands::reachability::check_entries_reachability,
             commands::audit::audit_vault_security,
             commands::audit::get_audit_logs,
+            commands::audit::export_audit_log,
             commands::git_sync::get_app_settings,
             commands::git_sync::update_git_sync_settings,
             commands::git_sync::sync_vault_git,
