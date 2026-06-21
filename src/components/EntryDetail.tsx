@@ -1,30 +1,38 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
 import { useSecureCopy } from "@/hooks/useSecureCopy";
 import { formatVaultError } from "@/lib/errors";
 import { revealSecret } from "@/lib/ipc";
 import { openWebsiteUrl, validateHttpUrl } from "@/lib/openWebsite";
+import { revealToggleLabel } from "@/lib/revealLabels";
+import { runAsync } from "@/lib/runAsync";
+import { getDbTypeLabel, getWifiEncryptionLabel } from "@/lib/vaultLabels";
 import { ReachabilityDot } from "@/components/ReachabilityDot";
 import { ExpiryBadge } from "@/components/ExpiryBadge";
 import type { ReachabilityState } from "@/types/reachability";
 import type { SecretEntryPublic, SecretField } from "@/types/vault";
-import { dbTypeLabel, isProbeableEntryType, wifiEncryptionLabel } from "@/types/vault";
+import { isProbeableEntryType } from "@/types/vault";
 
 interface EntryDetailProps {
-  entry: SecretEntryPublic;
-  onLock: () => void;
-  onEdit: () => void;
-  onQuickConnect?: (entryId: string) => void;
-  sshConnecting?: boolean;
-  reachability?: ReachabilityState;
+  readonly entry: SecretEntryPublic;
+  readonly onLock: () => void;
+  readonly onEdit: () => void;
+  readonly onQuickConnect?: (entryId: string) => void;
+  readonly sshConnecting?: boolean;
+  readonly reachability?: ReachabilityState;
 }
 
 /** Best-effort overwrite of a short-lived secret string in JS memory. */
 function discardRevealed(value: string | null): null {
   if (value) {
-    value.replace(/./g, "\0");
+    absorbDiscarded(value.replace(/./g, "\0"));
   }
   return null;
+}
+
+function absorbDiscarded(_discarded: string): void {
+  /* Best-effort: consume replaced string so the caller can drop its reference. */
 }
 
 export function EntryDetail({
@@ -34,8 +42,9 @@ export function EntryDetail({
   onQuickConnect,
   sshConnecting,
   reachability,
-}: EntryDetailProps) {
-  const { copy, copySecret, getLabel } = useSecureCopy();
+}: Readonly<EntryDetailProps>) {
+  const { t } = useTranslation();
+  const { copy, copySecret, getLabel, isCopied } = useSecureCopy();
   const prefix = entry.id;
   const [openingWebsite, setOpeningWebsite] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
@@ -76,7 +85,7 @@ export function EntryDetail({
             onClick={onEdit}
             className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-accent hover:text-vault-accent"
           >
-            Bearbeiten
+            {t("common.edit")}
           </button>
         </header>
 
@@ -101,21 +110,21 @@ export function EntryDetail({
         {entry.type === "web_login" && (
           <>
             <div className="space-y-1">
-              <span className="font-mono text-[11px] text-vault-muted">URL</span>
+              <span className="font-mono text-[11px] text-vault-muted">{t("entry.url")}</span>
               <div className="flex items-start gap-2">
                 <code className="flex-1 truncate rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm">
                   {entry.url}
                 </code>
                 <button
                   type="button"
-                  onClick={() => void handleOpenWebsite()}
+                  onClick={() => runAsync(handleOpenWebsite)}
                   disabled={openingWebsite || !canOpenWebsite}
-                  title="Website öffnen"
-                  aria-label="Website öffnen"
+                  title={t("entry.openWebsite")}
+                  aria-label={t("entry.openWebsite")}
                   className="flex shrink-0 items-center gap-1 rounded border border-vault-border px-2.5 py-2 font-mono text-xs text-vault-accent transition hover:border-vault-accent hover:bg-vault-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span aria-hidden="true">{openingWebsite ? "…" : "↗"}</span>
-                  <span className="hidden sm:inline">Website öffnen</span>
+                  <span className="hidden sm:inline">{t("entry.openWebsite")}</span>
                 </button>
               </div>
               {websiteError && (
@@ -123,31 +132,36 @@ export function EntryDetail({
               )}
             </div>
             <PlainField
-              label="Benutzername"
+              label={t("entry.username")}
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
-              onCopy={() => void copy(`${prefix}-username`, entry.username)}
+              copied={isCopied(`${prefix}-username`)}
+              onCopy={() => runAsync(() => copy(`${prefix}-username`, entry.username))}
             />
             {entry.has_password && (
               <SecureField
                 entryId={entry.id}
                 field="password"
-                label="Passwort"
+                label={t("entry.password")}
                 copyFieldId={`${prefix}-password`}
                 copyLabel={getLabel(`${prefix}-password`)}
-                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+                copied={isCopied(`${prefix}-password`)}
+                onCopy={() =>
+                  runAsync(() => copySecret(`${prefix}-password`, entry.id, "password"))
+                }
               />
             )}
             {entry.has_notes && (
               <SecureField
                 entryId={entry.id}
                 field="notes"
-                label="Notizen"
+                label={t("entry.notes")}
                 multiline
                 copyFieldId={`${prefix}-notes`}
                 copyLabel={getLabel(`${prefix}-notes`)}
-                onCopy={() => void copySecret(`${prefix}-notes`, entry.id, "notes")}
+                copied={isCopied(`${prefix}-notes`)}
+                onCopy={() => runAsync(() => copySecret(`${prefix}-notes`, entry.id, "notes"))}
               />
             )}
           </>
@@ -162,22 +176,23 @@ export function EntryDetail({
                 onClick={() => onQuickConnect?.(entry.id)}
                 className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
               >
-                {sshConnecting ? "Verbinde…" : "Quick Connect"}
+                {sshConnecting ? t("entry.connecting") : t("entry.quickConnect")}
               </button>
             </div>
-            <PlainField label="Server / IP" value={entry.host} />
+            <PlainField label={t("entry.serverIp")} value={entry.host} />
             <PlainField
-              label="Benutzername"
+              label={t("entry.username")}
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
-              onCopy={() => void copy(`${prefix}-username`, entry.username)}
+              copied={isCopied(`${prefix}-username`)}
+              onCopy={() => runAsync(() => copy(`${prefix}-username`, entry.username))}
             />
             {entry.has_private_key && (
               <SecureField
                 entryId={entry.id}
                 field="private_key"
-                label="Private Key"
+                label={t("entry.privateKey")}
                 multiline
                 revealOnly
               />
@@ -186,10 +201,13 @@ export function EntryDetail({
               <SecureField
                 entryId={entry.id}
                 field="passphrase"
-                label="Passphrase"
+                label={t("entry.passphrase")}
                 copyFieldId={`${prefix}-passphrase`}
                 copyLabel={getLabel(`${prefix}-passphrase`)}
-                onCopy={() => void copySecret(`${prefix}-passphrase`, entry.id, "passphrase")}
+                copied={isCopied(`${prefix}-passphrase`)}
+                onCopy={() =>
+                  runAsync(() => copySecret(`${prefix}-passphrase`, entry.id, "passphrase"))
+                }
               />
             )}
           </>
@@ -197,15 +215,16 @@ export function EntryDetail({
 
         {entry.type === "api_token" && (
           <>
-            <PlainField label="Service" value={entry.service} />
+            <PlainField label={t("entry.service")} value={entry.service} />
             {entry.has_token && (
               <SecureField
                 entryId={entry.id}
                 field="token"
-                label="API-Key / Token"
+                label={t("entry.apiToken")}
                 copyFieldId={`${prefix}-token`}
                 copyLabel={getLabel(`${prefix}-token`)}
-                onCopy={() => void copySecret(`${prefix}-token`, entry.id, "token")}
+                copied={isCopied(`${prefix}-token`)}
+                onCopy={() => runAsync(() => copySecret(`${prefix}-token`, entry.id, "token"))}
               />
             )}
           </>
@@ -213,27 +232,31 @@ export function EntryDetail({
 
         {entry.type === "database" && (
           <>
-            <PlainField label="Host / IP" value={entry.host} />
+            <PlainField label={t("entry.hostIp")} value={entry.host} />
             <div className="grid grid-cols-2 gap-3">
-              <PlainField label="Port" value={String(entry.port)} />
-              <PlainField label="DB-Typ" value={dbTypeLabel(entry.db_type)} />
+              <PlainField label={t("entry.port")} value={String(entry.port)} />
+              <PlainField label={t("entry.dbType")} value={getDbTypeLabel(entry.db_type)} />
             </div>
-            <PlainField label="Datenbank" value={entry.database_name} />
+            <PlainField label={t("entry.database")} value={entry.database_name} />
             <PlainField
-              label="Benutzername"
+              label={t("entry.username")}
               value={entry.username}
               copyable
               copyLabel={getLabel(`${prefix}-username`)}
-              onCopy={() => void copy(`${prefix}-username`, entry.username)}
+              copied={isCopied(`${prefix}-username`)}
+              onCopy={() => runAsync(() => copy(`${prefix}-username`, entry.username))}
             />
             {entry.has_password && (
               <SecureField
                 entryId={entry.id}
                 field="password"
-                label="Passwort"
+                label={t("entry.password")}
                 copyFieldId={`${prefix}-password`}
                 copyLabel={getLabel(`${prefix}-password`)}
-                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+                copied={isCopied(`${prefix}-password`)}
+                onCopy={() =>
+                  runAsync(() => copySecret(`${prefix}-password`, entry.id, "password"))
+                }
               />
             )}
           </>
@@ -241,19 +264,22 @@ export function EntryDetail({
 
         {entry.type === "network_wifi" && (
           <>
-            <PlainField label="SSID" value={entry.ssid} />
+            <PlainField label={t("entry.ssid")} value={entry.ssid} />
             <PlainField
-              label="Verschlüsselung"
-              value={wifiEncryptionLabel(entry.encryption_type)}
+              label={t("entry.encryption")}
+              value={getWifiEncryptionLabel(entry.encryption_type)}
             />
             {entry.has_password && (
               <SecureField
                 entryId={entry.id}
                 field="password"
-                label="Passwort / Key"
+                label={t("entry.passwordKey")}
                 copyFieldId={`${prefix}-password`}
                 copyLabel={getLabel(`${prefix}-password`)}
-                onCopy={() => void copySecret(`${prefix}-password`, entry.id, "password")}
+                copied={isCopied(`${prefix}-password`)}
+                onCopy={() =>
+                  runAsync(() => copySecret(`${prefix}-password`, entry.id, "password"))
+                }
               />
             )}
           </>
@@ -263,11 +289,12 @@ export function EntryDetail({
           <SecureField
             entryId={entry.id}
             field="content"
-            label="Inhalt"
+            label={t("entry.content")}
             multiline
             copyFieldId={`${prefix}-content`}
             copyLabel={getLabel(`${prefix}-content`)}
-            onCopy={() => void copySecret(`${prefix}-content`, entry.id, "content")}
+            copied={isCopied(`${prefix}-content`)}
+            onCopy={() => runAsync(() => copySecret(`${prefix}-content`, entry.id, "content"))}
           />
         )}
 
@@ -276,7 +303,7 @@ export function EntryDetail({
           onClick={onLock}
           className="rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-danger hover:text-vault-danger"
         >
-          Vault sperren
+          {t("sidebar.lockVault")}
         </button>
       </div>
     </div>
@@ -288,15 +315,17 @@ function PlainField({
   value,
   copyable,
   copyLabel,
+  copied,
   onCopy,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   copyable?: boolean;
   copyLabel?: string;
+  copied?: boolean;
   onCopy?: () => void;
-}) {
-  const copied = copyLabel?.startsWith("Kopiert");
+}>) {
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-1">
@@ -315,7 +344,7 @@ function PlainField({
                 : "border-vault-border text-vault-muted hover:border-vault-accent hover:text-vault-accent"
             }`}
           >
-            {copyLabel ?? "Kopieren"}
+            {copyLabel ?? t("copy.copy")}
           </button>
         )}
       </div>
@@ -330,22 +359,24 @@ function SecureField({
   multiline,
   copyFieldId,
   copyLabel,
+  copied,
   onCopy,
   revealOnly,
-}: {
+}: Readonly<{
   entryId: string;
   field: SecretField;
   label: string;
   multiline?: boolean;
   copyFieldId?: string;
   copyLabel?: string;
+  copied?: boolean;
   onCopy?: () => void;
   revealOnly?: boolean;
-}) {
+}>) {
+  const { t } = useTranslation();
   const [revealed, setRevealed] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const copied = copyLabel?.startsWith("Kopiert");
 
   const handleReveal = useCallback(async () => {
     if (revealed !== null) {
@@ -366,6 +397,13 @@ function SecureField({
   }, [entryId, field, revealed]);
 
   const display = revealed ?? "••••••••••••";
+  const toggleLabel = revealToggleLabel(
+    loading,
+    revealed !== null,
+    "…",
+    t("entry.hide"),
+    t("entry.reveal"),
+  );
 
   return (
     <div className="space-y-1">
@@ -383,11 +421,11 @@ function SecureField({
         <div className="flex shrink-0 flex-col gap-1">
           <button
             type="button"
-            onClick={() => void handleReveal()}
+            onClick={() => runAsync(handleReveal)}
             disabled={loading}
             className="rounded border border-vault-border px-2 py-1.5 font-mono text-[10px] text-vault-muted hover:text-vault-text disabled:opacity-50"
           >
-            {loading ? "…" : revealed ? "Verbergen" : "Anzeigen"}
+            {toggleLabel}
           </button>
           {onCopy && copyFieldId && !revealOnly && (
             <button
@@ -399,7 +437,7 @@ function SecureField({
                   : "border-vault-border text-vault-muted hover:border-vault-accent hover:text-vault-accent"
               }`}
             >
-              {copyLabel ?? "Kopieren"}
+              {copyLabel ?? t("copy.copy")}
             </button>
           )}
         </div>

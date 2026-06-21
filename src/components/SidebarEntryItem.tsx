@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { SecretEntrySummary } from "@/types/vault";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
 import { ReachabilityDot } from "@/components/ReachabilityDot";
@@ -26,7 +27,8 @@ export function SidebarEntryItem({
   sshConnecting,
   copyingId,
   reachability,
-}: SidebarEntryItemProps) {
+}: Readonly<SidebarEntryItemProps>) {
+  const { t } = useTranslation();
   const canOpenWebsite =
     entry.entry_type === "web_login" &&
     !!entry.subtitle &&
@@ -75,16 +77,16 @@ export function SidebarEntryItem({
           {showWebActions && (
             <>
               <QuickActionButton
-                title="Passwort kopieren"
-                ariaLabel="Passwort kopieren"
+                title={t("sidebar.copyPassword")}
+                ariaLabel={t("sidebar.copyPassword")}
                 disabled={isCopying}
                 onClick={() => onCopyPassword?.(entry.id)}
               >
-                {isCopying ? "…" : "⎘"}
+                {isCopying ? t("common.loading") : "⎘"}
               </QuickActionButton>
               <QuickActionButton
-                title="Website öffnen"
-                ariaLabel="Website öffnen"
+                title={t("sidebar.openWebsite")}
+                ariaLabel={t("sidebar.openWebsite")}
                 disabled={!canOpenWebsite}
                 onClick={() => onOpenWebsite?.(entry)}
               >
@@ -94,13 +96,13 @@ export function SidebarEntryItem({
           )}
           {showSshAction && (
             <QuickActionButton
-              title="Quick Connect"
-              ariaLabel="SSH Quick Connect"
+              title={t("sidebar.quickConnect")}
+              ariaLabel={t("sidebar.sshQuickConnect")}
               disabled={sshConnecting}
               accent
               onClick={() => onQuickConnect?.(entry.id)}
             >
-              {sshConnecting ? "…" : "▶"}
+              {sshConnecting ? t("common.loading") : "▶"}
             </QuickActionButton>
           )}
         </div>
@@ -116,14 +118,14 @@ function QuickActionButton({
   disabled,
   accent,
   onClick,
-}: {
+}: Readonly<{
   children: React.ReactNode;
   title: string;
   ariaLabel: string;
   disabled?: boolean;
   accent?: boolean;
   onClick: () => void;
-}) {
+}>) {
   return (
     <button
       type="button"

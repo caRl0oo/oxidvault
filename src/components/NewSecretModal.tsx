@@ -1,38 +1,46 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
+import { useTranslation } from "react-i18next";
 import { PasswordGenerateButton } from "@/components/PasswordGenerateButton";
 import { TagInput } from "@/components/TagInput";
+import { OverlayModal } from "@/components/ui/OverlayModal";
+import {
+  DB_TYPE_VALUES,
+  getDbTypeLabel,
+  getSecretTypeDescription,
+  getSecretTypeLabel,
+  getWifiEncryptionLabel,
+  SECRET_KINDS,
+  WIFI_ENCRYPTION_VALUES,
+} from "@/lib/vaultLabels";
+import { runAsync } from "@/lib/runAsync";
+import { secretFormSubmitLabel } from "@/lib/secretFormLabels";
+import { INPUT_FIELD_CLASS, MODAL_FOOTER_CLASS } from "@/lib/uiClasses";
 import type {
   SecretEntryInputFull,
   SecretEntryPublic,
   SecretKind,
   SecretPayload,
 } from "@/types/vault";
-import { revealSecret } from "@/lib/ipc";
-import {
-  DB_TYPE_OPTIONS,
-  SECRET_TYPE_LABELS,
-  WIFI_ENCRYPTION_OPTIONS,
-} from "@/types/vault";
+import { loadEditFormState } from "@/lib/secretFormLoaders";
 
 interface NewSecretModalProps {
-  open: boolean;
-  loading: boolean;
-  mode?: "create" | "edit";
-  editEntry?: SecretEntryPublic;
-  onClose: () => void;
-  onSubmit: (input: SecretEntryInputFull) => void;
-  onUpdate?: (id: string, input: SecretEntryInputFull) => void;
-  onOpenGenerator?: (apply: (password: string) => void) => void;
+  readonly open: boolean;
+  readonly loading: boolean;
+  readonly mode?: "create" | "edit";
+  readonly editEntry?: SecretEntryPublic;
+  readonly onClose: () => void;
+  readonly onSubmit: (input: SecretEntryInputFull) => void;
+  readonly onUpdate?: (id: string, input: SecretEntryInputFull) => void;
+  readonly onOpenGenerator?: (apply: (password: string) => void) => void;
 }
-
-const TYPE_OPTIONS: { kind: SecretKind; description: string }[] = [
-  { kind: "web_login", description: "URL, Benutzer, Passwort" },
-  { kind: "ssh_key", description: "Server, Key, Passphrase" },
-  { kind: "api_token", description: "Service, API-Key" },
-  { kind: "database", description: "Host, Port, DB-Zugang" },
-  { kind: "network_wifi", description: "SSID, Verschlüsselung" },
-  { kind: "secure_note", description: "Config, Notizen" },
-];
 
 const emptyWeb = { url: "", username: "", password: "", notes: "" };
 const emptySsh = { host: "", username: "", privateKey: "", passphrase: "" };
@@ -48,101 +56,6 @@ const emptyDb = {
 const emptyWifi = { ssid: "", encryptionType: "wpa2", password: "" };
 const emptyNote = { content: "" };
 
-async function loadEditFormState(entry: SecretEntryPublic) {
-  const base = {
-    title: entry.title,
-    folder: entry.folder ?? "",
-    tags: entry.tags ?? [],
-    expiresAt: entry.expires_at ?? "",
-    web: emptyWeb,
-    ssh: emptySsh,
-    api: emptyApi,
-    db: emptyDb,
-    wifi: emptyWifi,
-    note: emptyNote,
-  };
-
-  switch (entry.type) {
-    case "web_login": {
-      const password = entry.has_password
-        ? (await revealSecret(entry.id, "password")).value
-        : "";
-      const notes = entry.has_notes
-        ? (await revealSecret(entry.id, "notes")).value
-        : "";
-      return {
-        ...base,
-        kind: "web_login" as const,
-        web: { url: entry.url, username: entry.username, password, notes },
-      };
-    }
-    case "ssh_key": {
-      const privateKey = entry.has_private_key
-        ? (await revealSecret(entry.id, "private_key")).value
-        : "";
-      const passphrase = entry.has_passphrase
-        ? (await revealSecret(entry.id, "passphrase")).value
-        : "";
-      return {
-        ...base,
-        kind: "ssh_key" as const,
-        ssh: { host: entry.host, username: entry.username, privateKey, passphrase },
-      };
-    }
-    case "api_token": {
-      const token = entry.has_token
-        ? (await revealSecret(entry.id, "token")).value
-        : "";
-      return {
-        ...base,
-        kind: "api_token" as const,
-        api: { service: entry.service, token },
-      };
-    }
-    case "database": {
-      const password = entry.has_password
-        ? (await revealSecret(entry.id, "password")).value
-        : "";
-      return {
-        ...base,
-        kind: "database" as const,
-        db: {
-          host: entry.host,
-          port: String(entry.port),
-          dbType: entry.db_type,
-          databaseName: entry.database_name,
-          username: entry.username,
-          password,
-        },
-      };
-    }
-    case "network_wifi": {
-      const password = entry.has_password
-        ? (await revealSecret(entry.id, "password")).value
-        : "";
-      return {
-        ...base,
-        kind: "network_wifi" as const,
-        wifi: {
-          ssid: entry.ssid,
-          encryptionType: entry.encryption_type,
-          password,
-        },
-      };
-    }
-    case "secure_note": {
-      const content = entry.has_content
-        ? (await revealSecret(entry.id, "content")).value
-        : "";
-      return {
-        ...base,
-        kind: "secure_note" as const,
-        note: { content },
-      };
-    }
-  }
-}
-
 export function NewSecretModal({
   open,
   loading,
@@ -152,7 +65,8 @@ export function NewSecretModal({
   onSubmit,
   onUpdate,
   onOpenGenerator,
-}: NewSecretModalProps) {
+}: Readonly<NewSecretModalProps>) {
+  const { t } = useTranslation();
   const isEdit = mode === "edit" && !!editEntry;
   const [kind, setKind] = useState<SecretKind>("web_login");
   const [title, setTitle] = useState("");
@@ -173,8 +87,9 @@ export function NewSecretModal({
     if (isEdit && editEntry) {
       let cancelled = false;
       setLoadingSecrets(true);
-      void loadEditFormState(editEntry)
-        .then((state) => {
+      runAsync(async () => {
+        try {
+          const state = await loadEditFormState(editEntry);
           if (cancelled) return;
           setKind(state.kind);
           setTitle(state.title);
@@ -187,10 +102,10 @@ export function NewSecretModal({
           setDb(state.db);
           setWifi(state.wifi);
           setNote(state.note);
-        })
-        .finally(() => {
+        } finally {
           if (!cancelled) setLoadingSecrets(false);
-        });
+        }
+      });
       return () => {
         cancelled = true;
       };
@@ -211,15 +126,21 @@ export function NewSecretModal({
   }, [open, isEdit, editEntry]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !loading && !loadingSecrets) {
+        onClose();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [open, onClose, loading, loadingSecrets]);
 
-  if (!open) return null;
+  if (!open) {
+    return null;
+  }
 
   const canSubmit = (() => {
     if (!title.trim()) return false;
@@ -314,51 +235,55 @@ export function NewSecretModal({
     }
   };
 
-  const inputClass =
-    "w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted focus:border-vault-accent outline-none";
+  const inputClass = INPUT_FIELD_CLASS;
 
   const openGenerator = (apply: (pwd: string) => void) => {
     onOpenGenerator?.(apply);
   };
 
+  const submitLabel = secretFormSubmitLabel(loadingSecrets, loading, isEdit, t);
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="secret-form-title"
+    <OverlayModal
+      open={open}
+      onClose={onClose}
+      ariaLabel={isEdit ? t("secretForm.editTitle") : t("secretForm.createTitle")}
+      ariaLabelledBy="secret-form-title"
+      closeDisabled={loading || loadingSecrets}
+      closeLabel={t("common.closeDialog")}
+      panelClassName="max-w-lg"
     >
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-vault-border bg-vault-surface shadow-xl">
         <header className="border-b border-vault-border px-5 py-4">
           <h2 id="secret-form-title" className="font-mono text-sm font-semibold">
-            {isEdit ? "Secret bearbeiten" : "Neues Secret"}
+            {isEdit ? t("secretForm.editTitle") : t("secretForm.createTitle")}
           </h2>
           <p className="mt-1 text-xs text-vault-muted">
             {isEdit
-              ? `${SECRET_TYPE_LABELS[kind]} — Felder anpassen und speichern`
-              : "Typ wählen und Felder ausfüllen"}
+              ? t("secretForm.editSubtitle", { type: getSecretTypeLabel(kind) })
+              : t("secretForm.createSubtitle")}
           </p>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {!isEdit && (
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {TYPE_OPTIONS.map((opt) => (
+              {SECRET_KINDS.map((kindOption) => (
                 <button
-                  key={opt.kind}
+                  key={kindOption}
                   type="button"
-                  onClick={() => setKind(opt.kind)}
+                  onClick={() => setKind(kindOption)}
                   className={`rounded border px-2 py-2 text-left transition ${
-                    kind === opt.kind
+                    kind === kindOption
                       ? "border-vault-accent bg-vault-accent/15 text-vault-text"
                       : "border-vault-border text-vault-muted hover:border-vault-accent/50"
                   }`}
                 >
                   <span className="block font-mono text-[11px] font-medium">
-                    {SECRET_TYPE_LABELS[opt.kind]}
+                    {getSecretTypeLabel(kindOption)}
                   </span>
-                  <span className="mt-0.5 block text-[10px] opacity-70">{opt.description}</span>
+                  <span className="mt-0.5 block text-[10px] opacity-70">
+                    {getSecretTypeDescription(kindOption)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -372,31 +297,31 @@ export function NewSecretModal({
               handleSubmit();
             }}
           >
-            <Field label="Titel" required>
+            <Field label={t("secretForm.title")} required>
               <input
                 ref={titleRef}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className={inputClass}
-                placeholder="z. B. Produktions-Server"
+                placeholder={t("secretForm.titlePlaceholder")}
                 required
               />
             </Field>
 
-            <Field label="Ordner / Bereich">
+            <Field label={t("secretForm.folder")}>
               <input
                 value={folder}
                 onChange={(e) => setFolder(e.target.value)}
                 className={inputClass}
-                placeholder="z. B. Produktion, Kunden, Intern"
+                placeholder={t("secretForm.folderPlaceholder")}
               />
             </Field>
 
-            <Field label="Tags">
+            <Field label={t("secretForm.tags")}>
               <TagInput tags={tags} onChange={setTags} disabled={loading} />
             </Field>
 
-            <Field label="Ablaufdatum / Gültig bis">
+            <Field label={t("secretForm.expiresAt")}>
               <input
                 type="date"
                 value={expiresAt}
@@ -407,16 +332,16 @@ export function NewSecretModal({
 
             {kind === "web_login" && (
               <>
-                <Field label="URL" required>
+                <Field label={t("entry.url")} required>
                   <input
                     value={web.url}
                     onChange={(e) => setWeb({ ...web, url: e.target.value })}
                     className={inputClass}
-                    placeholder="https://… oder example.com"
+                    placeholder={t("secretForm.urlPlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="Benutzername" required>
+                <Field label={t("entry.username")} required>
                   <input
                     value={web.username}
                     onChange={(e) => setWeb({ ...web, username: e.target.value })}
@@ -424,7 +349,7 @@ export function NewSecretModal({
                     required
                   />
                 </Field>
-                <Field label="Passwort" required>
+                <Field label={t("entry.password")} required>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -442,7 +367,7 @@ export function NewSecretModal({
                     )}
                   </div>
                 </Field>
-                <Field label="Notizen">
+                <Field label={t("entry.notes")}>
                   <textarea
                     value={web.notes}
                     onChange={(e) => setWeb({ ...web, notes: e.target.value })}
@@ -455,16 +380,16 @@ export function NewSecretModal({
 
             {kind === "ssh_key" && (
               <>
-                <Field label="Server / IP" required>
+                <Field label={t("entry.serverIp")} required>
                   <input
                     value={ssh.host}
                     onChange={(e) => setSsh({ ...ssh, host: e.target.value })}
                     className={inputClass}
-                    placeholder="10.0.0.1 oder host.example.com"
+                    placeholder={t("secretForm.serverPlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="Benutzername" required>
+                <Field label={t("entry.username")} required>
                   <input
                     value={ssh.username}
                     onChange={(e) => setSsh({ ...ssh, username: e.target.value })}
@@ -472,17 +397,17 @@ export function NewSecretModal({
                     required
                   />
                 </Field>
-                <Field label="Private Key" required>
+                <Field label={t("entry.privateKey")} required>
                   <textarea
                     value={ssh.privateKey}
                     onChange={(e) => setSsh({ ...ssh, privateKey: e.target.value })}
                     rows={5}
                     className={`${inputClass} text-xs`}
-                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    placeholder={t("secretForm.privateKeyPlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="Passphrase">
+                <Field label={t("entry.passphrase")}>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -504,16 +429,16 @@ export function NewSecretModal({
 
             {kind === "api_token" && (
               <>
-                <Field label="Service-Name" required>
+                <Field label={t("secretForm.serviceName")} required>
                   <input
                     value={api.service}
                     onChange={(e) => setApi({ ...api, service: e.target.value })}
                     className={inputClass}
-                    placeholder="z. B. GitHub, AWS, Stripe"
+                    placeholder={t("secretForm.servicePlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="API-Key / Token" required>
+                <Field label={t("entry.apiToken")} required>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -537,16 +462,16 @@ export function NewSecretModal({
             {kind === "database" && (
               <>
                 <div className="grid grid-cols-3 gap-2">
-                  <Field label="Host / IP" required>
+                  <Field label={t("entry.hostIp")} required>
                     <input
                       value={db.host}
                       onChange={(e) => setDb({ ...db, host: e.target.value })}
                       className={inputClass}
-                      placeholder="10.0.0.5"
+                      placeholder={t("secretForm.hostPlaceholder")}
                       required
                     />
                   </Field>
-                  <Field label="Port" required>
+                  <Field label={t("entry.port")} required>
                     <input
                       type="number"
                       min={1}
@@ -557,31 +482,31 @@ export function NewSecretModal({
                       required
                     />
                   </Field>
-                  <Field label="DB-Typ" required>
+                  <Field label={t("entry.dbType")} required>
                     <select
                       value={db.dbType}
                       onChange={(e) => setDb({ ...db, dbType: e.target.value })}
                       className={inputClass}
                       required
                     >
-                      {DB_TYPE_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
+                      {DB_TYPE_VALUES.map((value) => (
+                        <option key={value} value={value}>
+                          {getDbTypeLabel(value)}
                         </option>
                       ))}
                     </select>
                   </Field>
                 </div>
-                <Field label="Datenbank-Name" required>
+                <Field label={t("secretForm.databaseName")} required>
                   <input
                     value={db.databaseName}
                     onChange={(e) => setDb({ ...db, databaseName: e.target.value })}
                     className={inputClass}
-                    placeholder="production"
+                    placeholder={t("secretForm.databaseNamePlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="Benutzername" required>
+                <Field label={t("entry.username")} required>
                   <input
                     value={db.username}
                     onChange={(e) => setDb({ ...db, username: e.target.value })}
@@ -589,7 +514,7 @@ export function NewSecretModal({
                     required
                   />
                 </Field>
-                <Field label="Passwort" required>
+                <Field label={t("entry.password")} required>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -612,30 +537,30 @@ export function NewSecretModal({
 
             {kind === "network_wifi" && (
               <>
-                <Field label="SSID" required>
+                <Field label={t("entry.ssid")} required>
                   <input
                     value={wifi.ssid}
                     onChange={(e) => setWifi({ ...wifi, ssid: e.target.value })}
                     className={inputClass}
-                    placeholder="CorpNet-Guest"
+                    placeholder={t("secretForm.ssidPlaceholder")}
                     required
                   />
                 </Field>
-                <Field label="Verschlüsselung" required>
+                <Field label={t("entry.encryption")} required>
                   <select
                     value={wifi.encryptionType}
                     onChange={(e) => setWifi({ ...wifi, encryptionType: e.target.value })}
                     className={inputClass}
                     required
                   >
-                    {WIFI_ENCRYPTION_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {WIFI_ENCRYPTION_VALUES.map((value) => (
+                      <option key={value} value={value}>
+                        {getWifiEncryptionLabel(value)}
                       </option>
                     ))}
                   </select>
                 </Field>
-                <Field label="Passwort / Key" required>
+                <Field label={t("entry.passwordKey")} required>
                   <div className="flex gap-2">
                     <input
                       type="password"
@@ -657,13 +582,13 @@ export function NewSecretModal({
             )}
 
             {kind === "secure_note" && (
-              <Field label="Inhalt" required>
+              <Field label={t("entry.content")} required>
                 <textarea
                   value={note.content}
                   onChange={(e) => setNote({ content: e.target.value })}
                   rows={12}
                   className={`${inputClass} min-h-[200px] resize-y text-xs leading-relaxed`}
-                  placeholder="Config-Dateien, Runbooks, sensible Notizen…"
+                  placeholder={t("secretForm.notePlaceholder")}
                   required
                 />
               </Field>
@@ -671,31 +596,24 @@ export function NewSecretModal({
           </form>
         </div>
 
-        <footer className="flex gap-2 border-t border-vault-border px-5 py-4">
+        <footer className={MODAL_FOOTER_CLASS}>
           <button
             type="submit"
             form="secret-form"
             disabled={loading || loadingSecrets || !canSubmit}
             className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
           >
-            {loadingSecrets
-              ? "Secrets laden…"
-              : loading
-              ? isEdit
-                ? "Verschlüsseln & Aktualisieren…"
-                : "Verschlüsseln & Speichern…"
-              : "Speichern"}
+            {submitLabel}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="rounded border border-vault-border px-4 py-2 font-mono text-xs text-vault-muted hover:text-vault-text"
           >
-            Abbrechen
+            {t("common.cancel")}
           </button>
         </footer>
-      </div>
-    </div>
+    </OverlayModal>
   );
 }
 
@@ -703,18 +621,37 @@ function Field({
   label,
   required,
   children,
-}: {
+}: Readonly<{
   label: string;
   required?: boolean;
   children: React.ReactNode;
-}) {
+}>) {
+  const { t } = useTranslation();
+  const fieldId = useId();
+  const isDirectControl =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    (children.type === "input" ||
+      children.type === "textarea" ||
+      children.type === "select");
+  const child = isDirectControl
+    ? cloneElement(children as ReactElement<{ id?: string }>, { id: fieldId })
+    : children;
+
   return (
-    <label className="block space-y-1">
-      <span className="font-mono text-[11px] text-vault-muted">
-        {label}
-        {required && " *"}
-      </span>
-      {children}
-    </label>
+    <div className="block space-y-1">
+      {isDirectControl ? (
+        <label htmlFor={fieldId} className="font-mono text-[11px] text-vault-muted">
+          {label}
+          {required ? t("common.requiredMark") : null}
+        </label>
+      ) : (
+        <span className="font-mono text-[11px] text-vault-muted">
+          {label}
+          {required ? t("common.requiredMark") : null}
+        </span>
+      )}
+      {child}
+    </div>
   );
 }

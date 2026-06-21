@@ -1,22 +1,28 @@
-const AUDIT_ACTION_LABELS: Record<string, string> = {
-  VaultCreated: "Tresor wurde erstellt",
-  VaultOpened: "Tresor wurde geöffnet",
-  VaultUnlocked: "Tresor wurde entsperrt",
-  VaultLocked: "Tresor wurde gesperrt",
-  EntryCreated: "Eintrag wurde erstellt",
-  EntryUpdated: "Eintrag wurde aktualisiert",
-  SecretCopied: "Secret wurde in die Zwischenablage kopiert",
-  SecretRevealed: "Secret wurde angezeigt",
-  VaultKeyRotated: "Master-Schlüssel wurde rotiert",
-};
+import i18n from "@/lib/i18n";
+
+const AUDIT_ACTION_KEYS = [
+  "VaultCreated",
+  "VaultOpened",
+  "VaultUnlocked",
+  "VaultLocked",
+  "EntryCreated",
+  "EntryUpdated",
+  "SecretCopied",
+  "SecretRevealed",
+  "VaultKeyRotated",
+] as const;
 
 export function formatAuditAction(action: string): string {
-  return AUDIT_ACTION_LABELS[action] ?? action;
+  const key = `audit.actions.${action}`;
+  if (AUDIT_ACTION_KEYS.includes(action as (typeof AUDIT_ACTION_KEYS)[number])) {
+    return i18n.t(key);
+  }
+  return action;
 }
 
 export function formatAuditEntryId(entryId: string): string {
   if (entryId === "-" || entryId.trim() === "") {
-    return "—";
+    return i18n.t("common.dash");
   }
   return entryId;
 }

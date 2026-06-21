@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface TagInputProps {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-  disabled?: boolean;
+  readonly tags: string[];
+  readonly onChange: (tags: string[]) => void;
+  readonly disabled?: boolean;
 }
 
 function normalizeTag(raw: string): string | null {
@@ -11,14 +12,15 @@ function normalizeTag(raw: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function TagInput({ tags, onChange, disabled }: TagInputProps) {
+export function TagInput({ tags, onChange, disabled }: Readonly<TagInputProps>) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState("");
 
   const addTag = useCallback(
     (raw: string) => {
       const tag = normalizeTag(raw);
       if (!tag) return;
-      const exists = tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+      const exists = tags.some((entry) => entry.toLowerCase() === tag.toLowerCase());
       if (exists) {
         setDraft("");
         return;
@@ -38,7 +40,7 @@ export function TagInput({ tags, onChange, disabled }: TagInputProps) {
       <div className="flex flex-wrap gap-1.5">
         {tags.map((tag, index) => (
           <span
-            key={`${tag}-${index}`}
+            key={tag}
             className="inline-flex items-center gap-1 rounded-full border border-vault-tag/40 bg-vault-tag/15 px-2 py-0.5 font-mono text-[10px] text-vault-tag"
           >
             {tag}
@@ -47,7 +49,7 @@ export function TagInput({ tags, onChange, disabled }: TagInputProps) {
                 type="button"
                 onClick={() => removeTag(index)}
                 className="text-vault-tag/70 hover:text-vault-tag"
-                aria-label={`Tag ${tag} entfernen`}
+                aria-label={t("tags.removeAria", { tag })}
               >
                 ×
               </button>
@@ -71,7 +73,7 @@ export function TagInput({ tags, onChange, disabled }: TagInputProps) {
         onBlur={() => {
           if (draft.trim()) addTag(draft);
         }}
-        placeholder="Tag eingeben, Enter…"
+        placeholder={t("tags.inputPlaceholder")}
         className="w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted focus:border-vault-accent outline-none disabled:opacity-50"
       />
     </div>

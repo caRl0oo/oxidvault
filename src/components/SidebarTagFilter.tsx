@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { collectUniqueTags } from "@/lib/tags";
 import type { SecretEntrySummary } from "@/types/vault";
 
@@ -8,7 +9,12 @@ interface SidebarTagFilterProps {
   onTagChange: (tag: string | null) => void;
 }
 
-export function SidebarTagFilter({ entries, activeTag, onTagChange }: SidebarTagFilterProps) {
+export function SidebarTagFilter({
+  entries,
+  activeTag,
+  onTagChange,
+}: Readonly<SidebarTagFilterProps>) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const tags = collectUniqueTags(entries);
 
@@ -23,13 +29,13 @@ export function SidebarTagFilter({ entries, activeTag, onTagChange }: SidebarTag
         onClick={() => setOpen((v) => !v)}
         className="mb-1.5 flex w-full items-center justify-between px-1 font-mono text-[10px] uppercase tracking-wider text-vault-muted hover:text-vault-text"
       >
-        <span>Tags</span>
+        <span>{t("common.tags")}</span>
         <span className="text-[9px]">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
         <div className="flex flex-wrap gap-1 px-0.5">
           <TagBadge
-            label="Alle"
+            label={t("common.all")}
             active={activeTag === null}
             onClick={() => onTagChange(null)}
           />
@@ -51,11 +57,11 @@ function TagBadge({
   label,
   active,
   onClick,
-}: {
+}: Readonly<{
   label: string;
   active: boolean;
   onClick: () => void;
-}) {
+}>) {
   return (
     <button
       type="button"

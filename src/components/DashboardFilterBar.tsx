@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { DashboardFilterKind } from "@/types/dashboardFilter";
 
 interface DashboardFilterBarProps {
@@ -18,7 +19,9 @@ const KIND_ICONS: Record<DashboardFilterKind, string> = {
   expiring: "⏳",
 };
 
-export function DashboardFilterBar({ label, kind, onClear }: DashboardFilterBarProps) {
+export function DashboardFilterBar({ label, kind, onClear }: Readonly<DashboardFilterBarProps>) {
+  const { t } = useTranslation();
+
   return (
     <div className="border-b border-vault-border px-3 py-2">
       <div
@@ -28,13 +31,13 @@ export function DashboardFilterBar({ label, kind, onClear }: DashboardFilterBarP
           <span aria-hidden className="mr-1">
             {KIND_ICONS[kind]}
           </span>
-          Filter: {label}
+          {t("dashboardFilter.label", { label })}
         </span>
         <button
           type="button"
           onClick={onClear}
-          aria-label="Dashboard-Filter aufheben"
-          title="Filter aufheben"
+          aria-label={t("common.filterClearAria")}
+          title={t("common.filterClear")}
           className="shrink-0 rounded px-1 opacity-70 transition hover:bg-black/10 hover:opacity-100"
         >
           ✕

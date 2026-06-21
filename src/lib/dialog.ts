@@ -1,4 +1,5 @@
 import { save, open } from "@tauri-apps/plugin-dialog";
+import i18n from "@/lib/i18n";
 
 export function normalizeVaultPath(path: string): string {
   return path.toLowerCase().endsWith(".oxid") ? path : `${path}.oxid`;
@@ -7,7 +8,7 @@ export function normalizeVaultPath(path: string): string {
 export async function pickVaultSavePath(defaultName = "vault.oxid"): Promise<string | null> {
   const path = await save({
     defaultPath: defaultName,
-    filters: [{ name: "OxidVault", extensions: ["oxid"] }],
+    filters: [{ name: i18n.t("dialog.vaultFilter"), extensions: ["oxid"] }],
   });
   return path ? normalizeVaultPath(path) : null;
 }
@@ -15,7 +16,7 @@ export async function pickVaultSavePath(defaultName = "vault.oxid"): Promise<str
 export async function pickVaultOpenPath(): Promise<string | null> {
   const path = await open({
     multiple: false,
-    filters: [{ name: "OxidVault", extensions: ["oxid"] }],
+    filters: [{ name: i18n.t("dialog.vaultFilter"), extensions: ["oxid"] }],
   });
   return typeof path === "string" ? path : null;
 }
@@ -43,8 +44,8 @@ export async function pickAuditExportPath(): Promise<AuditExportSelection | null
   const path = await save({
     defaultPath: "audit-report.json",
     filters: [
-      { name: "JSON Audit Report (.json)", extensions: ["json"] },
-      { name: "CSV Audit Report (.csv)", extensions: ["csv"] },
+      { name: i18n.t("dialog.auditJsonFilter"), extensions: ["json"] },
+      { name: i18n.t("dialog.auditCsvFilter"), extensions: ["csv"] },
     ],
   });
 

@@ -58,6 +58,7 @@ pub fn run() {
             commands::policy::get_resolved_config,
             commands::compliance::get_compliance_status,
             commands::compliance::reencrypt_vault,
+            commands::diagnostics::get_system_diagnostics,
             commands::ssh_connect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_disconnect,

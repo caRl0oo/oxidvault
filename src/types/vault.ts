@@ -157,9 +157,6 @@ export interface SecretEntry {
 
 export type SecretEntryPublic = SecretEntry & SecretPayloadPublic;
 
-/** @deprecated Use SecretEntryPublic — IPC no longer sends plaintext secrets. */
-export type SecretEntryFull = SecretEntryPublic;
-
 export interface SecretEntryInput {
   title: string;
   folder?: string;
@@ -169,37 +166,6 @@ export interface SecretEntryInput {
 
 export type SecretEntryInputFull = SecretEntryInput & SecretPayload;
 
-export const SECRET_TYPE_LABELS: Record<SecretKind, string> = {
-  web_login: "Web-Login",
-  ssh_key: "SSH-Key",
-  api_token: "API-Token",
-  database: "Datenbank",
-  network_wifi: "Netzwerk / WLAN",
-  secure_note: "Sichere Notiz",
-};
-
-export const DB_TYPE_OPTIONS = [
-  { value: "postgresql", label: "PostgreSQL" },
-  { value: "mysql", label: "MySQL" },
-  { value: "mariadb", label: "MariaDB" },
-  { value: "mssql", label: "Microsoft SQL Server" },
-  { value: "sqlite", label: "SQLite" },
-  { value: "mongodb", label: "MongoDB" },
-  { value: "redis", label: "Redis" },
-  { value: "oracle", label: "Oracle" },
-  { value: "other", label: "Sonstige" },
-] as const;
-
-export const WIFI_ENCRYPTION_OPTIONS = [
-  { value: "wpa3", label: "WPA3" },
-  { value: "wpa2", label: "WPA2" },
-  { value: "wpa", label: "WPA" },
-  { value: "wep", label: "WEP" },
-  { value: "open", label: "Offen (keine)" },
-  { value: "enterprise", label: "Enterprise (802.1X)" },
-  { value: "other", label: "Sonstige" },
-] as const;
-
 export const DEFAULT_PASSWORD_LENGTH = 24;
 
 export interface PasswordGenOptions {
@@ -208,14 +174,6 @@ export interface PasswordGenOptions {
   lowercase: boolean;
   digits: boolean;
   symbols: boolean;
-}
-
-export function dbTypeLabel(value: string): string {
-  return DB_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
-}
-
-export function wifiEncryptionLabel(value: string): string {
-  return WIFI_ENCRYPTION_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
 
 export function isProbeableEntryType(type: SecretKind): boolean {

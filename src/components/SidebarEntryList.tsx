@@ -26,7 +26,7 @@ export function SidebarEntryList({
   sshConnecting,
   copyingId,
   reachability,
-}: SidebarEntryListProps) {
+}: Readonly<SidebarEntryListProps>) {
   const groupByFolder = shouldGroupByFolder(entries);
 
   if (!groupByFolder) {
@@ -75,7 +75,10 @@ export function SidebarEntryList({
   );
 }
 
-function FolderSection({ folder, children }: { folder: string; children: React.ReactNode }) {
+function FolderSection({
+  folder,
+  children,
+}: Readonly<{ folder: string; children: React.ReactNode }>) {
   const [open, setOpen] = useState(true);
 
   return (

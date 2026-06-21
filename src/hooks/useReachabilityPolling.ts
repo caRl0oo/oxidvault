@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkEntriesReachability } from "@/lib/ipc";
+import { runAsync } from "@/lib/runAsync";
 import type { ReachabilityState, ReachabilityStatus } from "@/types/reachability";
 import { isProbeableEntryType } from "@/types/vault";
 import type { SecretEntrySummary } from "@/types/vault";
@@ -68,9 +69,9 @@ export function useReachabilityPolling(
       return;
     }
 
-    void runProbe(ids);
-    const timer = window.setInterval(() => void runProbe(ids), POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    runAsync(() => runProbe(ids));
+    const timer = globalThis.setInterval(() => runAsync(() => runProbe(ids)), POLL_INTERVAL_MS);
+    return () => globalThis.clearInterval(timer);
   }, [enabled, probeableKey, runProbe]);
 
   return statuses;

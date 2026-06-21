@@ -1,3 +1,5 @@
+import { runAsync } from "@/lib/runAsync";
+
 /** Auto-clear delay for secrets copied to the system clipboard (seconds). */
 export const CLIPBOARD_CLEAR_SECONDS = 30;
 
@@ -101,6 +103,6 @@ function startClearTimer(copiedValue: string): void {
 
   clearTimer = setTimeout(() => {
     resetTimers();
-    void clearIfUnchanged();
+    runAsync(() => clearIfUnchanged());
   }, CLIPBOARD_CLEAR_SECONDS * 1000);
 }

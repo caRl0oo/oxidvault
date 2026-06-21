@@ -1,3 +1,4 @@
+import { getDashboardFilterLabel } from "@/lib/vaultLabels";
 import type { SecurityAuditReport } from "@/types/audit";
 
 export type DashboardFilterKind = "weak" | "duplicate" | "expiring";
@@ -7,12 +8,6 @@ export interface DashboardFilter {
   entryIds: string[];
   label: string;
 }
-
-export const DASHBOARD_FILTER_LABELS: Record<DashboardFilterKind, string> = {
-  weak: "Schwache Passwörter",
-  duplicate: "Duplikat-Gruppen",
-  expiring: "Ablaufende",
-};
 
 export function buildDashboardFilter(
   kind: DashboardFilterKind,
@@ -34,6 +29,6 @@ export function buildDashboardFilter(
   return {
     kind,
     entryIds: [...new Set(entryIds)],
-    label: DASHBOARD_FILTER_LABELS[kind],
+    label: getDashboardFilterLabel(kind),
   };
 }

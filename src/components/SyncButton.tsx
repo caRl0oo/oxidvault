@@ -1,9 +1,13 @@
+import { useTranslation } from "react-i18next";
+
+import { syncButtonStatusText } from "@/lib/syncButtonStatus";
+
 interface SyncButtonProps {
-  visible: boolean;
-  syncing: boolean;
-  syncMessage: string | null;
-  syncError: string | null;
-  onSync: () => void;
+  readonly visible: boolean;
+  readonly syncing: boolean;
+  readonly syncMessage: string | null;
+  readonly syncError: string | null;
+  readonly onSync: () => void;
 }
 
 export function SyncButton({
@@ -12,8 +16,15 @@ export function SyncButton({
   syncMessage,
   syncError,
   onSync,
-}: SyncButtonProps) {
-  if (!visible) return null;
+}: Readonly<SyncButtonProps>) {
+  const { t } = useTranslation();
+
+  if (!visible) {
+    return null;
+  }
+
+  const title = syncing ? t("sync.syncing") : t("sync.syncGit");
+  const statusText = syncButtonStatusText(syncError, syncing, syncMessage, t("sync.syncing"));
 
   return (
     <div className="relative flex items-center">
@@ -21,30 +32,29 @@ export function SyncButton({
         type="button"
         onClick={onSync}
         disabled={syncing}
-        title={syncing ? "Synchronisiere…" : "Git synchronisieren"}
-        aria-label={syncing ? "Synchronisiere…" : "Git synchronisieren"}
+        title={title}
+        aria-label={title}
         className="rounded p-1 text-vault-muted transition hover:text-vault-accent disabled:opacity-60"
       >
         <SyncIcon spinning={syncing} />
       </button>
 
       {(syncing || syncMessage || syncError) && (
-        <div
+        <output
           className={`absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border px-2 py-1 font-mono text-[10px] shadow-lg ${
             syncError
               ? "border-vault-danger/50 bg-vault-surface text-vault-danger"
               : "border-vault-border bg-vault-surface text-vault-muted"
           }`}
-          role="status"
         >
-          {syncError ?? (syncing ? "Synchronisiere…" : syncMessage)}
-        </div>
+          {statusText}
+        </output>
       )}
     </div>
   );
 }
 
-function SyncIcon({ spinning }: { spinning: boolean }) {
+function SyncIcon({ spinning }: Readonly<{ spinning: boolean }>) {
   return (
     <svg
       viewBox="0 0 24 24"

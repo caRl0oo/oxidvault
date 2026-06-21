@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { RotationDialog } from "@/components/RotationDialog";
 import { getComplianceStatus } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
+import { runAsync } from "@/lib/runAsync";
 import {
   KEY_ROTATION_THRESHOLD_DAYS,
   type ComplianceStatus,
 } from "@/types/compliance";
 
-const ROTATION_SUCCESS_TOAST =
-  "Schlüssel erfolgreich rotiert. Ihr Tresor ist nun mit dem neuen Master-Schlüssel geschützt.";
-
-const ROTATION_HINT =
-  "Die Rotation erfolgt per sicherer Key-Migration (v2-Format), ohne dass Daten entschlüsselt werden.";
-
-function formatComplianceDate(iso: string | null): string {
+function formatComplianceDate(iso: string | null, dash: string): string {
   if (!iso) {
-    return "—";
+    return dash;
   }
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
@@ -28,14 +24,6 @@ function formatComplianceDate(iso: string | null): string {
   });
 }
 
-function statusLabel(ok: boolean): string {
-  return ok ? "Ja" : "Nein";
-}
-
-function statusClass(ok: boolean): string {
-  return ok ? "text-vault-success" : "text-vault-danger";
-}
-
 function isComplianceOk(status: ComplianceStatus): boolean {
   return status.auditChainValid && !status.keyRotationRecommended;
 }
@@ -45,11 +33,12 @@ function keyAgeClass(recommended: boolean): string {
 }
 
 export function ComplianceDashboard() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rotationOpen, setRotationOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showRotationToast, setShowRotationToast] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -65,27 +54,29 @@ export function ComplianceDashboard() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    runAsync(refresh);
   }, [refresh]);
 
   useEffect(() => {
-    if (!toastMessage) {
+    if (!showRotationToast) {
       return;
     }
-    const timer = globalThis.setTimeout(() => setToastMessage(null), 6000);
+    const timer = globalThis.setTimeout(() => setShowRotationToast(false), 6000);
     return () => globalThis.clearTimeout(timer);
-  }, [toastMessage]);
+  }, [showRotationToast]);
 
   const handleRotationSuccess = useCallback(() => {
-    setToastMessage(ROTATION_SUCCESS_TOAST);
-    void refresh();
+    setShowRotationToast(true);
+    runAsync(refresh);
   }, [refresh]);
+
+  const statusLabel = (ok: boolean) => (ok ? t("common.yes") : t("common.no"));
+  const statusClass = (ok: boolean) => (ok ? "text-vault-success" : "text-vault-danger");
+  const dash = t("common.dash");
 
   const renderBody = () => {
     if (loading && !status) {
-      return (
-        <p className="font-mono text-xs text-vault-muted">Lade Compliance-Status…</p>
-      );
+      return <p className="font-mono text-xs text-vault-muted">{t("compliance.loading")}</p>;
     }
 
     if (error && !status) {
@@ -108,15 +99,15 @@ export function ComplianceDashboard() {
           }`}
         >
           <span aria-hidden="true">{complianceOk ? "✓" : "!"}</span>
-          {complianceOk ? "Compliance OK" : "Handlungsbedarf"}
+          {complianceOk ? t("compliance.compliance_ok") : t("compliance.action_required")}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              Policy-Status
+              {t("compliance.policy_status")}
             </p>
-            <p className="mt-2 font-mono text-sm text-vault-text">GPO verwaltet?</p>
+            <p className="mt-2 font-mono text-sm text-vault-text">{t("compliance.gpo_managed")}</p>
             <p
               className={`mt-1 font-mono text-sm font-semibold ${statusClass(status.policyManagedByGpo)}`}
             >
@@ -126,9 +117,11 @@ export function ComplianceDashboard() {
 
           <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              Audit-Status
+              {t("compliance.audit_status")}
             </p>
-            <p className="mt-2 font-mono text-sm text-vault-text">Hash-Kette valide?</p>
+            <p className="mt-2 font-mono text-sm text-vault-text">
+              {t("compliance.hash_chain_valid")}
+            </p>
             <p
               className={`mt-1 font-mono text-sm font-semibold ${statusClass(status.auditChainValid)}`}
             >
@@ -138,18 +131,22 @@ export function ComplianceDashboard() {
 
           <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
             <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              Key-Age
+              {t("compliance.key_age")}
             </p>
             <p className="mt-2 font-mono text-sm text-vault-text">
-              Zuletzt rotiert: {formatComplianceDate(status.keyRotatedAt)}
+              {t("compliance.last_rotated", {
+                date: formatComplianceDate(status.keyRotatedAt, dash),
+              })}
             </p>
             <p className="mt-1 font-mono text-xs text-vault-muted">
-              Erstellt: {formatComplianceDate(status.keyCreatedAt)}
+              {t("compliance.created", {
+                date: formatComplianceDate(status.keyCreatedAt, dash),
+              })}
             </p>
             <p
               className={`mt-1 font-mono text-sm font-semibold ${keyAgeClass(status.keyRotationRecommended)}`}
             >
-              Key-Age: {status.keyAgeDays} Tage
+              {t("compliance.key_age_days", { days: status.keyAgeDays })}
             </p>
           </article>
         </div>
@@ -157,18 +154,17 @@ export function ComplianceDashboard() {
         {status.keyRotationRecommended ? (
           <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
             <p className="font-mono text-xs text-vault-accent">
-              Ihre Sicherheitsrichtlinie empfiehlt eine Passwort-Rotation (Schwellwert:{" "}
-              {KEY_ROTATION_THRESHOLD_DAYS} Tage).
+              {t("compliance.rotation_recommended", { days: KEY_ROTATION_THRESHOLD_DAYS })}
             </p>
             <button
               type="button"
               onClick={() => setRotationOpen(true)}
               className="mt-3 rounded bg-vault-accent px-4 py-2 font-mono text-xs font-semibold text-white hover:bg-vault-accent-hover"
             >
-              Passwort rotieren
+              {t("compliance.rotate_password")}
             </button>
             <p className="mt-2 font-mono text-[10px] leading-relaxed text-vault-muted">
-              {ROTATION_HINT}
+              {t("compliance.rotation_hint")}
             </p>
           </div>
         ) : null}
@@ -181,19 +177,17 @@ export function ComplianceDashboard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-text">
-            Compliance-Übersicht
+            {t("compliance.title")}
           </h2>
-          <p className="mt-1 font-mono text-[11px] text-vault-muted">
-            Policy-, Audit- und Schlüssel-Status für Enterprise v1.0
-          </p>
+          <p className="mt-1 font-mono text-[11px] text-vault-muted">{t("compliance.subtitle")}</p>
         </div>
         <button
           type="button"
-          onClick={() => void refresh()}
+          onClick={() => runAsync(refresh)}
           disabled={loading}
           className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
         >
-          Aktualisieren
+          {t("common.refresh")}
         </button>
       </div>
 
@@ -205,13 +199,15 @@ export function ComplianceDashboard() {
         onSuccess={handleRotationSuccess}
       />
 
-      {toastMessage ? (
+      {showRotationToast ? (
         <div
           role="status"
           aria-live="polite"
           className="fixed bottom-10 left-1/2 z-[100] max-w-md -translate-x-1/2 rounded-lg border border-vault-success/40 bg-vault-surface px-4 py-3 shadow-lg"
         >
-          <p className="font-mono text-xs text-vault-success">{toastMessage}</p>
+          <p className="font-mono text-xs text-vault-success">
+            {t("compliance.rotation_success_toast")}
+          </p>
         </div>
       ) : null}
     </section>

@@ -1,7 +1,10 @@
+import { useTranslation } from "react-i18next";
+import i18n from "@/lib/i18n";
 import { formatExpiryDate, getExpiryStatus } from "@/lib/expiry";
-import type { SecretEntryFull } from "@/types/vault";
+import type { SecretEntryPublic } from "@/types/vault";
 
-export function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
+export function ExpiryBadge({ expiresAt }: Readonly<{ expiresAt?: string | null }>) {
+  const { t } = useTranslation();
   const status = getExpiryStatus(expiresAt);
   if (!status || !expiresAt) return null;
 
@@ -9,23 +12,32 @@ export function ExpiryBadge({ expiresAt }: { expiresAt?: string | null }) {
     return (
       <div className="mt-2 inline-flex items-center gap-1.5 rounded border border-vault-danger/50 bg-vault-danger/10 px-2.5 py-1 font-mono text-[11px] text-vault-danger">
         <span aria-hidden>⚠</span>
-        WARNUNG: Passwort abgelaufen!
+        {t("expiry.expiredWarning")}
       </div>
     );
+  }
+
+  let suffix = "";
+  if (status.daysRemaining === 0) {
+    suffix = t("expiry.today");
+  } else if (status.daysRemaining === 1) {
+    suffix = t("expiry.tomorrow");
   }
 
   return (
     <div className="mt-2 inline-flex items-center gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-mono text-[11px] text-amber-300">
       <span aria-hidden>⏳</span>
-      Läuft am {formatExpiryDate(expiresAt)} ab
-      {status.daysRemaining === 0 ? " (heute)" : status.daysRemaining === 1 ? " (morgen)" : ""}
+      {t("expiry.expiresOn", { date: formatExpiryDate(expiresAt) })}
+      {suffix}
     </div>
   );
 }
 
-export function expiryLabel(entry: Pick<SecretEntryFull, "expires_at">): string | null {
+export function expiryLabel(entry: Pick<SecretEntryPublic, "expires_at">): string | null {
   const status = getExpiryStatus(entry.expires_at);
   if (!status || !entry.expires_at) return null;
-  if (status.kind === "expired") return "Abgelaufen";
-  return `Läuft am ${formatExpiryDate(entry.expires_at)} ab`;
+  if (status.kind === "expired") {
+    return i18n.t("expiry.expired");
+  }
+  return i18n.t("expiry.expiresOn", { date: formatExpiryDate(entry.expires_at) });
 }

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   evaluateMasterPasswordWithMin,
   MIN_MASTER_PASSWORD_LENGTH,
@@ -60,7 +61,8 @@ interface PolicyHintsProps {
   readonly policy: PasswordPolicyState;
 }
 
-function PolicyHints({ value, minLength, policy }: PolicyHintsProps) {
+function PolicyHints({ value, minLength, policy }: Readonly<PolicyHintsProps>) {
+  const { t } = useTranslation();
   const strengthPercent = ((policy.strengthScore + 1) / 5) * 100;
   const barWidth = value.length > 0 ? `${strengthPercent}%` : "0%";
 
@@ -78,13 +80,13 @@ function PolicyHints({ value, minLength, policy }: PolicyHintsProps) {
       {value.length > 0 ? (
         <ul className="space-y-0.5 font-mono text-[10px] text-vault-muted">
           <li className={checklistItemClass(policy.lengthOk)}>
-            {checklistMark(policy.lengthOk)} Mindestens {minLength} Zeichen
+            {checklistMark(policy.lengthOk)} {t("passwordPolicy.checkLength", { min: minLength })}
           </li>
           <li className={checklistItemClass(policy.notCommon)}>
-            {checklistMark(policy.notCommon)} Kein häufiges Passwort
+            {checklistMark(policy.notCommon)} {t("passwordPolicy.checkNotCommon")}
           </li>
           <li className={checklistItemClass(policy.strengthScore >= 2)}>
-            {checklistMark(policy.strengthScore >= 2)} Ausreichende Entropie (zxcvbn)
+            {checklistMark(policy.strengthScore >= 2)} {t("passwordPolicy.checkEntropy")}
           </li>
         </ul>
       ) : null}
@@ -98,13 +100,15 @@ export function MasterPasswordInput({
   id,
   inputRef,
   minLength = MIN_MASTER_PASSWORD_LENGTH,
-  placeholder = "Master-Passwort",
+  placeholder,
   autoComplete = "new-password",
   showPolicyHints = true,
-}: MasterPasswordInputProps) {
+}: Readonly<MasterPasswordInputProps>) {
+  const { t, i18n } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t("auth.masterPasswordPlaceholder");
   const policy = useMemo(
     () => evaluateMasterPasswordWithMin(value, minLength),
-    [value, minLength],
+    [value, minLength, i18n.language],
   );
 
   return (
@@ -115,7 +119,7 @@ export function MasterPasswordInput({
         type="password"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         autoComplete={autoComplete}
         minLength={minLength}
         className={`w-full rounded border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted outline-none transition-colors ${passwordBorderClass(value, policy.valid)}`}

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { SecurityAuditReport } from "@/types/audit";
 import type { AuditLogEntry } from "@/types/auditLog";
 import type { ComplianceStatus } from "@/types/compliance";
+import type { SystemDiagnostics } from "@/types/diagnostics";
 import type { ResolvedConfig } from "@/types/policy";
 import type { AppSettings, GitSyncResult } from "@/types/settings";
 import type {
@@ -131,6 +132,10 @@ export async function getResolvedConfig(): Promise<ResolvedConfig> {
 
 export async function getComplianceStatus(): Promise<ComplianceStatus> {
   return invoke<ComplianceStatus>("get_compliance_status");
+}
+
+export async function getSystemDiagnostics(): Promise<SystemDiagnostics> {
+  return invoke<SystemDiagnostics>("get_system_diagnostics");
 }
 
 export async function reencryptVault(

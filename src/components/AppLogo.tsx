@@ -1,6 +1,6 @@
 interface AppLogoProps {
-  size?: "sm" | "md" | "lg";
-  className?: string;
+  readonly size?: "sm" | "md" | "lg";
+  readonly className?: string;
 }
 
 const SIZE_CLASS = {
@@ -9,7 +9,7 @@ const SIZE_CLASS = {
   lg: "h-14 w-14",
 } as const;
 
-export function AppLogo({ size = "md", className = "" }: AppLogoProps) {
+export function AppLogo({ size = "md", className = "" }: Readonly<AppLogoProps>) {
   return (
     <img
       src="/logo.png"

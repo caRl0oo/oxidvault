@@ -1,6 +1,7 @@
 import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
 import * as zxcvbnCommon from "@zxcvbn-ts/language-common";
 import * as zxcvbnEn from "@zxcvbn-ts/language-en";
+import i18n from "@/lib/i18n";
 
 let zxcvbnReady = false;
 
@@ -71,14 +72,6 @@ const COMMON_PASSWORDS = new Set(
   ].map((p) => p.toLowerCase()),
 );
 
-export const STRENGTH_LABELS = [
-  "Sehr schwach",
-  "Schwach",
-  "Mittel",
-  "Stark",
-  "Sehr stark",
-] as const;
-
 export interface PasswordPolicyState {
   lengthOk: boolean;
   notCommon: boolean;
@@ -86,6 +79,14 @@ export interface PasswordPolicyState {
   strengthLabel: string;
   valid: boolean;
   hint: string;
+}
+
+function strengthLabel(score: number): string {
+  const key = `passwordPolicy.strength.${score}`;
+  if (i18n.exists(key)) {
+    return i18n.t(key);
+  }
+  return i18n.t("passwordPolicy.strength.0");
 }
 
 export function evaluateMasterPassword(password: string): PasswordPolicyState {
@@ -102,29 +103,33 @@ export function evaluateMasterPasswordWithMin(
   ensureZxcvbn();
   const result = password.length > 0 ? zxcvbn(password) : null;
   const strengthScore = result?.score ?? 0;
-  const strengthLabel = STRENGTH_LABELS[strengthScore] ?? STRENGTH_LABELS[0];
+  const label = strengthLabel(strengthScore);
 
   const strengthOk = password.length === 0 ? false : strengthScore >= MIN_ZXCVBN_SCORE;
   const valid = lengthOk && notCommon && strengthOk;
 
   let hint: string;
   if (password.length === 0) {
-    hint = `Mindestens ${minLength} Zeichen erforderlich`;
+    hint = i18n.t("passwordPolicy.hintEmpty", { min: minLength });
   } else if (!lengthOk) {
-    hint = `Noch ${minLength - password.length} Zeichen (${password.length}/${minLength})`;
+    hint = i18n.t("passwordPolicy.hintTooShort", {
+      remaining: minLength - password.length,
+      current: password.length,
+      min: minLength,
+    });
   } else if (!notCommon) {
-    hint = "Passwort ist zu häufig — bitte ein einzigartiges wählen";
+    hint = i18n.t("passwordPolicy.hintCommon");
   } else if (strengthOk) {
-    hint = `Passwortstärke: ${strengthLabel} — Richtlinie erfüllt`;
+    hint = i18n.t("passwordPolicy.hintStrongOk", { label });
   } else {
-    hint = `Passwortstärke: ${strengthLabel} — bitte verstärken`;
+    hint = i18n.t("passwordPolicy.hintWeak", { label });
   }
 
   return {
     lengthOk,
     notCommon,
     strengthScore,
-    strengthLabel,
+    strengthLabel: label,
     valid,
     hint,
   };

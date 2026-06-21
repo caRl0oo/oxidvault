@@ -86,4 +86,16 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-vault-accent;
   }
+
+  dialog {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+  }
+
+  dialog::backdrop {
+    background: rgb(0 0 0 / 60%);
+    backdrop-filter: blur(4px);
+  }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/lib/ipc";
 import {
   copySecureToClipboard,
@@ -8,16 +9,17 @@ import {
 import type { SecretField } from "@/types/vault";
 
 export function useSecureCopy() {
+  const { t } = useTranslation();
   const [activeField, setActiveField] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
 
   useEffect(() => {
     return subscribeSecureClipboard(({ active, secondsLeft: sec }) => {
-      if (!active) {
+      if (active) {
+        setSecondsLeft(sec);
+      } else {
         setActiveField(null);
         setSecondsLeft(0);
-      } else {
-        setSecondsLeft(sec);
       }
     });
   }, []);
@@ -39,10 +41,14 @@ export function useSecureCopy() {
     return true;
   };
 
+  const isCopied = (fieldId: string) => activeField === fieldId;
+
   const getLabel = (fieldId: string) => {
-    if (activeField !== fieldId) return "Kopieren";
-    return secondsLeft > 0 ? `Kopiert! (${secondsLeft}s)` : "Kopiert!";
+    if (activeField !== fieldId) return t("copy.copy");
+    return secondsLeft > 0
+      ? t("copy.copiedWithTimer", { seconds: secondsLeft })
+      : t("copy.copied");
   };
 
-  return { copy, copySecret, getLabel, activeField };
+  return { copy, copySecret, getLabel, isCopied, activeField };
 }

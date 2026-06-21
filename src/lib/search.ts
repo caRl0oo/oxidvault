@@ -1,5 +1,5 @@
 import type { SecretEntrySummary } from "@/types/vault";
-import { SECRET_TYPE_LABELS } from "@/types/vault";
+import { getSecretTypeLabel } from "@/lib/vaultLabels";
 import { filterEntriesByTag } from "@/lib/tags";
 import type { DashboardFilter } from "@/types/dashboardFilter";
 
@@ -22,7 +22,7 @@ export function entryMatchesSearch(entry: SecretEntrySummary, rawQuery: string):
     ...(entry.tags ?? []),
     entry.subtitle,
     entry.username,
-    SECRET_TYPE_LABELS[entry.entry_type],
+    getSecretTypeLabel(entry.entry_type),
   ]
     .filter(Boolean)
     .join(" ")

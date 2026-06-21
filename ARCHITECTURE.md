@@ -80,6 +80,7 @@
 |---|---|---|
 | **React** | 19.x | UI-Komponenten, State-Management |
 | **TypeScript** | 5.8.x | Typsicherheit, IPC-Contracts |
+| **i18next / react-i18next** | 25.x / 15.x | Frontend-Lokalisierung (DE/EN) |
 | **Tailwind CSS** | 4.x | Utility-first Styling, Dark-Theme |
 | **Vite** | 6.x | Dev-Server (Port `1420`), Production-Bundling |
 
@@ -768,6 +769,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
 | `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
+| `get_system_diagnostics` | — | `SystemDiagnostics` | Admin-Support-Snapshot: Vault-Pfad (UNC), GPO-Policy, Audit-Log-Schreibbarkeit, Version — **keine Secrets** | ✅ |
 | `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container (Header) unter neuem Passwort rotieren | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
@@ -1060,6 +1062,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `getAuditLogs(limit)` | `get_audit_logs` |
 | `exportAuditLog(targetPath, format)` | `export_audit_log` |
 | `getComplianceStatus()` | `get_compliance_status` |
+| `getSystemDiagnostics()` | `get_system_diagnostics` |
 | `reencryptVault(currentPassword, newPassword)` | `reencrypt_vault` |
 | `getAppSettings()` | `get_app_settings` |
 | `getResolvedConfig()` | `get_resolved_config` |
@@ -1148,6 +1151,23 @@ ReachabilityDot — Sidebar + Detailansicht
 | **CSS** | Pro Theme überschreibt `[data-theme="…"]` die `--color-vault-*` Variablen |
 | **Persistenz** | `localStorage` Key `oxidvault-theme` — Restore via `initTheme()` in `main.tsx` |
 | **Scope** | Gesamte App: Sidebar, Detail, Modals, Toasts (alle `vault-*` Klassen) |
+
+### Internationalisierung (i18n)
+
+> **Status:** ✅ Full-Coverage — gesamte React-UI · `src/locales/de.json` + `en.json` (identische Keys)
+
+| Aspekt | Detail |
+|---|---|
+| **Framework** | `i18next` + `react-i18next` |
+| **Sprachen** | Deutsch (`de`, Standard) · Englisch (`en`) |
+| **Persistenz** | `localStorage` Key `oxidvault-locale` — Restore in `main.tsx` via `@/lib/i18n` |
+| **UI-Auswahl** | Dropdown **Sprache** im Zahnrad-Menü (`SettingsMenu`) |
+| **Fallback** | `fallbackLng: false` — kein Cross-Language-Fallback; beide Locale-Dateien müssen vollständig sein |
+| **Scope** | Welcome/Auth, Vault-Workspace, Sidebar, Entry-Detail, Secret-Modal, Generator, Audit-Log, Security/Compliance, Rotation, Einstellungen, Shortcuts, Toasts, Fehler- und Audit-Label-Mapping |
+| **Audit-Events** | Backend bleibt englisch (`VaultKeyRotated`, …); Frontend-Mapping in `src/lib/auditLogLabels.ts` → `audit.actions.*` |
+| **Fehlermapping** | `src/lib/errors.ts` — Rust-Fehler-Substrings → `errors.*` Keys |
+| **Typ-Labels** | `src/lib/vaultLabels.ts` — Secret-Typen, DB/WLAN-Optionen, Dashboard-Filter |
+| **Backend** | Unverändert — Audit-Log speichert englische Action-IDs; IPC-Fehlertexte werden im Frontend übersetzt |
 
 **Verfügbare Themes:**
 
@@ -1887,6 +1907,9 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Enterprise v1.0:** Format v2 (wrapped DEK), `reencrypt_vault`, `ComplianceDashboard`, `get_compliance_status`, `VaultKeyRotated` |
 | 2025-06-20 | 1.0.0 | **Passwort-Rotation UI:** `RotationDialog.tsx`, Policy-Validierung, Lock-Check (`LockedBy`), Audit-Export-Verifikation |
 | 2025-06-20 | 1.0.0 | **Compliance-Dashboard Rotation:** Primary-Button bei Key-Age >90 Tage, Toast nach Erfolg, Compliance-Badge, v2-Migrations-Hinweis |
+| 2025-06-20 | 1.0.0 | **Frontend i18n:** `i18next`/`react-i18next`, `src/locales/de.json` + `en.json`, Sprachwahl in `SettingsMenu`, Security/Compliance-UI |
+| 2025-06-20 | 1.0.0 | **Full-Coverage i18n:** Alle UI-Komponenten, `auditLogLabels.ts`, `errors.ts`, `vaultLabels.ts`, `passwordPolicy.ts`; `fallbackLng: false` |
+| 2025-06-20 | 1.0.0 | **Admin System-Diagnose:** `vault-core/diagnostics.rs`, `get_system_diagnostics`, Security-Tab `SystemDiagnosticsPanel`, Markdown-Clipboard-Export, i18n-Statuscodes |
 
 ---
 
@@ -1939,6 +1962,27 @@ Payload-Block   → unverändert kopiert
   "keyRotationRecommended": true
 }
 ```
+
+### System-Diagnose (Admin-Support)
+
+| Aspekt | Detail |
+|---|---|
+| **Modul (Rust)** | `crates/vault-core/src/diagnostics.rs` — `collect_system_diagnostics` |
+| **Command** | `get_system_diagnostics` → `SystemDiagnostics` |
+| **UI** | `src/components/SystemDiagnosticsPanel.tsx` — Tab **Security**, unterhalb Compliance, oberhalb Passwort-Audit |
+| **Export** | Button „Diagnose-Bericht kopieren“ → Markdown via `src/lib/diagnosticsReport.ts` |
+| **i18n** | Labels `diagnostics.*`; Statuscodes über `formatDiagnosticStatus` in `errors.ts` |
+
+**`SystemDiagnostics` (IPC, camelCase):**
+
+| Feld | Typ | Prüfung |
+|---|---|---|
+| `vaultPath` | `VaultPathDiagnostics` | Geladener/gespeicherter Pfad, UNC-Erkennung, Datei lesbar, Verzeichnis beschreibbar |
+| `policyStatus` | `PolicyDiagnostics` | GPO-Pfad, aktiv, SHA-256-Hash, JSON-Validierung |
+| `auditLogStatus` | `AuditLogDiagnostics` | `{vault}.audit.log` beschreibbar, Hash-Kette (falls vorhanden) |
+| `versionInfo` | `VersionDiagnostics` | `VAULT_VERSION` |
+
+Stabile Status-Codes (Backend → Frontend): `ok`, `vault_not_loaded`, `vault_file_not_found`, `vault_path_not_reachable`, `vault_dir_not_writable`, `policy_not_configured`, `policy_invalid`, `policy_not_readable`, `audit_no_vault`, `audit_not_writable`, `audit_chain_invalid`, `audit_not_present`.
 
 ---
 

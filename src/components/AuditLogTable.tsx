@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { pickAuditExportPath } from "@/lib/dialog";
 import { exportAuditLog, getAuditLogs } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
@@ -7,6 +8,8 @@ import {
   formatAuditEntryId,
   formatAuditTimestampUtc,
 } from "@/lib/auditLogLabels";
+import { runAsync } from "@/lib/runAsync";
+import { BTN_SECONDARY_CLASS } from "@/lib/uiClasses";
 import type { AuditLogEntry } from "@/types/auditLog";
 
 const DEFAULT_LIMIT = 200;
@@ -15,13 +18,15 @@ interface AuditLogTableProps {
   readonly limit?: number;
 }
 
-export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
+export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableProps>) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState(false);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -38,6 +43,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
 
   const handleExport = useCallback(async () => {
     setExportMessage(null);
+    setExportSuccess(false);
     const selection = await pickAuditExportPath();
     if (!selection) {
       return;
@@ -46,16 +52,18 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
     setExporting(true);
     try {
       await exportAuditLog(selection.path, selection.format);
-      setExportMessage(`Export gespeichert: ${selection.path}`);
+      setExportMessage(t("audit.exportSaved", { path: selection.path }));
+      setExportSuccess(true);
     } catch (e) {
       setExportMessage(formatVaultError(e));
+      setExportSuccess(false);
     } finally {
       setExporting(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    void loadLogs();
+    runAsync(loadLogs);
   }, [loadLogs]);
 
   const filteredEntries = useMemo(() => {
@@ -81,7 +89,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
     if (loading && entries.length === 0) {
       return (
         <div className="flex flex-1 items-center justify-center p-8">
-          <p className="font-mono text-sm text-vault-muted">Lade Aktivitäts-Log…</p>
+          <p className="font-mono text-sm text-vault-muted">{t("audit.loading")}</p>
         </div>
       );
     }
@@ -92,10 +100,10 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
           <p className="font-mono text-sm text-vault-danger">{error}</p>
           <button
             type="button"
-            onClick={() => void loadLogs()}
+            onClick={() => runAsync(loadLogs)}
             className="rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text"
           >
-            Erneut versuchen
+            {t("common.retry")}
           </button>
         </div>
       );
@@ -105,23 +113,23 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
       <div className="flex-1 overflow-auto px-6 py-4">
         {filteredEntries.length === 0 ? (
           <p className="py-8 text-center font-mono text-xs text-vault-muted">
-            {search.trim() ? "Keine Treffer für die Suche" : "Noch keine Audit-Einträge vorhanden"}
+            {search.trim() ? t("audit.noSearchResults") : t("audit.empty")}
           </p>
         ) : (
           <table className="w-full min-w-[640px] border-collapse font-mono text-xs">
             <thead>
               <tr className="border-b border-vault-border text-left text-vault-muted">
                 <th scope="col" className="pb-2 pr-4 font-normal">
-                  Zeit (lokal)
+                  {t("audit.colTime")}
                 </th>
                 <th scope="col" className="pb-2 pr-4 font-normal">
-                  Aktion
+                  {t("audit.colAction")}
                 </th>
                 <th scope="col" className="pb-2 pr-4 font-normal">
-                  Eintrag
+                  {t("audit.colEntry")}
                 </th>
                 <th scope="col" className="pb-2 font-normal">
-                  Prüfsumme
+                  {t("audit.colChecksum")}
                 </th>
               </tr>
             </thead>
@@ -150,8 +158,8 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
           <p className="mt-4 font-mono text-xs text-vault-danger">{error}</p>
         ) : null}
         <p className="mt-4 font-mono text-[10px] text-vault-muted">
-          {filteredEntries.length} von {entries.length} Einträgen
-          {search.trim() ? " (gefiltert)" : ""}
+          {t("audit.entryCount", { filtered: filteredEntries.length, total: entries.length })}
+          {search.trim() ? t("audit.entryCountFiltered") : ""}
         </p>
       </div>
     );
@@ -160,16 +168,12 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <header className="border-b border-vault-border px-6 py-4">
-        <h1 className="font-mono text-sm font-semibold text-vault-text">Aktivitäts-Log</h1>
-        <p className="mt-1 font-mono text-xs text-vault-muted">
-          Revisionssichere Protokollierung sicherheitsrelevanter Aktionen
-        </p>
+        <h1 className="font-mono text-sm font-semibold text-vault-text">{t("audit.title")}</h1>
+        <p className="mt-1 font-mono text-xs text-vault-muted">{t("audit.subtitle")}</p>
       </header>
 
       <div className="border-b border-vault-border bg-vault-surface/40 px-6 py-3">
-        <p className="font-mono text-xs text-vault-muted">
-          Aus Sicherheitsgründen werden keine Passwörter oder Benutzernamen protokolliert.
-        </p>
+        <p className="font-mono text-xs text-vault-muted">{t("audit.privacyHint")}</p>
       </div>
 
       <div className="flex items-center gap-3 border-b border-vault-border px-6 py-3">
@@ -177,24 +181,26 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Aktion oder Eintrag filtern…"
+          placeholder={t("audit.searchPlaceholder")}
           className="min-w-0 flex-1 rounded border border-vault-border bg-vault-bg px-3 py-1.5 font-mono text-xs placeholder:text-vault-muted focus:border-vault-accent outline-none"
         />
         <button
           type="button"
-          onClick={() => void handleExport()}
+          onClick={() => runAsync(handleExport)}
           disabled={exporting || loading}
-          className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
+          className={BTN_SECONDARY_CLASS}
         >
-          {exporting ? "Export…" : "Export"}
+          {exporting ? t("audit.exporting") : t("common.export")}
         </button>
         <button
           type="button"
-          onClick={() => void loadLogs()}
+          onClick={() => {
+            runAsync(loadLogs);
+          }}
           disabled={loading}
           className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
         >
-          Aktualisieren
+          {t("common.refresh")}
         </button>
       </div>
 
@@ -202,9 +208,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: AuditLogTableProps) {
         <div className="border-b border-vault-border px-6 py-2">
           <p
             className={`font-mono text-xs ${
-              exportMessage.startsWith("Export gespeichert")
-                ? "text-vault-success"
-                : "text-vault-danger"
+              exportSuccess ? "text-vault-success" : "text-vault-danger"
             }`}
           >
             {exportMessage}

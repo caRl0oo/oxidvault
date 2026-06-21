@@ -4,27 +4,16 @@ export const THEME_STORAGE_KEY = "oxidvault-theme";
 
 export const DEFAULT_THEME: ThemeId = "oxid";
 
-export interface ThemeOption {
-  id: ThemeId;
-  label: string;
-  description: string;
-}
+export const THEME_IDS: ThemeId[] = ["oxid", "dracula", "nord", "matrix"];
 
-export const THEME_OPTIONS: ThemeOption[] = [
-  { id: "oxid", label: "Oxid Default", description: "Klassisches Dunkelblau" },
-  { id: "dracula", label: "Dracula", description: "Dunkles Violett & Purpur" },
-  { id: "nord", label: "Nord Arctic", description: "Eisiges Blaugrau" },
-  { id: "matrix", label: "Matrix Green", description: "Neon-Grün Hacker-Look" },
-];
-
-const VALID_THEMES = new Set<string>(THEME_OPTIONS.map((t) => t.id));
+const VALID_THEMES = new Set<string>(THEME_IDS);
 
 export function isThemeId(value: string): value is ThemeId {
   return VALID_THEMES.has(value);
 }
 
 export function getStoredTheme(): ThemeId {
-  if (typeof window === "undefined") return DEFAULT_THEME;
+  if (globalThis.window === undefined) return DEFAULT_THEME;
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
     if (stored && isThemeId(stored)) return stored;
@@ -35,7 +24,7 @@ export function getStoredTheme(): ThemeId {
 }
 
 export function applyTheme(theme: ThemeId): void {
-  document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.dataset.theme = theme;
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
@@ -49,3 +38,6 @@ export function initTheme(): ThemeId {
   applyTheme(theme);
   return theme;
 }
+
+/** @deprecated Use THEME_IDS with i18n `theme.{id}.label` */
+export const THEME_OPTIONS = THEME_IDS.map((id) => ({ id, label: id, description: "" }));

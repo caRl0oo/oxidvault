@@ -1,0 +1,449 @@
+{
+  "common": {
+    "yes": "Ja",
+    "no": "Nein",
+    "refresh": "Aktualisieren",
+    "retry": "Erneut versuchen",
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "closeDialog": "Dialog schließen",
+    "save": "Speichern",
+    "edit": "Bearbeiten",
+    "export": "Export",
+    "loading": "…",
+    "pleaseWait": "Bitte warten…",
+    "dash": "—",
+    "admin": "(Admin)",
+    "offline": "offline",
+    "requiredMark": " *",
+    "all": "Alle",
+    "filter": "Filter",
+    "filterClear": "Filter aufheben",
+    "filterClearAria": "Dashboard-Filter aufheben",
+    "tags": "Tags",
+    "search": "Suche",
+    "lock": "Sperren",
+    "generator": "Generator",
+    "newSecret": "Neues Secret",
+    "appName": "OxidVault",
+    "cryptoHint": "Argon2id · AES-256-GCM · .oxid"
+  },
+  "nav": {
+    "secrets": "Einträge",
+    "security": "Sicherheit",
+    "activity": "Aktivität"
+  },
+  "app": {
+    "statusLocked": "gesperrt",
+    "statusUnlocked": "entsperrt",
+    "defaultVaultName": "Mein Vault",
+    "lockedOnMinimize": "Vault gesperrt — Fenster wurde minimiert.",
+    "autoLocked": "Automatisch gesperrt nach 2 Minuten Inaktivität.",
+    "backendBrowserOnly": "browser-only",
+    "backendOffline": "offline"
+  },
+  "welcome": {
+    "tagline": "Offline-First Secret Manager · Backend:",
+    "createVault": "Neuen Vault anlegen",
+    "openVault": "Bestehenden Vault öffnen"
+  },
+  "browserPreview": {
+    "title": "Browser-Vorschau",
+    "hint": "Das Rust-Backend ist nur über Tauri verfügbar. Starte die App mit"
+  },
+  "auth": {
+    "createTitle": "Neuen Vault anlegen",
+    "createDescription": "Master-Passwort festlegen. Anschließend wählst du den Speicherort für die .oxid-Datei.",
+    "createSubmit": "Weiter — Speicherort wählen",
+    "openTitle": "Vault öffnen",
+    "openDescription": "Master-Passwort eingeben, um den Vault zu entschlüsseln.",
+    "openSubmit": "Vault öffnen",
+    "unlockTitle": "Vault entsperren",
+    "unlockSubmit": "Entsperren",
+    "vaultNamePlaceholder": "Vault-Name",
+    "masterPasswordPlaceholder": "Master-Passwort",
+    "back": "Zurück",
+    "switchVault": "Anderen Tresor öffnen"
+  },
+  "vault": {
+    "searchPlaceholder": "Titel, URL, Benutzer…",
+    "entriesCount": "Einträge · {{count}}",
+    "noMatches": "Keine Treffer",
+    "noEntries": "Keine Einträge",
+    "addSecret": "+ Neues Secret",
+    "lockVault": "Vault sperren",
+    "emptyHint": "Noch keine Secrets — Ctrl+N zum Anlegen.",
+    "selectHint": "Eintrag auswählen oder neues Secret anlegen."
+  },
+  "sidebar": {
+    "copyPassword": "Passwort kopieren",
+    "openWebsite": "Website öffnen",
+    "quickConnect": "Quick Connect",
+    "sshQuickConnect": "SSH Quick Connect"
+  },
+  "entry": {
+    "url": "URL",
+    "openWebsite": "Website öffnen",
+    "username": "Benutzername",
+    "password": "Passwort",
+    "notes": "Notizen",
+    "serverIp": "Server / IP",
+    "hostIp": "Host / IP",
+    "privateKey": "Private Key",
+    "passphrase": "Passphrase",
+    "service": "Service",
+    "apiToken": "API-Key / Token",
+    "port": "Port",
+    "dbType": "DB-Typ",
+    "database": "Datenbank",
+    "ssid": "SSID",
+    "encryption": "Verschlüsselung",
+    "passwordKey": "Passwort / Key",
+    "content": "Inhalt",
+    "connecting": "Verbinde…",
+    "quickConnect": "Quick Connect",
+    "reveal": "Anzeigen",
+    "hide": "Verbergen"
+  },
+  "secretForm": {
+    "createTitle": "Neues Secret",
+    "editTitle": "Secret bearbeiten",
+    "createSubtitle": "Typ wählen und Felder ausfüllen",
+    "editSubtitle": "{{type}} — Felder anpassen und speichern",
+    "title": "Titel",
+    "titlePlaceholder": "z. B. Produktions-Server",
+    "folder": "Ordner / Bereich",
+    "folderPlaceholder": "z. B. Produktion, Kunden, Intern",
+    "tags": "Tags",
+    "expiresAt": "Ablaufdatum / Gültig bis",
+    "urlPlaceholder": "https://… oder example.com",
+    "serverPlaceholder": "10.0.0.1 oder host.example.com",
+    "privateKeyPlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "servicePlaceholder": "z. B. GitHub, AWS, Stripe",
+    "hostPlaceholder": "10.0.0.5",
+    "databaseName": "Datenbank-Name",
+    "databaseNamePlaceholder": "production",
+    "ssidPlaceholder": "CorpNet-Guest",
+    "notePlaceholder": "Config-Dateien, Runbooks, sensible Notizen…",
+    "serviceName": "Service-Name",
+    "loadingSecrets": "Secrets laden…",
+    "encryptSaving": "Verschlüsseln & Speichern…",
+    "encryptUpdating": "Verschlüsseln & Aktualisieren…"
+  },
+  "secretType": {
+    "web_login": "Web-Login",
+    "ssh_key": "SSH-Key",
+    "api_token": "API-Token",
+    "database": "Datenbank",
+    "network_wifi": "Netzwerk / WLAN",
+    "secure_note": "Sichere Notiz",
+    "desc": {
+      "web_login": "URL, Benutzer, Passwort",
+      "ssh_key": "Server, Key, Passphrase",
+      "api_token": "Service, API-Key",
+      "database": "Host, Port, DB-Zugang",
+      "network_wifi": "SSID, Verschlüsselung",
+      "secure_note": "Config, Notizen"
+    }
+  },
+  "dbType": {
+    "postgresql": "PostgreSQL",
+    "mysql": "MySQL",
+    "mariadb": "MariaDB",
+    "mssql": "Microsoft SQL Server",
+    "sqlite": "SQLite",
+    "mongodb": "MongoDB",
+    "redis": "Redis",
+    "oracle": "Oracle",
+    "other": "Sonstige"
+  },
+  "wifiEncryption": {
+    "wpa3": "WPA3",
+    "wpa2": "WPA2",
+    "wpa": "WPA",
+    "wep": "WEP",
+    "open": "Offen (keine)",
+    "enterprise": "Enterprise (802.1X)",
+    "other": "Sonstige"
+  },
+  "audit": {
+    "title": "Aktivitäts-Log",
+    "subtitle": "Revisionssichere Protokollierung sicherheitsrelevanter Aktionen",
+    "privacyHint": "Aus Sicherheitsgründen werden keine Passwörter oder Benutzernamen protokolliert.",
+    "searchPlaceholder": "Aktion oder Eintrag filtern…",
+    "exporting": "Export…",
+    "loading": "Lade Aktivitäts-Log…",
+    "noSearchResults": "Keine Treffer für die Suche",
+    "empty": "Noch keine Audit-Einträge vorhanden",
+    "colTime": "Zeit (lokal)",
+    "colAction": "Aktion",
+    "colEntry": "Eintrag",
+    "colChecksum": "Prüfsumme",
+    "entryCount": "{{filtered}} von {{total}} Einträgen",
+    "entryCountFiltered": " (gefiltert)",
+    "exportSaved": "Export gespeichert: {{path}}",
+    "actions": {
+      "VaultCreated": "Tresor wurde erstellt",
+      "VaultOpened": "Tresor wurde geöffnet",
+      "VaultUnlocked": "Tresor wurde entsperrt",
+      "VaultLocked": "Tresor wurde gesperrt",
+      "EntryCreated": "Eintrag wurde erstellt",
+      "EntryUpdated": "Eintrag wurde aktualisiert",
+      "SecretCopied": "Secret wurde in die Zwischenablage kopiert",
+      "SecretRevealed": "Secret wurde angezeigt",
+      "VaultKeyRotated": "Master-Schlüssel wurde rotiert"
+    }
+  },
+  "passwordPolicy": {
+    "strength": {
+      "0": "Sehr schwach",
+      "1": "Schwach",
+      "2": "Mittel",
+      "3": "Stark",
+      "4": "Sehr stark"
+    },
+    "hintEmpty": "Mindestens {{min}} Zeichen erforderlich",
+    "hintTooShort": "Noch {{remaining}} Zeichen ({{current}}/{{min}})",
+    "hintCommon": "Passwort ist zu häufig — bitte ein einzigartiges wählen",
+    "hintStrongOk": "Passwortstärke: {{label}} — Richtlinie erfüllt",
+    "hintWeak": "Passwortstärke: {{label}} — bitte verstärken",
+    "checkLength": "Mindestens {{min}} Zeichen",
+    "checkNotCommon": "Kein häufiges Passwort",
+    "checkEntropy": "Ausreichende Entropie (zxcvbn)"
+  },
+  "passwordGen": {
+    "title": "Passwort-Generator",
+    "subtitle": "Kryptografisch sicher · CSPRNG im Rust-Backend",
+    "length": "Länge: {{length}}",
+    "uppercase": "Großbuchstaben (A–Z)",
+    "lowercase": "Kleinbuchstaben (a–z)",
+    "digits": "Zahlen (0–9)",
+    "symbols": "Sonderzeichen (!@#…)",
+    "generatedPassword": "Generiertes Passwort",
+    "copy": "Kopieren",
+    "copied": "Kopiert!",
+    "apply": "Übernehmen",
+    "applied": "Übernommen!",
+    "clipboardUnavailable": "Zwischenablage nicht verfügbar",
+    "charsetRequired": "Mindestens ein Zeichensatz muss aktiv sein.",
+    "generating": "Generiere…",
+    "regenerate": "Neu generieren",
+    "generateButtonTitle": "Passwort generieren (Ctrl+G)",
+    "generateButtonAria": "Passwort generieren"
+  },
+  "copy": {
+    "copy": "Kopieren",
+    "copied": "Kopiert!",
+    "copiedWithTimer": "Kopiert! ({{seconds}}s)",
+    "clipboardToast": "In Zwischenablage kopiert — wird in {{seconds}}s automatisch geleert"
+  },
+  "errors": {
+    "unknown": "Unbekannter Fehler",
+    "titleRequired": "Titel ist erforderlich.",
+    "fieldsIncomplete": "Bitte alle Pflichtfelder ausfüllen.",
+    "invalidMasterPassword": "Master-Passwort ist falsch.",
+    "vaultLockedBy": "Vault wird bereits von einer anderen Instanz verwendet.",
+    "weakMasterPassword": "Master-Passwort erfüllt nicht die Sicherheitsrichtlinie.",
+    "tooCommon": "Dieses Passwort ist zu häufig — bitte ein einzigartiges wählen.",
+    "atLeast12Chars": "Mindestens 12 Zeichen erforderlich.",
+    "vaultFileExists": "An diesem Speicherort existiert bereits eine Vault-Datei.",
+    "invalidVaultFile": "Ungültige oder beschädigte .oxid-Datei.",
+    "vaultNotInitialized": "Vault ist nicht initialisiert.",
+    "noVaultFileLoaded": "Keine Vault-Datei geladen.",
+    "auditLogCorrupted": "Audit-Log ist beschädigt — Export abgebrochen (Hash-Kette unterbrochen).",
+    "urlEmpty": "URL ist leer.",
+    "urlInvalid": "URL ist ungültig.",
+    "urlMustHttp": "URL muss mit http:// oder https:// beginnen.",
+    "urlInvalidChars": "URL enthält ungültige Zeichen.",
+    "urlNoSpaces": "URL darf keine Leerzeichen enthalten.",
+    "databaseIncomplete": "Bitte alle Datenbank-Felder ausfüllen.",
+    "wifiIncomplete": "Bitte alle WLAN-Felder ausfüllen.",
+    "secureNoteRequired": "Notiz-Inhalt ist erforderlich."
+  },
+  "theme": {
+    "selectAria": "Design auswählen",
+    "selectTitle": "Design / Theme",
+    "listAria": "Theme-Auswahl",
+    "oxid": {
+      "label": "Oxid Default",
+      "description": "Klassisches Dunkelblau"
+    },
+    "dracula": {
+      "label": "Dracula",
+      "description": "Dunkles Violett & Purpur"
+    },
+    "nord": {
+      "label": "Nord Arctic",
+      "description": "Eisiges Blaugrau"
+    },
+    "matrix": {
+      "label": "Matrix Green",
+      "description": "Neon-Grün Hacker-Look"
+    }
+  },
+  "locale": {
+    "de": "Deutsch",
+    "en": "English"
+  },
+  "sync": {
+    "syncing": "Synchronisiere…",
+    "syncGit": "Git synchronisieren"
+  },
+  "ssh": {
+    "terminalAria": "SSH Terminal",
+    "quickConnect": "Quick Connect",
+    "banner": "── OxidVault SSH Quick Connect ──",
+    "connectionLost": "Verbindung unterbrochen.",
+    "sessionEnded": "Sitzung beendet.",
+    "footerHint": "Private Key verbleibt im Rust-Speicher — wird nicht in die Zwischenablage kopiert."
+  },
+  "reachability": {
+    "checking": "Prüfe Status…",
+    "online": "Online",
+    "onlineHost": "Online · {{host}}:{{port}}",
+    "offline": "Offline",
+    "offlineHost": "Offline · {{host}}:{{port}}"
+  },
+  "expiry": {
+    "expiredWarning": "WARNUNG: Passwort abgelaufen!",
+    "expiresOn": "Läuft am {{date}} ab",
+    "today": " (heute)",
+    "tomorrow": " (morgen)",
+    "expired": "Abgelaufen"
+  },
+  "dashboardFilter": {
+    "weak": "Schwache Passwörter",
+    "duplicate": "Duplikat-Gruppen",
+    "expiring": "Ablaufende",
+    "label": "Filter: {{label}}"
+  },
+  "tags": {
+    "removeAria": "Tag {{tag}} entfernen",
+    "inputPlaceholder": "Tag eingeben, Enter…"
+  },
+  "shortcuts": {
+    "search": "Suche",
+    "lock": "Sperren",
+    "generator": "Generator",
+    "newSecret": "Neues Secret"
+  },
+  "dialog": {
+    "vaultFilter": "OxidVault",
+    "auditJsonFilter": "JSON-Audit-Bericht (.json)",
+    "auditCsvFilter": "CSV-Audit-Bericht (.csv)"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "theme": "Design",
+    "language": "Sprache",
+    "gitSync": "Git Synchronisation",
+    "gitSyncHint": "Die verschlüsselte .oxid-Datei wird über Git synchronisiert — Klartext-Secrets verlassen nie den Tresor.",
+    "adminPolicyActive": "Admin-Richtlinie aktiv — einige Optionen sind gesperrt.",
+    "syncEnabled": "Sync aktiv",
+    "remoteRepository": "Remote-Repository",
+    "remotePlaceholder": "https://github.com/user/vault.git",
+    "saveGit": "Git-Einstellungen speichern",
+    "saving": "Speichern…",
+    "saved": "Gespeichert ✓"
+  },
+  "compliance": {
+    "title": "Compliance-Übersicht",
+    "subtitle": "Policy-, Audit- und Schlüssel-Status für Enterprise v1.0",
+    "loading": "Lade Compliance-Status…",
+    "compliance_ok": "Compliance OK",
+    "action_required": "Handlungsbedarf",
+    "policy_status": "Policy-Status",
+    "gpo_managed": "GPO verwaltet?",
+    "audit_status": "Audit-Status",
+    "hash_chain_valid": "Hash-Kette valide?",
+    "key_age": "Schlüssel-Alter",
+    "last_rotated": "Zuletzt rotiert: {{date}}",
+    "created": "Erstellt: {{date}}",
+    "key_age_days": "Schlüssel-Alter: {{days}} Tage",
+    "rotation_recommended": "Ihre Sicherheitsrichtlinie empfiehlt eine Passwort-Rotation (Schwellwert: {{days}} Tage).",
+    "rotate_password": "Passwort rotieren",
+    "rotation_hint": "Die Rotation erfolgt per sicherer Key-Migration (v2-Format), ohne dass Daten entschlüsselt werden.",
+    "rotation_success_toast": "Schlüssel erfolgreich rotiert. Ihr Tresor ist nun mit dem neuen Master-Schlüssel geschützt."
+  },
+  "security": {
+    "title": "Sicherheits-Dashboard",
+    "subtitle": "Offline-Analyse im RAM · Keine Daten verlassen den Tresor",
+    "analyzing": "Analysiere Tresor…",
+    "vault_security_score": "Tresor-Sicherheitswert",
+    "audited_credentials": "{{count}} analysierte Zugangsdaten",
+    "weak_passwords": "Schwache Passwörter",
+    "duplicate_groups": "Duplikat-Gruppen",
+    "expiring_passwords": "Ablaufende Passwörter",
+    "critical_warnings": "Kritische Warnungen",
+    "filter_sidebar": "In Sidebar filtern →",
+    "filter_sidebar_aria": "{{label}} — Sidebar filtern",
+    "duplicate_section": "Doppelte Passwörter",
+    "duplicate_group": "{{count}} Einträge teilen dasselbe Passwort",
+    "weak_section": "Schwache Passwörter",
+    "expiring_section": "Ablaufende Passwörter — To-Do",
+    "no_issues": "Keine Schwachstellen gefunden — weiter so!",
+    "no_passwords": "Keine analysierbaren Passwörter im Tresor.",
+    "expiry_overdue": "{{days}} T. überfällig",
+    "expiry_today": "heute",
+    "expiry_tomorrow": "morgen",
+    "expiry_in_days": "{{days}} T.",
+    "weakReason": {
+      "short": "Kürzer als 12 Zeichen",
+      "no_digit": "Keine Ziffer",
+      "no_symbol": "Kein Sonderzeichen"
+    },
+    "expiryStatus": {
+      "expired": "Abgelaufen",
+      "expiring_soon": "Läuft bald ab"
+    }
+  },
+  "diagnostics": {
+    "title": "System-Diagnose",
+    "subtitle": "Snapshot für IT-Support — keine Secrets, nur Systemstatus.",
+    "loading": "Diagnose wird ausgeführt…",
+    "copyReport": "Diagnose-Bericht kopieren",
+    "copySuccess": "Bericht kopiert",
+    "copyFailed": "Kopieren fehlgeschlagen",
+    "summaryOk": "Alle Prüfungen bestanden",
+    "summaryIssues": "Mindestens eine Prüfung fehlgeschlagen",
+    "overall": "Gesamt",
+    "columnCheck": "Prüfung",
+    "columnStatus": "Status",
+    "columnDetail": "Details",
+    "state": {
+      "ok": "OK",
+      "error": "Fehler"
+    },
+    "rows": {
+      "vaultPath": "Vault-Pfad",
+      "policyStatus": "Admin-Policy (GPO)",
+      "auditLogStatus": "Audit-Log",
+      "versionInfo": "Anwendungsversion"
+    },
+    "statusCodes": {
+      "ok": "Erreichbar und beschreibbar",
+      "vault_not_loaded": "Kein Vault-Pfad konfiguriert",
+      "vault_file_not_found": "Vault-Datei nicht gefunden",
+      "vault_path_not_reachable": "Pfad nicht erreichbar (Lesen fehlgeschlagen)",
+      "vault_dir_not_writable": "Verzeichnis nicht beschreibbar",
+      "policy_not_configured": "Keine Admin-Policy hinterlegt",
+      "policy_invalid": "Policy-Datei ungültig (JSON/Schema)",
+      "policy_not_readable": "Policy-Datei nicht lesbar",
+      "audit_no_vault": "Kein Vault — Audit-Log nicht prüfbar",
+      "audit_not_writable": "Audit-Log nicht beschreibbar",
+      "audit_chain_invalid": "Audit-Hash-Kette beschädigt",
+      "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)"
+    }
+  },
+  "rotation": {
+    "title": "Master-Passwort rotieren",
+    "subtitle": "Der Daten-Container bleibt unverändert — nur der Schlüssel-Header wird neu geschützt.",
+    "loading": "Schlüssel-Rotation läuft – Daten werden neu geschützt…",
+    "current_password": "Aktuelles Master-Passwort",
+    "new_password": "Neues Master-Passwort",
+    "new_password_placeholder": "Neues Master-Passwort",
+    "confirm_password": "Neues Passwort bestätigen",
+    "password_mismatch": "Passwörter stimmen nicht überein.",
+    "submit": "Passwort rotieren"
+  }
+}

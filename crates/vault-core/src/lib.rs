@@ -2,6 +2,7 @@ pub mod audit;
 pub mod audit_export;
 mod audit_secure;
 pub mod compliance;
+pub mod diagnostics;
 pub mod crypto;
 pub mod entry;
 pub mod error;
@@ -22,6 +23,10 @@ pub use audit::{
 };
 pub use audit_export::{export_audit_report, ExportFormat};
 pub use compliance::{compliance_status, ComplianceStatus, KEY_ROTATION_THRESHOLD_DAYS};
+pub use diagnostics::{
+    collect_system_diagnostics, AuditLogDiagnostics, PolicyDiagnostics, SystemDiagnostics,
+    VaultPathDiagnostics, VersionDiagnostics,
+};
 pub use policy::{
     init_admin_policy, resolve_config, validate_master_password,
     validate_master_password_with_min_len, AdminPolicy, ResolvedConfig, UserPolicyPreferences,

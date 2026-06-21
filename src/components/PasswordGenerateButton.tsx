@@ -1,16 +1,22 @@
+import { useTranslation } from "react-i18next";
+
 interface PasswordGenerateButtonProps {
   onClick: () => void;
   className?: string;
 }
 
-/** Opens the password generator and applies the result to the adjacent secret field. */
-export function PasswordGenerateButton({ onClick, className = "" }: PasswordGenerateButtonProps) {
+export function PasswordGenerateButton({
+  onClick,
+  className = "",
+}: Readonly<PasswordGenerateButtonProps>) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
       onClick={onClick}
-      title="Passwort generieren (Ctrl+G)"
-      aria-label="Passwort generieren"
+      title={t("passwordGen.generateButtonTitle")}
+      aria-label={t("passwordGen.generateButtonAria")}
       className={`shrink-0 rounded border border-vault-border p-2 text-vault-muted transition hover:border-vault-accent hover:text-vault-accent ${className}`}
     >
       <KeyIcon className="h-4 w-4" />
@@ -18,7 +24,7 @@ export function PasswordGenerateButton({ onClick, className = "" }: PasswordGene
   );
 }
 
-function KeyIcon({ className }: { className?: string }) {
+function KeyIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       viewBox="0 0 24 24"
