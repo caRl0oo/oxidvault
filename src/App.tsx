@@ -18,6 +18,7 @@ import { cancelSecureClipboardClear } from "@/lib/secureClipboard";
 import { filterEntries } from "@/lib/search";
 import { SidebarEntryList } from "@/components/SidebarEntryList";
 import { SecurityDashboard } from "@/components/SecurityDashboard";
+import { AuditLogTable } from "@/components/AuditLogTable";
 import { DashboardFilterBar } from "@/components/DashboardFilterBar";
 import { SidebarTagFilter } from "@/components/SidebarTagFilter";
 import { openWebsiteUrl } from "@/lib/openWebsite";
@@ -30,6 +31,7 @@ import {
   detachVault,
   getAppSettings,
   getEntry,
+  getResolvedConfig,
   getVaultInfo,
   healthCheck,
   isTauri,
@@ -41,6 +43,7 @@ import {
   updateEntry,
 } from "@/lib/ipc";
 import { notifyBackendSecureCopy } from "@/lib/secureClipboard";
+import type { ResolvedConfig } from "@/types/policy";
 import type { GitSyncSettings } from "@/types/settings";
 import type { DashboardFilter } from "@/types/dashboardFilter";
 import type {
@@ -53,7 +56,7 @@ import type { SshTerminalState } from "@/types/ssh";
 
 type Screen = "welcome" | "create" | "open" | "unlock" | "vault";
 
-type VaultMainView = "secrets" | "security";
+type VaultMainView = "secrets" | "security" | "activity";
 
 export default function App() {
   const [vaultInfo, setVaultInfo] = useState<VaultInfo | null>(null);
@@ -79,6 +82,7 @@ export default function App() {
   const [sshConnecting, setSshConnecting] = useState(false);
   const [sidebarCopyingId, setSidebarCopyingId] = useState<string | null>(null);
   const [gitSyncSettings, setGitSyncSettings] = useState<GitSyncSettings>({ enabled: false });
+  const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
   const [gitSyncing, setGitSyncing] = useState(false);
   const [gitSyncMessage, setGitSyncMessage] = useState<string | null>(null);
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
@@ -96,14 +100,19 @@ export default function App() {
       return;
     }
     try {
-      const [health, info, settings] = await Promise.all([
+      const [health, info, settings, resolved] = await Promise.all([
         healthCheck(),
         bootstrapVault(),
         getAppSettings(),
+        getResolvedConfig(),
       ]);
       setBackendStatus(health);
       setVaultInfo(info);
-      setGitSyncSettings(settings.gitSync);
+      setResolvedConfig(resolved);
+      setGitSyncSettings({
+        enabled: resolved.gitSyncEnabled.value,
+        remoteUrl: settings.gitSync.remoteUrl,
+      });
       if (!info.initialized) {
         setScreen("welcome");
       } else if (info.locked) {
@@ -310,9 +319,13 @@ export default function App() {
   }, []);
 
   const vaultUnlocked = screen === "vault" && !!vaultInfo && !vaultInfo.locked;
-  useAutoLock(vaultUnlocked, () => {
-    void handleAutoLock();
-  });
+  useAutoLock(
+    vaultUnlocked,
+    () => {
+      void handleAutoLock();
+    },
+    resolvedConfig?.autoLockSeconds.value ?? 120,
+  );
 
   const handleSelectEntry = useCallback(async (id: string) => {
     setVaultMainView("secrets");
@@ -586,6 +599,11 @@ export default function App() {
                 active={vaultMainView === "security"}
                 onClick={() => setVaultMainView("security")}
               />
+              <SidebarNavTab
+                label="Aktivität"
+                active={vaultMainView === "activity"}
+                onClick={() => setVaultMainView("activity")}
+              />
             </div>
             <div className="border-b border-vault-border p-3">
               <input
@@ -653,6 +671,8 @@ export default function App() {
                 onApplyFilter={handleApplyDashboardFilter}
                 activeFilterKind={dashboardFilter?.kind ?? null}
               />
+            ) : vaultMainView === "activity" ? (
+              <AuditLogTable />
             ) : selectedEntry ? (
               <EntryDetail
                 entry={selectedEntry}

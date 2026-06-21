@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use tauri::{AppHandle, State};
+use vault_core::policy::resolve_config;
 
 use crate::git_sync::{self, GitSyncResult};
 use crate::settings::{load_settings, save_settings, AppSettings, GitSyncSettings};
@@ -18,9 +19,19 @@ pub fn update_git_sync_settings(
     enabled: bool,
     remote_url: Option<String>,
 ) -> Result<AppSettings, String> {
-    let mut settings = load_settings(&app)?;
+    let settings = load_settings(&app)?;
+    let resolved = resolve_config(&settings.policy_preferences());
+    if resolved.git_sync_enabled.disabled && enabled != resolved.git_sync_enabled.value {
+        return Err("Git-Synchronisation wird durch die Admin-Richtlinie verwaltet.".into());
+    }
+
+    let mut settings = settings;
     settings.git_sync = GitSyncSettings {
-        enabled,
+        enabled: if resolved.git_sync_enabled.disabled {
+            resolved.git_sync_enabled.value
+        } else {
+            enabled
+        },
         remote_url: remote_url
             .map(|url| url.trim().to_string())
             .filter(|url| !url.is_empty()),
@@ -35,7 +46,8 @@ pub async fn sync_vault_git(
     state: State<'_, AppState>,
 ) -> Result<GitSyncResult, String> {
     let settings = load_settings(&app)?;
-    if !settings.git_sync.enabled {
+    let resolved = resolve_config(&settings.policy_preferences());
+    if !resolved.git_sync_enabled.value {
         return Err("Git-Synchronisation ist deaktiviert.".into());
     }
     let remote_url = settings

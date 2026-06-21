@@ -10,5 +10,15 @@ fn main() {
         return;
     }
 
+    if let Err(err) = vault_core::audit::init() {
+        eprintln!("OxidVault compliance error: audit log security init failed: {err}");
+        std::process::exit(1);
+    }
+
+    if let Err(err) = vault_core::policy::init_admin_policy() {
+        eprintln!("OxidVault policy error: admin policy init failed: {err}");
+        std::process::exit(1);
+    }
+
     oxidvault_lib::run();
 }

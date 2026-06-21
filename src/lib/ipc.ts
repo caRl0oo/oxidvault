@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SecurityAuditReport } from "@/types/audit";
+import type { AuditLogEntry } from "@/types/auditLog";
+import type { ResolvedConfig } from "@/types/policy";
 import type { AppSettings, GitSyncResult } from "@/types/settings";
 import type {
   PasswordGenOptions,
@@ -107,8 +109,16 @@ export async function auditVaultSecurity(): Promise<SecurityAuditReport> {
   return invoke<SecurityAuditReport>("audit_vault_security");
 }
 
+export async function getAuditLogs(limit: number): Promise<AuditLogEntry[]> {
+  return invoke<AuditLogEntry[]>("get_audit_logs", { limit });
+}
+
 export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
+}
+
+export async function getResolvedConfig(): Promise<ResolvedConfig> {
+  return invoke<ResolvedConfig>("get_resolved_config");
 }
 
 export async function updateGitSyncSettings(
@@ -123,5 +133,5 @@ export async function syncVaultGit(): Promise<GitSyncResult> {
 }
 
 export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return typeof globalThis  !== "undefined" && "__TAURI_INTERNALS__" in globalThis ;
 }

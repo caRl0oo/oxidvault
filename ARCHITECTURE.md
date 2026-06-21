@@ -19,8 +19,11 @@
 7. [Dateiformate](#7-dateiformate)
 8. [Frontend-Architektur](#8-frontend-architektur)
 9. [Build, Deployment & Betrieb](#9-build-deployment--betrieb)
-10. [Browser-Erweiterung — Native Messaging (Phase 1–2)](#10-browser-erweiterung--native-messaging-phase-12)
-11. [Dokumentationspflicht & Changelog](#11-dokumentationspflicht--changelog)
+10. [Browser-Erweiterung — Native Messaging (Phase 1–3)](#10-browser-erweiterung--native-messaging-phase-13)
+11. [Audit-Logging & Compliance (ISO 27001)](#11-audit-logging--compliance-iso-27001)
+12. [Vault-Persistenz: UNC-Pfade & Atomic Writes](#12-vault-persistenz-unc-pfade--atomic-writes)
+13. [Zentrales Policy-Management & Admin-GPOs](#13-zentrales-policy-management--admin-gpos)
+14. [Dokumentationspflicht & Changelog](#14-dokumentationspflicht--changelog)
 
 ---
 
@@ -300,28 +303,36 @@ crypto::encrypt(key, plaintext.as_ref())
 | **Serialisierung** | `VaultPayloadRef { entries: &'a [SecretEntry] }` — serde serialisiert per Referenz |
 | **Kein Deep-Clone** | Kein `.clone()` auf `entries`, Passwörter oder Payloads in `persist()` |
 | **Plaintext-Lebensdauer** | JSON-Puffer existiert nur für die Dauer von `write_vault_bytes` |
-| **Atomic Write** | Unverändert: `.oxid.tmp` → `fsync` → `rename` |
+| **Atomic Write** | `.oxid.tmp` → `fsync` → `rename` mit SMB-Fallback (Details: [§12](#12-vault-persistenz-unc-pfade--atomic-writes)) |
 
 #### Atomic Writes (Enterprise Hardening)
 
-> **Status:** ✅ `crates/vault-core/src/format.rs` · `atomic_write_vault()`
+> **Status:** ✅ `crates/vault-core/src/format.rs` · `atomic_write_vault()`  
+> **Details:** [§12 Vault-Persistenz](#12-vault-persistenz-unc-pfade--atomic-writes)
 
-Verhindert korrupte `.oxid`-Dateien bei Absturz oder Stromausfall während des Speicherns:
+Verhindert korrupte `.oxid`-Dateien bei Absturz, Stromausfall oder SMB-Locking während des Speicherns:
 
 ```
-encrypt(payload) → write vault.oxid.tmp → sync_all()
+encrypt(payload) → write {dir}/{name}.oxid.tmp → sync_all()
                          │
                          ▼
-              fs::rename(.tmp → .oxid)   ← atomar (gleiches Volume)
+              fs::rename(.tmp → .oxid)   ← atomar (gleiches Volume/Share)
                          │
-              Bei Fehler: .tmp wird gelöscht, Original bleibt intakt
+              Rename fehlgeschlagen? (z. B. SMB-Lock)
+                         │
+                         ▼
+              copy(.tmp → .oxid) → sync_all(.oxid) → remove(.tmp)
+                         │
+              Bei Fehler: .tmp wird gelöscht, Original bleibt intakt (Rename-Pfad)
 ```
 
 | Aspekt | Detail |
 |---|---|
-| **Temp-Datei** | `{vault}.oxid.tmp` neben der Zieldatei |
-| **Sync** | `File::sync_all()` vor Rename — Daten auf Platte |
-| **Rename** | `std::fs::rename` — atomares Ersetzen |
+| **Temp-Datei** | `{dir}/{name}.oxid.tmp` — **zwingend** im selben Verzeichnis wie die Zieldatei (UNC/SMB) |
+| **Sync (Temp)** | `File::sync_all()` nach Schreiben — Daten auf Platte/Share |
+| **Rename** | `std::fs::rename` — atomares Ersetzen auf lokalem FS und gleichem Share |
+| **SMB-Fallback** | `OpenOptions` (truncate) → `std::io::copy` → `sync_all` auf Zieldatei → Temp löschen |
+| **UNC-Pfade** | `path_util::normalize_vault_path` in `vault.rs` (Create/Open/Attach) |
 | **Einsatz** | `write_vault_file` (Create) und `update_vault_file` (Update) |
 
 #### Lock-on-Minimize (Enterprise Hardening)
@@ -479,11 +490,14 @@ OxidVault/
 │           ├── lib.rs       ← Re-Exports
 │           ├── crypto.rs    ← Argon2id KDF, AES-256-GCM
 │           ├── format.rs    ← .oxid Lesen/Schreiben
+│           ├── lock.rs      ← exklusiver Vault-Datei-Lock
+│           ├── policy/      ← Master-Passwort-Regeln + Admin-GPO (`policy.json`)
 │           ├── entry.rs     ← SecretEntry, SecretEntryPublic, SecretField
 │           ├── vault.rs     ← Vault-Lifecycle, Persistenz
 │           ├── policy.rs    ← Master-Passwort-Richtlinie
 │           ├── generator.rs ← CSPRNG Passwort-Generator
-│           ├── audit.rs     ← Offline Security Audit (Duplikate, Schwäche, Score)
+│           ├── audit.rs          ← ISO-27001 Compliance-Log (append-only, hash chain)
+│           ├── security_audit.rs ← Offline Security Audit (Duplikate, Schwäche, Score)
 │           ├── expiry.rs    ← Passwort-Ablauf (YYYY-MM-DD, 14-Tage-Warnung)
 │           └── probe.rs     ← Host/Port-Auflösung für Live-Ping
 │           └── error.rs     ← VaultError
@@ -750,7 +764,9 @@ ReachabilityDot — Sidebar + Detailansicht
 | `open_website_url` | `url: String` | `()` | Validierte http(s)-URL im Standard-Browser öffnen | ✅ |
 | `check_entries_reachability` | `entry_ids: String[]` | `EntryReachabilityStatus[]` | Async TCP-Reachability für Infrastruktur-Einträge | ✅ |
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
+| `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
+| `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?` | `AppSettings` | Git-Sync-Konfiguration speichern | ✅ |
 | `sync_vault_git` | — | `GitSyncResult` | Git pull → commit/push der verschlüsselten `.oxid` | ✅ async |
 | `ssh_connect` | `entry_id: String` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM) | ✅ |
@@ -927,7 +943,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | **Detailansicht** | `ExpiryBadge` unter dem Titel — rot wenn abgelaufen, amber wenn ≤ 14 Tage |
 | **Datumskalkulation** | Reine Kalendertage (`YYYY-MM-DD`), lokales Datum — keine UTC-Zeitverschiebung |
 | **Security Dashboard** | Vierte Kachel „Ablaufende Passwörter“ + To-Do-Liste unten im Dashboard |
-| **Audit-Backend** | `audit.rs` + `expiry.rs` — `expiring_entries` mit `status`: `expired` \| `expiring_soon` |
+| **Audit-Backend** | `security_audit.rs` + `expiry.rs` — `expiring_entries` mit `status`: `expired` \| `expiring_soon` |
 
 ### Echtzeit-Suche (v0.1.0)
 
@@ -971,11 +987,11 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### Security Audit Dashboard (v0.1.0 — Runde 3)
 
-> **Status:** ✅ `audit_vault_security` · `vault-core/audit.rs` · `SecurityDashboard.tsx`
+> **Status:** ✅ `audit_vault_security` · `vault-core/security_audit.rs` · `SecurityDashboard.tsx`
 
 | Aspekt | Detail |
 |---|---|
-| **Navigation** | Sidebar-Tabs **Secrets** / **Security** oben in der linken Leiste |
+| **Navigation** | Sidebar-Tabs **Secrets** / **Security** / **Aktivität** oben in der linken Leiste |
 | **Analyse-Ort** | Vollständig offline im Rust-RAM — Passwörter verlassen nie den Prozess |
 | **Response** | Nur Metadaten: IDs, Titel, Gründe, Scores — **keine Klartext-Passwörter** |
 | **Duplikate** | Gruppiert nach identischem Secret (Web-Login, DB, WLAN, API-Token, SSH-Passphrase) |
@@ -1037,7 +1053,9 @@ ReachabilityDot — Sidebar + Detailansicht
 | `openWebsiteUrl(url)` | `open_website_url` |
 | `checkEntriesReachability(entryIds)` | `check_entries_reachability` |
 | `auditVaultSecurity()` | `audit_vault_security` |
+| `getAuditLogs(limit)` | `get_audit_logs` |
 | `getAppSettings()` | `get_app_settings` |
+| `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
 | `syncVaultGit()` | `sync_vault_git` |
 | `sshConnect(entryId)` | `ssh_connect` |
@@ -1506,7 +1524,259 @@ Erwartete stdout-Antwort (hex-dekodiert): 4-Byte-Länge + `{"status":"pong"}`.
 
 ---
 
-## 11. Dokumentationspflicht & Changelog
+## 11. Audit-Logging & Compliance (ISO 27001)
+
+> **Status:** ✅ Append-only Compliance-Log · metadata-only · SHA-256 Hash-Kette  
+> **Modul:** `crates/vault-core/src/audit.rs`  
+> **Passwort-Schwäche-Dashboard:** weiterhin `crates/vault-core/src/security_audit.rs` (getrenntes Modul)
+
+### Ziel
+
+Revisionssichere Protokollierung sicherheitsrelevanter Vault-Events für ISO-27001-konforme Nachvollziehbarkeit — **ohne** Klartext-Secrets im Log.
+
+### Datenschutz-Regeln (strikte API)
+
+| Regel | Umsetzung |
+|---|---|
+| **Keine Secrets im Log** | [`AuditAction`](crates/vault-core/src/audit.rs) ist ein Enum — nur Metadaten-Events, kein `String`-Passwort/Key-Parameter |
+| **Nur Entry-Referenz** | Optional `entry_id` (UUID), nie Inhalt |
+| **Trait-Anbindung** | [`AuditLog::log`](crates/vault-core/src/audit.rs) — `Vault` ruft intern `audit_logger.log(...)` auf |
+
+### AuditAction (Metadaten-Events)
+
+| Variante | Auslöser |
+|---|---|
+| `VaultCreated` | `Vault::create` |
+| `VaultOpened` | `Vault::open` |
+| `VaultUnlocked` | `Vault::unlock` (mit Lock-ID als `entry_id`) |
+| `VaultLocked` | `Vault::lock` |
+| `EntryCreated` | `Vault::add_entry` |
+| `EntryUpdated` | `Vault::update_entry` |
+| `SecretRevealed` | `Vault::reveal_secret` |
+| `SecretCopied` | Tauri `copy_to_clipboard` → `Vault::record_audit` |
+
+### Speicherformat
+
+| Aspekt | Detail |
+|---|---|
+| **Datei** | `{vault}.audit.log` neben `{vault}.oxid` (z. B. `team.oxid` → `team.audit.log`) |
+| **Schreibmodus** | `OpenOptions::append(true).create(true)` — append-only |
+| **Zeitstempel** | ISO-8601 UTC (`2025-06-20T21:00:00.123Z`) |
+| **Zeilenformat** | `[TIMESTAMP] [ACTION] [ENTRY_ID] prev_hash=… entry_hash=…` |
+| **ENTRY_ID** | UUID oder `-` wenn kein Eintrag betroffen |
+
+**Beispiel:**
+
+```text
+[2025-06-20T21:00:00.123Z] [VaultUnlocked] [-] prev_hash=000…000 entry_hash=a1b2…
+[2025-06-20T21:00:01.456Z] [EntryCreated] [550e8400-e29b-41d4-a716-446655440000] prev_hash=a1b2… entry_hash=c3d4…
+```
+
+### OS-Level Zugriffsschutz (ACLs / Permissions)
+
+| Plattform | Schutz | Details |
+|---|---|---|
+| **Windows** | Explizite DACL | Beim Erstellen/Öffnen von `{vault}.audit.log`: Zugriff nur für **aktuellen Windows-Benutzer** und **Administrators** (`S-1-5-32-544`); `Everyone`/`Guests` werden entfernt; DACL **protected** (keine Vererbung) |
+| **Linux / macOS** | `chmod 0o600` | Read/Write ausschließlich für den Datei-Owner via `std::os::unix::fs::PermissionsExt` |
+| **Startup** | `audit::init()` | Wird in `src-tauri/src/main.rs` vor App-Start aufgerufen; Self-Test mit Temp-Datei — **Abbruch mit Fehlermeldung**, wenn OS-Schutz nicht durchsetzbar ist |
+| **Vault-Bindung** | `AuditLogger::for_vault` | Jede `{vault}.audit.log` wird beim Binden erneut abgesichert (`audit_secure::secure_audit_log_file`) |
+
+Die **Integrität der Audit-Logs** (Hash-Kette) setzt voraus, dass Unbefugte die Datei nicht lesen oder manipulieren können — daher ist der OS-Level-Schutz Teil der ISO-27001-Compliance.
+
+**Modul:** `crates/vault-core/src/audit_secure.rs`
+
+### Integrität (Hash-Kette)
+
+Jeder Eintrag enthält:
+
+1. **`prev_hash`** — SHA-256 des vorherigen Eintrags (Genesis: 64× `0`)
+2. **`entry_hash`** — SHA-256 über den Record-String `[TIMESTAMP] [ACTION] [ENTRY_ID] prev_hash=…`
+
+Manipulation bricht die Kette; Verifikation via `verify_audit_chain(path)`.
+
+### Integration in `Vault`
+
+```rust
+// vault.rs (vereinfacht)
+self.audit_logger.log(AuditAction::EntryCreated, Some(&summary.id))?;
+```
+
+Öffentliche API für Commands: `Vault::record_audit(action, entry_id)`.
+
+### UI-Visualisierung (Aktivitäts-Log)
+
+> **Status:** ✅ `get_audit_logs` · `AuditLogTable.tsx` · Sidebar-Tab **Aktivität**
+
+| Aspekt | Detail |
+|---|---|
+| **Navigation** | Sidebar-Tabs **Secrets** / **Security** / **Aktivität** |
+| **Command** | `get_audit_logs(limit)` — liest `{vault}.audit.log`, parst Zeilenformat, liefert neueste `limit` Einträge (neueste zuerst) |
+| **Typ** | `AuditLogEntry`: `timestampUtc`, `action`, `entryId`, `entryHash` — **keine Secrets** |
+| **Parser** | `vault-core::read_audit_logs(vault_path, limit)` |
+| **Zeitstempel** | UTC im Log → lokale Systemzeit im UI (`toLocaleString`) |
+| **Aktionen** | Technische `AuditAction`-Enums → deutsche Beschreibungstexte (`auditLogLabels.ts`) |
+| **Suche** | Clientseitiger Filter nach Aktion, Eintrag-ID, Hash, formatiertem Zeitstempel |
+| **Sicherheitshinweis** | Info-Banner: keine Passwörter oder Benutzernamen im Log |
+
+---
+
+## 12. Vault-Persistenz: UNC-Pfade & Atomic Writes
+
+> **Status:** ✅ `crates/vault-core/src/format.rs` · `crates/vault-core/src/path_util.rs` · `vault.rs`  
+> **Ziel:** Crash-safe Persistenz auf lokalen Laufwerken **und** UNC-Netzwerkfreigaben (`\\server\share\...`)
+
+### UNC-Pfad-Handling
+
+| Aspekt | Umsetzung |
+|---|---|
+| **Modul** | `path_util::normalize_vault_path` |
+| **Windows UNC** | Erhält `\\server\share\...`; normalisiert `//server/share` → `\\server\share` |
+| **Integration** | `Vault::create`, `Vault::open`, `Vault::attach_locked` normalisieren vor FS-Zugriff |
+| **PathBuf** | Standard-Rust-`Path`/`PathBuf` — kein String-Hacking für Temp-Dateien |
+
+**Beispiel:**
+
+```text
+\\fileserver\team\vault.oxid
+  → Temp: \\fileserver\team\vault.oxid.tmp   (gleicher Share)
+```
+
+### Robuster Schreibprozess (`atomic_write_vault`)
+
+| Schritt | Aktion | Zweck |
+|---|---|---|
+| **A** | Temp-Datei `{dir}/{name}.oxid.tmp` im **selben Verzeichnis** schreiben | Atomares `rename` erfordert gleiches Volume/Share |
+| **B** | `sync_all()` auf Temp-Datei | Daten physisch auf Platte/Share |
+| **C** | `std::fs::rename(temp → target)` | Atomares Ersetzen (lokal + gleicher SMB-Share) |
+| **D** | **Fallback** bei Rename-Fehler (z. B. SMB-Locking): Zieldatei öffnen (write/truncate) → `std::io::copy` → `sync_all()` → Temp löschen | Robustheit auf Netzwerkfreigaben |
+
+```
+write_vault_bytes(.tmp) ──sync──► rename(.tmp → .oxid) ──OK──► fertig
+                                      │
+                                   Fehler
+                                      │
+                                      ▼
+                         copy(.tmp → .oxid) ──sync(.oxid)──► remove(.tmp)
+```
+
+| Fehlerfall | Verhalten |
+|---|---|
+| Schreiben/Sync der Temp-Datei fehlgeschlagen | Temp wird gelöscht; Original unverändert |
+| Rename fehlgeschlagen, Copy+Sync erfolgreich | Zieldatei aktualisiert; Temp entfernt |
+| Copy/Sync fehlgeschlagen | Temp wird gelöscht; Fehler wird propagiert |
+
+### Compliance-Hinweis
+
+Der SMB-Fallback (Schritt D) ist bewusst **nicht** atomar auf Dateiebene — er greift nur, wenn `rename` am Share scheitert. Schritt A–C bleiben der bevorzugte Pfad für Integrität; Schritt D verhindert Datenverlust bei SMB-Locks.
+
+### Exklusiver Vault-Datei-Lock (`lock.rs`)
+
+> **Status:** ✅ `crates/vault-core/src/lock.rs` · `Vault::open()` · `Vault::close()` · `Drop`
+
+Verhindert gleichzeitiges Öffnen/Schreiben derselben `.oxid`-Datei durch mehrere Prozesse (lokal oder auf UNC-Shares):
+
+| Aspekt | Detail |
+|---|---|
+| **Lock-Datei** | `{vault}.lock` neben `{vault}.oxid` (z. B. `team.oxid` → `team.lock`) |
+| **Atomarität** | `OpenOptions::create_new(true)` — nur ein Prozess gewinnt |
+| **Metadaten** | JSON: `{ "user", "pid", "host" }` |
+| **Stale-Repair** | Beim `acquire`: existierende Lock-Datei → `sysinfo` prüft PID auf gleichem Host → tot → Lock löschen & erneut versuchen |
+| **Fehler** | `VaultError::LockedBy(LockMetadata)` — Anzeige, wer den Tresor hält |
+| **Release** | `Vault::close()` oder `Drop` auf `Vault` |
+| **Smart-Start** | `attach_locked` → `acquire_vault_lock` · `unlock` → `assert_lock_valid` vor Entschlüsselung |
+| **Lock verloren** | `VaultError::LockLost` — kein `unlock` ohne gültige `{vault}.lock` |
+| **Audit `VaultUnlocked`** | `entry_id` = Lock-ID (`user@host:pid`) des aktiven Datei-Locks |
+
+```
+Vault::open(path)
+      │
+      ▼
+create_new(team.lock) ──OK──► JSON schreiben → Tresor laden
+      │
+   Exists
+      │
+      ▼
+PID noch aktiv? ──Ja──► LockedBy(user, pid, host)
+      │
+     Nein (Stale)
+      │
+      ▼
+remove(team.lock) → create_new erneut
+```
+
+---
+
+## 13. Zentrales Policy-Management & Admin-GPOs
+
+> **Status:** ✅ `crates/vault-core/src/policy/` · Startup in `main.rs` · `get_resolved_config`  
+> **Ziel:** Machine-wide Admin-Richtlinien (GPO-Stil) überschreiben lokale User-Einstellungen
+
+### Policy-Datei (Read-Only für End-User)
+
+| Plattform | Pfad |
+|---|---|
+| **Windows** | `C:\ProgramData\OxidVault\policy.json` |
+| **Linux / macOS** | `/etc/oxidvault/policy.json` |
+
+Die Datei wird beim App-Start via `policy::init_admin_policy()` geladen und im Prozess gecacht. Fehlerhaftes JSON führt zum Abbruch (Compliance).
+
+**Beispiel `policy.json`:**
+
+```json
+{
+  "forceLockOnMinimize": true,
+  "autoLockSeconds": 60,
+  "gitSyncEnabled": false,
+  "minMasterPasswordLen": 16
+}
+```
+
+### Datenmodell
+
+| Typ | Rolle |
+|---|---|
+| **`AdminPolicy`** | Nur gesetzte Felder (`Option<T>`) sind bindend — Read-Only für User |
+| **`UserPolicyPreferences`** | Lokale Werte aus `settings.json` + Defaults |
+| **`ResolvedConfig`** | Effektive Konfiguration nach Merge |
+
+### Override-Logik
+
+`resolve_config(user)` — für jedes Feld:
+
+- Admin-Feld **gesetzt** → `value = admin`, `disabled = true` (UI-Schalter gesperrt)
+- Admin-Feld **nicht gesetzt** → `value = user`, `disabled = false`
+
+```
+settings.json (User)  +  policy.json (Admin)  →  ResolvedConfig (effektiv + UI-Flags)
+```
+
+### Unterstützte Policy-Felder
+
+| Feld | Wirkung |
+|---|---|
+| `forceLockOnMinimize` | Lock-on-Minimize in `window_events.rs` |
+| `autoLockSeconds` | Inaktivitäts-Auto-Lock (`useAutoLock` im Frontend) |
+| `gitSyncEnabled` | Git-Sync Toggle + `sync_vault_git` |
+| `minMasterPasswordLen` | Master-Passwort-Validierung bei `Vault::create` |
+
+### Frontend-Anbindung
+
+| IPC | Rückgabe |
+|---|---|
+| `get_resolved_config` | `ResolvedConfig` mit `{ value, disabled }` pro Feld |
+
+Das Frontend nutzt `disabled: true`, um UI-Elemente zu sperren (z. B. Git-Sync-Checkbox in `SettingsMenu.tsx`).
+
+### Startup
+
+```rust
+// main.rs
+vault_core::policy::init_admin_policy()?;
+```
+
+---
+
+## 14. Dokumentationspflicht & Changelog
 
 ### Pflicht zur Synchronisation
 
@@ -1551,6 +1821,13 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 2:** MV3-Extension (`manifest.json`, `background.js`), `register_native_host.ps1` (Chrome/Edge Registry), E2E-Anleitung in `browser-extension/README.md` |
 | 2025-06-20 | 1.0.0 | **Native Messaging Windows-Fix:** dedizierte Console-Binary `oxidvault-nmh.exe` (stdout-Pipe mit Chrome/Edge), Register-Skript + Extension-Timeout-Logging |
 | 2025-06-20 | 1.0.0 | **Native Messaging Phase 3:** `content.js` Login-Erkennung + AutoFill, `get_login` über NM→localhost-IPC→Vault, `url_match.rs`, `find_web_login_for_hostname` |
+| 2025-06-20 | 1.0.0 | **ISO-27001 Audit-Log:** `audit.rs` (append-only, hash chain), `AuditAction`/`AuditLogger`, Vault-Integration; Security-Dashboard → `security_audit.rs` |
+| 2025-06-20 | 1.0.0 | **ISO-27001 OS-Schutz:** `audit_secure.rs` — Windows-DACL (User + Administrators), Unix `0o600`, `audit::init()` Startup-Check in `main.rs` |
+| 2025-06-20 | 1.0.0 | **UNC + Atomic Writes:** `path_util.rs`, robuster `atomic_write_vault` (Temp im selben Share, Rename + SMB-Copy-Fallback), Doku §12 |
+| 2025-06-20 | 1.0.0 | **Vault-Datei-Lock:** `lock.rs` — exklusiver `{vault}.lock`, Stale-Repair via `sysinfo`, `LockedBy`-Fehler, `Vault::open`/`close`/`Drop` |
+| 2025-06-20 | 1.0.0 | **Lock-Assertion:** `unlock` + Smart-Start (`attach_locked`) mit `assert_lock_valid`, `LockLost`, Audit `VaultUnlocked` mit Lock-ID |
+| 2025-06-20 | 1.0.0 | **Admin-GPO:** `policy/admin.rs`, `policy.json` (ProgramData/etc), `ResolvedConfig`, `get_resolved_config`, UI-`disabled`-Flags |
+| 2025-06-20 | 1.0.0 | **Audit-Log UI:** `get_audit_logs`, `read_audit_logs`/`AuditLogEntry`, Tab **Aktivität**, `AuditLogTable.tsx` (Suche, lokale Zeit, DE-Labels) |
 
 ---
 

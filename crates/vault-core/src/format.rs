@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,12 @@ pub fn update_vault_file(
     atomic_write_vault(path, name, kdf, salt, key, entries)
 }
 
-/// Writes encrypted vault data atomically: temp file → fsync → rename over target.
+/// Writes encrypted vault data robustly for local disks and UNC/SMB shares.
+///
+/// 1. Write temp file in the target directory (same share/volume)
+/// 2. `fsync` temp file
+/// 3. Try atomic `rename`
+/// 4. On failure (e.g. SMB locking): in-place copy + `fsync` target + remove temp
 fn atomic_write_vault(
     path: &Path,
     name: &str,
@@ -70,21 +75,56 @@ fn atomic_write_vault(
     key: &MasterKey,
     entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
-    let tmp_path = temp_vault_path(path);
+    let tmp_path = temp_vault_path(path)?;
+
     if let Err(e) = write_vault_bytes(&tmp_path, name, kdf, salt, key, entries) {
         let _ = fs::remove_file(&tmp_path);
         return Err(e);
     }
-    fs::rename(&tmp_path, path).map_err(|e| {
-        let _ = fs::remove_file(&tmp_path);
-        VaultError::Io(e)
-    })
+
+    if fs::rename(&tmp_path, path).is_ok() {
+        return Ok(());
+    }
+
+    match copy_temp_over_target(&tmp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&tmp_path);
+            Ok(())
+        }
+        Err(copy_err) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(copy_err)
+        }
+    }
 }
 
-fn temp_vault_path(path: &Path) -> PathBuf {
-    let mut tmp = path.as_os_str().to_os_string();
-    tmp.push(".tmp");
-    PathBuf::from(tmp)
+/// Returns `{dir}/{name}.oxid.tmp` — temp file must live beside the vault on the same share.
+pub(crate) fn temp_vault_path(path: &Path) -> Result<PathBuf, VaultError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| VaultError::Other("vault path has no parent directory".into()))?;
+
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| VaultError::Other("vault path has no file name".into()))?;
+
+    let mut tmp_name = file_name.to_os_string();
+    tmp_name.push(".tmp");
+    Ok(parent.join(tmp_name))
+}
+
+fn copy_temp_over_target(temp_path: &Path, target_path: &Path) -> Result<(), VaultError> {
+    let mut temp_file = fs::File::open(temp_path)?;
+    let mut target_file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(target_path)?;
+
+    io::copy(&mut temp_file, &mut target_file)?;
+    target_file.sync_all()?;
+    Ok(())
 }
 
 fn write_vault_bytes(
@@ -198,6 +238,7 @@ mod tests {
     use super::*;
     use crate::crypto::{MasterKey, random_salt};
     use crate::entry::{SecretEntry, SecretEntryInput, SecretPayload};
+    use std::io::Write;
     use tempfile::tempdir;
 
     fn sample_payload() -> VaultPayload {
@@ -247,7 +288,7 @@ mod tests {
 
         write_vault_file(&path, "MyVault", kdf, &salt, &key, &sample_payload().entries).unwrap();
         assert!(path.exists());
-        assert!(!temp_vault_path(&path).exists());
+        assert!(!temp_vault_path(&path).unwrap().exists());
 
         update_vault_file(
             &path,
@@ -259,6 +300,40 @@ mod tests {
         )
         .unwrap();
         assert!(path.exists());
-        assert!(!temp_vault_path(&path).exists());
+        assert!(!temp_vault_path(&path).unwrap().exists());
+    }
+
+    #[test]
+    fn temp_vault_path_is_in_target_directory() {
+        #[cfg(windows)]
+        let path = PathBuf::from(r"\\fileserver\team\vault.oxid");
+        #[cfg(not(windows))]
+        let path = PathBuf::from("/mnt/share/vault.oxid");
+
+        let tmp = temp_vault_path(&path).unwrap();
+        assert_eq!(tmp.parent(), path.parent());
+        assert!(tmp.file_name().unwrap().to_string_lossy().ends_with(".oxid.tmp"));
+    }
+
+    #[test]
+    fn copy_temp_over_target_replaces_contents() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("vault.oxid");
+        let temp = dir.path().join("vault.oxid.tmp");
+
+        {
+            let mut file = fs::File::create(&target).unwrap();
+            file.write_all(b"old-content").unwrap();
+        }
+        {
+            let mut file = fs::File::create(&temp).unwrap();
+            file.write_all(b"new-content").unwrap();
+            file.sync_all().unwrap();
+        }
+
+        copy_temp_over_target(&temp, &target).unwrap();
+
+        let content = fs::read(&target).unwrap();
+        assert_eq!(content, b"new-content");
     }
 }

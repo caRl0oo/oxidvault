@@ -3,15 +3,26 @@ pub mod entry;
 pub mod error;
 pub mod format;
 pub mod generator;
+mod audit_secure;
 pub mod audit;
+pub mod security_audit;
 pub mod expiry;
 pub mod policy;
+pub mod lock;
+pub mod path_util;
 pub mod probe;
 pub mod url_match;
 pub mod vault;
 
-pub use audit::{audit_entries, SecurityAuditReport};
-pub use policy::{validate_master_password, MIN_MASTER_PASSWORD_LEN};
+pub use audit::{
+    init as init_audit_log, read_audit_logs, AuditAction, AuditLog, AuditLogEntry, AuditLogger,
+    verify_audit_chain,
+};
+pub use security_audit::{audit_entries, SecurityAuditReport};
+pub use policy::{
+    init_admin_policy, resolve_config, AdminPolicy, ResolvedConfig, UserPolicyPreferences,
+    validate_master_password, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN,
+};
 
 pub use entry::{
     RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
@@ -20,6 +31,7 @@ pub use entry::{
 pub use probe::{resolve_probe_target, ProbeTarget};
 pub use url_match::{normalize_hostname, score_web_login_url_match, UrlMatchScore};
 pub use error::VaultError;
+pub use lock::LockMetadata;
 pub use generator::{generate_password, PasswordGenOptions, DEFAULT_PASSWORD_LENGTH};
 pub use vault::{Vault, VaultInfo};
 

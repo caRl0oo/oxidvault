@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
-import { getAppSettings, updateGitSyncSettings } from "@/lib/ipc";
-import { THEME_OPTIONS } from "@/lib/theme";
+import { getAppSettings, getResolvedConfig, updateGitSyncSettings } from "@/lib/ipc";
+import { THEME_OPTIONS, isThemeId } from "@/lib/theme";
 import type { GitSyncSettings } from "@/types/settings";
+import type { ResolvedConfig } from "@/types/policy";
 
 interface SettingsMenuProps {
-  onGitSyncChange?: (settings: GitSyncSettings) => void;
+  readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
 }
 
-export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
+export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -18,14 +19,19 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
   const [gitSaving, setGitSaving] = useState(false);
   const [gitSaved, setGitSaved] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
+  const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    void getAppSettings()
-      .then((settings) => {
-        setGitEnabled(settings.gitSync.enabled);
+    void Promise.all([getAppSettings(), getResolvedConfig()])
+      .then(([settings, resolved]) => {
+        setResolvedConfig(resolved);
+        setGitEnabled(resolved.gitSyncEnabled.value);
         setRemoteUrl(settings.gitSync.remoteUrl ?? "");
-        onGitSyncChange?.(settings.gitSync);
+        onGitSyncChange?.({
+          enabled: resolved.gitSyncEnabled.value,
+          remoteUrl: settings.gitSync.remoteUrl,
+        });
       })
       .catch(() => {
         /* settings optional on first run */
@@ -58,7 +64,7 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
       const settings = await updateGitSyncSettings(gitEnabled, remoteUrl.trim() || null);
       onGitSyncChange?.(settings.gitSync);
       setGitSaved(true);
-      window.setTimeout(() => setGitSaved(false), 2000);
+      globalThis .setTimeout(() => setGitSaved(false), 2000);
     } catch (e) {
       setGitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -67,6 +73,7 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
   }, [gitEnabled, remoteUrl, onGitSyncChange]);
 
   const current = THEME_OPTIONS.find((t) => t.id === theme);
+  const gitSaveLabel = gitSaveButtonLabel(gitSaving, gitSaved);
 
   return (
     <div ref={rootRef} className="relative">
@@ -87,45 +94,37 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
           aria-label="Einstellungen"
           className="absolute right-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-lg border border-vault-border bg-vault-surface shadow-xl"
         >
-          <div className="border-b border-vault-border px-3 py-2">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">Design</p>
+          <div className="border-b border-vault-border px-3 py-3">
+            <label
+              htmlFor="theme-select"
+              className="font-mono text-[10px] uppercase tracking-wider text-vault-muted"
+            >
+              Design
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <ThemeSwatch themeId={theme} />
+              <select
+                id="theme-select"
+                value={theme}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (isThemeId(next)) {
+                    setTheme(next);
+                  }
+                }}
+                className="w-full rounded border border-vault-border bg-vault-bg px-2 py-1.5 font-mono text-xs text-vault-text focus:border-vault-accent"
+              >
+                {THEME_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {current && (
-              <p className="mt-0.5 font-mono text-xs text-vault-text">{current.label}</p>
+              <p className="mt-1 pl-5 font-mono text-[10px] text-vault-muted">{current.description}</p>
             )}
           </div>
-          <ul className="max-h-48 overflow-y-auto py-1" role="listbox" aria-label="Theme-Auswahl">
-            {THEME_OPTIONS.map((option) => {
-              const active = option.id === theme;
-              return (
-                <li key={option.id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    onClick={() => {
-                      setTheme(option.id);
-                    }}
-                    className={`flex w-full flex-col px-3 py-2 text-left transition ${
-                      active
-                        ? "bg-vault-accent/15 text-vault-text"
-                        : "text-vault-muted hover:bg-vault-border/40 hover:text-vault-text"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 font-mono text-xs font-medium">
-                      <ThemeSwatch themeId={option.id} />
-                      {option.label}
-                      {active && (
-                        <span className="ml-auto text-[10px] text-vault-accent">✓</span>
-                      )}
-                    </span>
-                    <span className="mt-0.5 pl-5 font-mono text-[10px] opacity-70">
-                      {option.description}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
 
           <div className="border-t border-vault-border px-3 py-3">
             <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
@@ -135,15 +134,26 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
               Die verschlüsselte .oxid-Datei wird über Git synchronisiert — Klartext-Secrets
               verlassen nie den Tresor.
             </p>
+            {resolvedConfig?.adminPolicyActive && (
+              <p className="mt-2 font-mono text-[10px] text-vault-accent">
+                Admin-Richtlinie aktiv — einige Optionen sind gesperrt.
+              </p>
+            )}
 
             <label className="mt-3 flex cursor-pointer items-center gap-2">
               <input
                 type="checkbox"
                 checked={gitEnabled}
                 onChange={(e) => setGitEnabled(e.target.checked)}
-                className="rounded border-vault-border bg-vault-bg text-vault-accent focus:ring-vault-accent"
+                disabled={resolvedConfig?.gitSyncEnabled.disabled ?? false}
+                className="rounded border-vault-border bg-vault-bg text-vault-accent focus:ring-vault-accent disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span className="font-mono text-xs text-vault-text">Sync aktiv</span>
+              <span className="font-mono text-xs text-vault-text">
+                Sync aktiv
+                {resolvedConfig?.gitSyncEnabled.disabled && (
+                  <span className="ml-1 text-[10px] text-vault-muted">(Admin)</span>
+                )}
+              </span>
             </label>
 
             <label className="mt-2 block">
@@ -168,7 +178,7 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
               disabled={gitSaving}
               className="mt-3 w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
             >
-              {gitSaving ? "Speichern…" : gitSaved ? "Gespeichert ✓" : "Git-Einstellungen speichern"}
+              {gitSaveLabel}
             </button>
           </div>
         </div>
@@ -177,7 +187,13 @@ export function SettingsMenu({ onGitSyncChange }: SettingsMenuProps) {
   );
 }
 
-function ThemeSwatch({ themeId }: { themeId: string }) {
+function gitSaveButtonLabel(saving: boolean, saved: boolean): string {
+  if (saving) return "Speichern…";
+  if (saved) return "Gespeichert ✓";
+  return "Git-Einstellungen speichern";
+}
+
+function ThemeSwatch({ themeId }: Readonly<{ themeId: string }>) {
   const colors: Record<string, [string, string]> = {
     oxid: ["#3b82f6", "#12141a"],
     dracula: ["#bd93f9", "#282a36"],
@@ -194,7 +210,7 @@ function ThemeSwatch({ themeId }: { themeId: string }) {
   );
 }
 
-function GearIcon({ className }: { className?: string }) {
+function GearIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg
       viewBox="0 0 24 24"

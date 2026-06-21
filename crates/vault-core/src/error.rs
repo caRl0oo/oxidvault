@@ -1,9 +1,15 @@
 use thiserror::Error;
 
+use crate::lock::LockMetadata;
+
 #[derive(Debug, Error)]
 pub enum VaultError {
     #[error("vault is locked")]
     Locked,
+    #[error("vault is locked by {0}")]
+    LockedBy(LockMetadata),
+    #[error("vault file lock lost — exclusive access cannot be verified")]
+    LockLost,
     #[error("invalid master password")]
     InvalidPassword,
     #[error("vault not initialized")]

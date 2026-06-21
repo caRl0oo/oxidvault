@@ -50,9 +50,16 @@ const COMMON_PASSWORDS: &[&str] = &[
 ];
 
 pub fn validate_master_password(password: &str) -> Result<(), VaultError> {
-    if password.len() < MIN_MASTER_PASSWORD_LEN {
+    validate_master_password_with_min_len(password, MIN_MASTER_PASSWORD_LEN)
+}
+
+pub fn validate_master_password_with_min_len(
+    password: &str,
+    min_len: usize,
+) -> Result<(), VaultError> {
+    if password.len() < min_len {
         return Err(VaultError::WeakPassword(format!(
-            "master password must be at least {MIN_MASTER_PASSWORD_LEN} characters"
+            "master password must be at least {min_len} characters"
         )));
     }
 

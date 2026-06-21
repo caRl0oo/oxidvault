@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use vault_core::policy::{UserPolicyPreferences, MIN_MASTER_PASSWORD_LEN};
 
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -15,13 +16,47 @@ pub struct GitSyncSettings {
     pub remote_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_vault_path: Option<String>,
     #[serde(default)]
     pub git_sync: GitSyncSettings,
+    #[serde(default = "default_force_lock_on_minimize")]
+    pub force_lock_on_minimize: bool,
+    #[serde(default = "default_auto_lock_seconds")]
+    pub auto_lock_seconds: u32,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            last_vault_path: None,
+            git_sync: GitSyncSettings::default(),
+            force_lock_on_minimize: default_force_lock_on_minimize(),
+            auto_lock_seconds: default_auto_lock_seconds(),
+        }
+    }
+}
+
+impl AppSettings {
+    pub fn policy_preferences(&self) -> UserPolicyPreferences {
+        UserPolicyPreferences {
+            force_lock_on_minimize: self.force_lock_on_minimize,
+            auto_lock_seconds: self.auto_lock_seconds,
+            git_sync_enabled: self.git_sync.enabled,
+            min_master_password_len: MIN_MASTER_PASSWORD_LEN as u32,
+        }
+    }
+}
+
+fn default_force_lock_on_minimize() -> bool {
+    true
+}
+
+fn default_auto_lock_seconds() -> u32 {
+    120
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {

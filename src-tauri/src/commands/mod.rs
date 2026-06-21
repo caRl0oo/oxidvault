@@ -130,12 +130,16 @@ pub fn copy_to_clipboard(
 ) -> Result<(), String> {
     let secret = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
-        vault
+        let secret = vault
             .extract_secret(
                 &entry_id,
                 field.unwrap_or(SecretField::Primary),
             )
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        vault
+            .record_audit(vault_core::AuditAction::SecretCopied, Some(&entry_id))
+            .map_err(|e| e.to_string())?;
+        secret
     };
     state.clipboard.copy(&app, secret)
 }
@@ -151,6 +155,7 @@ pub mod audit;
 pub mod bootstrap;
 pub mod git_sync;
 pub mod open_url;
+pub mod policy;
 pub mod reachability;
 
 pub mod lock;

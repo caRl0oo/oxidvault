@@ -1,7 +1,9 @@
 use serde::Serialize;
 use tauri::{Emitter, Manager, State, Window, WindowEvent};
+use vault_core::policy::{resolve_config, UserPolicyPreferences};
 
 use crate::commands::{perform_lock, AppState};
+use crate::settings::load_settings;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +27,15 @@ pub fn on_main_window_event(window: &Window, event: &WindowEvent, state: &State<
         return;
     }
 
+    let app = window.app_handle();
+    let resolved = load_settings(app)
+        .map(|settings| resolve_config(&settings.policy_preferences()))
+        .unwrap_or_else(|_| resolve_config(&UserPolicyPreferences::default()));
+
+    if !resolved.force_lock_on_minimize.value {
+        return;
+    }
+
     let was_unlocked = state
         .vault
         .lock()
@@ -36,7 +47,6 @@ pub fn on_main_window_event(window: &Window, event: &WindowEvent, state: &State<
     }
 
     if let Ok(info) = perform_lock(state) {
-        let app = window.app_handle();
         let _ = app.emit(
             "vault-locked",
             VaultLockedPayload {
