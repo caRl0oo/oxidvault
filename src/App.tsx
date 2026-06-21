@@ -18,6 +18,7 @@ import { cancelSecureClipboardClear } from "@/lib/secureClipboard";
 import { filterEntries } from "@/lib/search";
 import { SidebarEntryList } from "@/components/SidebarEntryList";
 import { SecurityDashboard } from "@/components/SecurityDashboard";
+import { ComplianceDashboard } from "@/dashboard";
 import { AuditLogTable } from "@/components/AuditLogTable";
 import { DashboardFilterBar } from "@/components/DashboardFilterBar";
 import { SidebarTagFilter } from "@/components/SidebarTagFilter";
@@ -666,11 +667,14 @@ export default function App() {
 
           <section className="relative flex flex-1 flex-col overflow-hidden">
             {vaultMainView === "security" ? (
-              <SecurityDashboard
-                onSelectEntry={(id) => void handleSelectEntry(id)}
-                onApplyFilter={handleApplyDashboardFilter}
-                activeFilterKind={dashboardFilter?.kind ?? null}
-              />
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <ComplianceDashboard />
+                <SecurityDashboard
+                  onSelectEntry={(id) => void handleSelectEntry(id)}
+                  onApplyFilter={handleApplyDashboardFilter}
+                  activeFilterKind={dashboardFilter?.kind ?? null}
+                />
+              </div>
             ) : vaultMainView === "activity" ? (
               <AuditLogTable />
             ) : selectedEntry ? (

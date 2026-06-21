@@ -89,7 +89,14 @@ export interface PasswordPolicyState {
 }
 
 export function evaluateMasterPassword(password: string): PasswordPolicyState {
-  const lengthOk = password.length >= MIN_MASTER_PASSWORD_LENGTH;
+  return evaluateMasterPasswordWithMin(password, MIN_MASTER_PASSWORD_LENGTH);
+}
+
+export function evaluateMasterPasswordWithMin(
+  password: string,
+  minLength: number,
+): PasswordPolicyState {
+  const lengthOk = password.length >= minLength;
   const notCommon = password.length > 0 && !COMMON_PASSWORDS.has(password.trim().toLowerCase());
 
   ensureZxcvbn();
@@ -102,15 +109,15 @@ export function evaluateMasterPassword(password: string): PasswordPolicyState {
 
   let hint: string;
   if (password.length === 0) {
-    hint = `Mindestens ${MIN_MASTER_PASSWORD_LENGTH} Zeichen erforderlich`;
+    hint = `Mindestens ${minLength} Zeichen erforderlich`;
   } else if (!lengthOk) {
-    hint = `Noch ${MIN_MASTER_PASSWORD_LENGTH - password.length} Zeichen (${password.length}/${MIN_MASTER_PASSWORD_LENGTH})`;
+    hint = `Noch ${minLength - password.length} Zeichen (${password.length}/${minLength})`;
   } else if (!notCommon) {
     hint = "Passwort ist zu häufig — bitte ein einzigartiges wählen";
-  } else if (!strengthOk) {
-    hint = `Passwortstärke: ${strengthLabel} — bitte verstärken`;
-  } else {
+  } else if (strengthOk) {
     hint = `Passwortstärke: ${strengthLabel} — Richtlinie erfüllt`;
+  } else {
+    hint = `Passwortstärke: ${strengthLabel} — bitte verstärken`;
   }
 
   return {

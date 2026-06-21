@@ -65,6 +65,18 @@ impl MasterKey {
     pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
     }
+
+    /// Builds a key from raw bytes (e.g. unwrapped DEK). Caller must ensure bytes are sensitive.
+    pub(crate) fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    /// Generates a random data-encryption key independent of the master password.
+    pub fn generate_data_key() -> Self {
+        let mut bytes = [0u8; KEY_LEN];
+        OsRng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
 }
 
 pub fn random_salt() -> [u8; SALT_LEN] {
@@ -106,6 +118,29 @@ pub fn decrypt(
         .decrypt(nonce, ciphertext)
         .map_err(|_| VaultError::InvalidPassword)?;
     Ok(Zeroizing::new(plaintext))
+}
+
+/// Wraps a data-encryption key with a password-derived key (KEK).
+pub fn wrap_data_key(
+    kek: &MasterKey,
+    dek: &MasterKey,
+) -> Result<([u8; NONCE_LEN], Vec<u8>), VaultError> {
+    encrypt(kek, dek.as_bytes())
+}
+
+/// Unwraps a data-encryption key using the password-derived key (KEK).
+pub fn unwrap_data_key(
+    kek: &MasterKey,
+    nonce: &[u8; NONCE_LEN],
+    ciphertext: &[u8],
+) -> Result<MasterKey, VaultError> {
+    let plaintext = decrypt(kek, nonce, ciphertext)?;
+    if plaintext.len() != KEY_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
+    let mut bytes = [0u8; KEY_LEN];
+    bytes.copy_from_slice(&plaintext);
+    Ok(MasterKey::from_bytes(bytes))
 }
 
 #[cfg(test)]

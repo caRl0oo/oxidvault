@@ -7,6 +7,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   EntryUpdated: "Eintrag wurde aktualisiert",
   SecretCopied: "Secret wurde in die Zwischenablage kopiert",
   SecretRevealed: "Secret wurde angezeigt",
+  VaultKeyRotated: "Master-Schlüssel wurde rotiert",
 };
 
 export function formatAuditAction(action: string): string {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SecurityAuditReport } from "@/types/audit";
 import type { AuditLogEntry } from "@/types/auditLog";
+import type { ComplianceStatus } from "@/types/compliance";
 import type { ResolvedConfig } from "@/types/policy";
 import type { AppSettings, GitSyncResult } from "@/types/settings";
 import type {
@@ -126,6 +127,17 @@ export async function getAppSettings(): Promise<AppSettings> {
 
 export async function getResolvedConfig(): Promise<ResolvedConfig> {
   return invoke<ResolvedConfig>("get_resolved_config");
+}
+
+export async function getComplianceStatus(): Promise<ComplianceStatus> {
+  return invoke<ComplianceStatus>("get_compliance_status");
+}
+
+export async function reencryptVault(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return invoke<void>("reencrypt_vault", { currentPassword, newPassword });
 }
 
 export async function updateGitSyncSettings(

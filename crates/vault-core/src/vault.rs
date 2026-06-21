@@ -37,6 +37,10 @@ pub struct Vault {
     cached_entry_count: usize,
     audit_logger: AuditLogger,
     vault_lock: Option<VaultLock>,
+    format_version: u16,
+    key_created_at: Option<u64>,
+    key_rotated_at: Option<u64>,
+    kek: Option<MasterKey>,
 }
 
 impl Default for Vault {
@@ -58,6 +62,10 @@ impl Vault {
             cached_entry_count: 0,
             audit_logger: AuditLogger::disabled(),
             vault_lock: None,
+            format_version: format::FORMAT_VERSION_V2,
+            key_created_at: None,
+            key_rotated_at: None,
+            kek: None,
         }
     }
 
@@ -121,14 +129,30 @@ impl Vault {
 
         let name = name.into();
         let salt = crypto::random_salt();
-        let key = MasterKey::derive_from_password(password, &salt, self.kdf)?;
+        let kek = MasterKey::derive_from_password(password, &salt, self.kdf)?;
+        let dek = MasterKey::generate_data_key();
+        let key_created_at = crate::compliance::unix_timestamp_secs();
 
-        format::write_vault_file(&path, &name, self.kdf, &salt, &key, &[])?;
+        format::write_vault_file(
+            &path,
+            &name,
+            self.kdf,
+            &salt,
+            &kek,
+            &dek,
+            key_created_at,
+            0,
+            &[],
+        )?;
 
         self.path = Some(path.clone());
         self.name = name;
         self.salt = Some(salt);
-        self.master_key = Some(key);
+        self.master_key = Some(dek);
+        self.kek = Some(kek);
+        self.format_version = format::FORMAT_VERSION_V2;
+        self.key_created_at = Some(key_created_at);
+        self.key_rotated_at = None;
         self.entries.clear();
         self.cached_entry_count = 0;
         self.locked = false;
@@ -143,14 +167,22 @@ impl Vault {
 
         let open_result = (|| -> Result<(), VaultError> {
             let meta = format::read_vault_meta(&path)?;
-            let key = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
-            let (_, payload) = format::read_vault_file(&path, &key)?;
+            let kek = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
+            let payload_key = format::resolve_payload_key(&meta, &kek)?;
+            let (_, payload) = format::read_vault_file(&path, &kek)?;
+
+            let key_created_at = effective_key_created_at(&meta, &path);
+            let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
 
             self.path = Some(path.clone());
             self.name = meta.name;
             self.kdf = meta.kdf;
             self.salt = Some(meta.salt);
-            self.master_key = Some(key);
+            self.master_key = Some(payload_key);
+            self.kek = Some(kek);
+            self.format_version = meta.format_version;
+            self.key_created_at = Some(key_created_at);
+            self.key_rotated_at = key_rotated_at;
             self.entries = payload.entries;
             self.cached_entry_count = self.entries.len();
             self.locked = false;
@@ -180,10 +212,18 @@ impl Vault {
         let lock_meta = self.assert_lock_valid()?;
 
         let meta = format::read_vault_meta(&path)?;
-        let key = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
-        let (_, payload) = format::read_vault_file(&path, &key)?;
+        let kek = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
+        let payload_key = format::resolve_payload_key(&meta, &kek)?;
+        let (_, payload) = format::read_vault_file(&path, &kek)?;
 
-        self.master_key = Some(key);
+        let key_created_at = effective_key_created_at(&meta, &path);
+        let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
+
+        self.master_key = Some(payload_key);
+        self.kek = Some(kek);
+        self.key_created_at = Some(key_created_at);
+        self.key_rotated_at = key_rotated_at;
+        self.format_version = meta.format_version;
         self.entries = payload.entries;
         self.cached_entry_count = self.entries.len();
         self.locked = false;
@@ -204,6 +244,7 @@ impl Vault {
             entry.zeroize_secrets();
         }
         self.master_key = None;
+        self.kek = None;
         self.entries.clear();
         self.locked = true;
     }
@@ -218,10 +259,15 @@ impl Vault {
         self.acquire_vault_lock(&path)?;
 
         let meta = format::read_vault_meta(&path)?;
+        let key_created_at = effective_key_created_at(&meta, &path);
+        let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
         self.path = Some(path.clone());
         self.name = meta.name;
         self.kdf = meta.kdf;
         self.salt = Some(meta.salt);
+        self.format_version = meta.format_version;
+        self.key_created_at = Some(key_created_at);
+        self.key_rotated_at = key_rotated_at;
         self.master_key = None;
         self.entries.clear();
         self.cached_entry_count = 0;
@@ -388,6 +434,66 @@ impl Vault {
         Ok(audit_entries(&self.entries))
     }
 
+    /// Re-encrypts the master-key container under a new password without decrypting payload blocks.
+    pub fn reencrypt_vault(
+        &mut self,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+
+        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
+        crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
+        self.verify_current_password(current_password)?;
+
+        validate_master_password_with_min_len(new_password, effective_min_master_password_len())?;
+
+        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        let new_salt = crypto::random_salt();
+        let new_kek = MasterKey::derive_from_password(new_password, &new_salt, self.kdf)?;
+        let now = crate::compliance::unix_timestamp_secs();
+        let created = self.key_created_at.unwrap_or(now);
+
+        format::rotate_vault_key_container(
+            &path, &self.name, self.kdf, &new_salt, &new_kek, dek, created, now,
+        )?;
+
+        self.salt = Some(new_salt);
+        self.kek = Some(new_kek);
+        self.format_version = format::FORMAT_VERSION_V2;
+        self.key_created_at = Some(created);
+        self.key_rotated_at = Some(now);
+        self.audit(AuditAction::VaultKeyRotated, None)?;
+        Ok(())
+    }
+
+    fn verify_current_password(&self, current_password: &str) -> Result<(), VaultError> {
+        let salt = self.salt.ok_or(VaultError::NotInitialized)?;
+        let candidate = MasterKey::derive_from_password(current_password, &salt, self.kdf)?;
+        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+
+        match self.format_version {
+            format::FORMAT_VERSION_V2 => {
+                let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
+                if candidate.as_bytes() != kek.as_bytes() {
+                    return Err(VaultError::InvalidPassword);
+                }
+            }
+            _ => {
+                if candidate.as_bytes() != dek.as_bytes() {
+                    return Err(VaultError::InvalidPassword);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn compliance_status(&self) -> Result<crate::compliance::ComplianceStatus, VaultError> {
+        let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
+        crate::compliance::compliance_status(path)
+    }
+
     /// Re-reads the vault file from disk after an external change (e.g. Git pull).
     pub fn reload_from_disk(&mut self) -> Result<(), VaultError> {
         let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
@@ -395,11 +501,16 @@ impl Vault {
             return self.attach_locked(path);
         }
 
-        let key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
         let meta = format::read_vault_meta(&path)?;
-        let (_, payload) = format::read_vault_file(&path, key)?;
+        let key_created_at = effective_key_created_at(&meta, &path);
+        let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
+        let (_, payload) = format::read_vault_file(&path, kek)?;
 
         self.name = meta.name;
+        self.format_version = meta.format_version;
+        self.key_created_at = Some(key_created_at);
+        self.key_rotated_at = key_rotated_at;
         self.entries = payload.entries;
         self.cached_entry_count = self.entries.len();
         Ok(())
@@ -430,10 +541,36 @@ impl Vault {
 
     fn persist(&self) -> Result<(), VaultError> {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
-        let key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
         let salt = self.salt.ok_or(VaultError::NotInitialized)?;
-        format::update_vault_file(path, &self.name, self.kdf, &salt, key, &self.entries)
+        format::update_vault_file(
+            path,
+            &self.name,
+            self.kdf,
+            &salt,
+            payload_key,
+            self.kek.as_ref(),
+            self.format_version,
+            self.key_created_at.unwrap_or(0),
+            self.key_rotated_at.unwrap_or(0),
+            &self.entries,
+        )
     }
+}
+
+fn effective_key_created_at(meta: &format::VaultFileMeta, path: &std::path::Path) -> u64 {
+    if meta.key_created_at > 0 {
+        return meta.key_created_at;
+    }
+    if meta.format_version == format::FORMAT_VERSION_V1 {
+        return std::fs::metadata(path)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+    }
+    0
 }
 
 fn effective_min_master_password_len() -> usize {
@@ -454,6 +591,104 @@ mod tests {
     use super::*;
     use crate::entry::{SecretEntryInput, SecretPayload};
     use tempfile::tempdir;
+
+    #[test]
+    fn reencrypt_vault_rotates_master_key_container() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+
+        let mut vault = Vault::new();
+        vault
+            .create(&path, "RotateMe", "correct-horse-battery-staple")
+            .unwrap();
+
+        vault
+            .reencrypt_vault(
+                "correct-horse-battery-staple",
+                "brand-new-horse-battery-staple",
+            )
+            .expect("rotate");
+
+        vault.lock();
+
+        let mut reopened = Vault::new();
+        reopened
+            .open(&path, "brand-new-horse-battery-staple")
+            .expect("open with new password");
+        assert_eq!(reopened.list_entries().unwrap().len(), 0);
+
+        let log_path = crate::audit::audit_log_path(&path);
+        let raw = std::fs::read_to_string(log_path).unwrap();
+        assert!(raw.contains("[VaultKeyRotated]"));
+    }
+
+    #[test]
+    fn reencrypt_vault_fails_when_lock_held_by_other_instance() {
+        use crate::lock::{lock_path_for, LockMetadata};
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+        let password = "correct-horse-battery-staple";
+
+        let mut vault = Vault::new();
+        vault.create(&path, "SharedVault", password).unwrap();
+
+        let foreign = LockMetadata {
+            user: "other-user".into(),
+            pid: 9_999_999,
+            host: "other-host".into(),
+        };
+        std::fs::write(
+            lock_path_for(&path),
+            serde_json::to_string_pretty(&foreign).unwrap(),
+        )
+        .unwrap();
+
+        let err = vault
+            .reencrypt_vault(password, "another-strong-password-1")
+            .expect_err("foreign lock holder");
+        assert!(matches!(err, VaultError::LockedBy(_)));
+    }
+
+    #[test]
+    fn reencrypt_vault_audit_event_appears_in_json_export() {
+        use crate::audit_export::{export_audit_report, ExportFormat};
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+        let old_password = "correct-horse-battery-staple";
+        let new_password = "rotation-export-test-pw";
+
+        let mut vault = Vault::new();
+        vault.create(&path, "ExportVault", old_password).unwrap();
+        vault
+            .reencrypt_vault(old_password, new_password)
+            .expect("rotate");
+
+        let export_path = dir.path().join("audit-export.json");
+        export_audit_report(path.clone(), export_path.clone(), ExportFormat::Json)
+            .expect("export audit");
+
+        let raw = std::fs::read_to_string(export_path).unwrap();
+        assert!(raw.contains("VaultKeyRotated"));
+        assert!(raw.contains("\"chainVerified\": true"));
+    }
+
+    #[test]
+    fn reencrypt_vault_rejects_wrong_current_password() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+
+        let mut vault = Vault::new();
+        vault
+            .create(&path, "RotateMe", "correct-horse-battery-staple")
+            .unwrap();
+
+        let err = vault
+            .reencrypt_vault("wrong-password-here", "brand-new-horse-battery-staple")
+            .expect_err("wrong current password");
+        assert!(matches!(err, VaultError::InvalidPassword));
+    }
 
     #[test]
     fn attach_locked_then_unlock() {

@@ -2,6 +2,7 @@ const ERROR_MAP: Record<string, string> = {
   "title is required": "Titel ist erforderlich.",
   "fields are incomplete": "Bitte alle Pflichtfelder ausfüllen.",
   "invalid master password": "Master-Passwort ist falsch.",
+  "vault is locked by": "Vault wird bereits von einer anderen Instanz verwendet.",
   "weak master password": "Master-Passwort erfüllt nicht die Sicherheitsrichtlinie.",
   "too common": "Dieses Passwort ist zu häufig — bitte ein einzigartiges wählen.",
   "at least 12 characters": "Mindestens 12 Zeichen erforderlich.",

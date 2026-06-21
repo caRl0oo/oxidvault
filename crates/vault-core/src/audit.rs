@@ -28,6 +28,7 @@ pub enum AuditAction {
     EntryUpdated,
     SecretCopied,
     SecretRevealed,
+    VaultKeyRotated,
 }
 
 impl AuditAction {
@@ -41,6 +42,7 @@ impl AuditAction {
             Self::EntryUpdated => "EntryUpdated",
             Self::SecretCopied => "SecretCopied",
             Self::SecretRevealed => "SecretRevealed",
+            Self::VaultKeyRotated => "VaultKeyRotated",
         }
     }
 }

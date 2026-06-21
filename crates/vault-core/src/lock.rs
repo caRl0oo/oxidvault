@@ -117,6 +117,29 @@ pub fn lock_path_for(vault_path: &Path) -> PathBuf {
     vault_path.with_extension("lock")
 }
 
+/// Ensures the current process may write the vault file (held lock or matching lock metadata).
+pub(crate) fn assert_vault_write_access(
+    vault_path: &Path,
+    held_lock: Option<&VaultLock>,
+) -> Result<(), VaultError> {
+    if let Some(lock) = held_lock {
+        lock.assert_held()?;
+        return Ok(());
+    }
+
+    let lock_path = lock_path_for(vault_path);
+    if !lock_path.is_file() {
+        return Ok(());
+    }
+
+    let metadata = read_lock_metadata(&lock_path)?;
+    if holder_matches_current_process(&metadata) {
+        return Ok(());
+    }
+
+    Err(VaultError::LockedBy(metadata))
+}
+
 fn create_lock_file(path: &Path, metadata: &LockMetadata) -> Result<(), VaultError> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
 

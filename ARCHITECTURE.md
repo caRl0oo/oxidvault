@@ -24,6 +24,7 @@
 12. [Vault-Persistenz: UNC-Pfade & Atomic Writes](#12-vault-persistenz-unc-pfade--atomic-writes)
 13. [Zentrales Policy-Management & Admin-GPOs](#13-zentrales-policy-management--admin-gpos)
 14. [Dokumentationspflicht & Changelog](#14-dokumentationspflicht--changelog)
+15. [Key-Rotation & Compliance-Dashboard](#15-key-rotation--compliance-dashboard)
 
 ---
 
@@ -766,6 +767,8 @@ ReachabilityDot — Sidebar + Detailansicht
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
+| `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
+| `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container (Header) unter neuem Passwort rotieren | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?` | `AppSettings` | Git-Sync-Konfiguration speichern | ✅ |
@@ -1056,6 +1059,8 @@ ReachabilityDot — Sidebar + Detailansicht
 | `auditVaultSecurity()` | `audit_vault_security` |
 | `getAuditLogs(limit)` | `get_audit_logs` |
 | `exportAuditLog(targetPath, format)` | `export_audit_log` |
+| `getComplianceStatus()` | `get_compliance_status` |
+| `reencryptVault(currentPassword, newPassword)` | `reencrypt_vault` |
 | `getAppSettings()` | `get_app_settings` |
 | `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
@@ -1080,23 +1085,37 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### `.oxid` — OxidVault-Dateiformat
 
-> **Status:** ✅ Implementiert in `crates/vault-core/src/format.rs` (Version 1).
+> **Status:** ✅ Implementiert in `crates/vault-core/src/format.rs` (Version **1** Legacy · Version **2** Enterprise mit wrapped DEK).
+
+**Version 1 (Legacy):**
 
 ```
 ┌──────────────────────────────────────────────┐
 │  Header (Klartext)                           │
 │  ─ Magic: "OXID" (4 Byte)                    │
 │  ─ Format-Version: u16 LE (= 1)              │
-│  ─ KDF memory_kib: u32 LE                    │
-│  ─ KDF iterations: u32 LE                    │
-│  ─ KDF parallelism: u32 LE                   │
+│  ─ KDF memory_kib / iterations / parallelism │
 │  ─ Salt: 16 Byte                             │
 │  ─ Name-Länge: u16 LE + Name (UTF-8)         │
 ├──────────────────────────────────────────────┤
-│  Nonce: 12 Byte (zufällig pro Speichervorgang)│
+│  Nonce: 12 Byte                              │
+│  Ciphertext + GCM Tag (Payload = entries)    │
+└──────────────────────────────────────────────┘
+```
+
+**Version 2 (Enterprise — Key-Rotation):**
+
+```
+┌──────────────────────────────────────────────┐
+│  Header (Klartext)                           │
+│  ─ … wie v1, Version = 2                     │
+│  ─ key_created_at: u64 LE (Unix)             │
+│  ─ key_rotated_at: u64 LE (0 = nie rotiert)  │
+│  ─ dek_nonce: 12 Byte                        │
+│  ─ dek_len: u32 LE + dek_ciphertext (GCM)    │
 ├──────────────────────────────────────────────┤
-│  Ciphertext + GCM Auth-Tag (128 Bit)         │
-│  ─ Klartext: JSON { "entries": [...] }       │
+│  Payload-Nonce + Ciphertext (unverändert     │
+│  bei Key-Rotation kopierbar)                 │
 └──────────────────────────────────────────────┘
 ```
 
@@ -1555,7 +1574,7 @@ Revisionssichere Protokollierung sicherheitsrelevanter Vault-Events für ISO-270
 | `EntryCreated` | `Vault::add_entry` |
 | `EntryUpdated` | `Vault::update_entry` |
 | `SecretRevealed` | `Vault::reveal_secret` |
-| `SecretCopied` | Tauri `copy_to_clipboard` → `Vault::record_audit` |
+| `VaultKeyRotated` | `Vault::reencrypt_vault` |
 
 ### Speicherformat
 
@@ -1865,6 +1884,58 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Admin-GPO:** `policy/admin.rs`, `policy.json` (ProgramData/etc), `ResolvedConfig`, `get_resolved_config`, UI-`disabled`-Flags |
 | 2025-06-20 | 1.0.0 | **Audit-Log UI:** `get_audit_logs`, `read_audit_logs`/`AuditLogEntry`, Tab **Aktivität**, `AuditLogTable.tsx` (Suche, lokale Zeit, DE-Labels) |
 | 2025-06-20 | 1.0.0 | **Dual-Format Audit Export:** `audit_export.rs`, `export_audit_log`, Hash-Ketten-Validierung, JSON-Integritätsheader, CSV-Export, UI Save-Dialog |
+| 2025-06-20 | 1.0.0 | **Enterprise v1.0:** Format v2 (wrapped DEK), `reencrypt_vault`, `ComplianceDashboard`, `get_compliance_status`, `VaultKeyRotated` |
+| 2025-06-20 | 1.0.0 | **Passwort-Rotation UI:** `RotationDialog.tsx`, Policy-Validierung, Lock-Check (`LockedBy`), Audit-Export-Verifikation |
+
+---
+
+## 15. Key-Rotation & Compliance-Dashboard
+
+> **Status:** ✅ Format v2 (wrapped DEK) · `Vault::reencrypt_vault` · `compliance.rs` · `src/dashboard/ComplianceDashboard.tsx`
+
+### Key-Rotation (Header-only)
+
+| Aspekt | Detail |
+|---|---|
+| **API** | `Vault::reencrypt_vault(new_password)` → intern `format::rotate_vault_key_container` |
+| **Prinzip** | Passwort → KEK (Argon2id) · Zufälliger DEK verschlüsselt Payload · DEK im Header (wrapped) |
+| **Rotation** | Neuer Salt + neuer KEK; DEK bleibt unverändert; **Payload-Blob (Nonce + Ciphertext) wird 1:1 kopiert** |
+| **Format v1** | Legacy: Master-Key verschlüsselt Payload direkt; erste Rotation migriert nach v2 ohne Payload-Re-Encrypt |
+| **Format v2 Header** | Zusätzlich: `key_created_at`, `key_rotated_at`, `dek_nonce`, `dek_ciphertext` |
+| **Audit** | Pflicht-Event `AuditAction::VaultKeyRotated` |
+| **Tauri Command** | `reencrypt_vault(current_password, new_password)` — Passwörter als `Zeroizing<String>` |
+| **UI** | `RotationDialog.tsx` — Spinner während Rotation, Erfolg aktualisiert Compliance-Dashboard |
+
+```
+Altes Passwort → KEK_alt → unwrap(DEK)
+Neues Passwort → KEK_neu → wrap(DEK) → neuer Header
+Payload-Block   → unverändert kopiert
+```
+
+### Compliance-Dashboard (Frontend)
+
+| Aspekt | Detail |
+|---|---|
+| **Modul** | `src/dashboard/ComplianceDashboard.tsx` |
+| **Platzierung** | Tab **Security** — oberhalb des Passwort-Audit-`SecurityDashboard` |
+| **Command** | `get_compliance_status` → `ComplianceStatus` |
+| **Policy-Status** | „GPO verwaltet?“ — `admin_policy_active()` |
+| **Audit-Status** | „Hash-Kette valide?“ — `verify_audit_chain({vault}.audit.log)` |
+| **Key-Age** | Tage seit `key_rotated_at` (Fallback: `key_created_at`, v1: Datei-mtime) |
+| **Hinweis** | Bei Key-Age > **90 Tage**: *„Ihre Sicherheitsrichtlinie empfiehlt eine Passwort-Rotation.“* |
+
+**`ComplianceStatus` (IPC):**
+
+```json
+{
+  "policyManagedByGpo": true,
+  "auditChainValid": true,
+  "keyCreatedAt": "2025-03-01T00:00:00+00:00",
+  "keyRotatedAt": null,
+  "keyAgeDays": 112,
+  "keyRotationRecommended": true
+}
+```
 
 ---
 
