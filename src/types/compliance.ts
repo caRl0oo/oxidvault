@@ -1,3 +1,5 @@
+export const KEY_ROTATION_THRESHOLD_DAYS = 90;
+
 export interface ComplianceStatus {
   policyManagedByGpo: boolean;
   auditChainValid: boolean;

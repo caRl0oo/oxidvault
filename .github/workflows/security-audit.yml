@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Workaround for intermittent crates.io HTTP/2 framing errors in CI.
+      CARGO_HTTP_MULTIPLEXING: false
 
     steps:
       # 1. Quellcode von GitHub auschecken
@@ -41,8 +44,27 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-v0.22.2-${{ runner.os }}
+
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: |
+          if command -v cargo-audit >/dev/null 2>&1; then
+            cargo-audit --version
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if cargo +stable install cargo-audit --locked --version 0.22.2; then
+              cargo-audit --version
+              exit 0
+            fi
+            echo "cargo install attempt ${attempt} failed; retrying..."
+            sleep $((attempt * 15))
+          done
+          exit 1
 
       - name: Run Cargo Audit (Vulnerability Scan)
         run: cargo audit

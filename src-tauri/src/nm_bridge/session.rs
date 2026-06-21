@@ -20,6 +20,7 @@ pub fn app_data_dir() -> Option<PathBuf> {
     #[cfg(not(windows))]
     {
         std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
             .or_else(|| {
                 std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
             })

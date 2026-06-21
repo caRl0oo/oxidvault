@@ -1886,6 +1886,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Dual-Format Audit Export:** `audit_export.rs`, `export_audit_log`, Hash-Ketten-Validierung, JSON-Integritätsheader, CSV-Export, UI Save-Dialog |
 | 2025-06-20 | 1.0.0 | **Enterprise v1.0:** Format v2 (wrapped DEK), `reencrypt_vault`, `ComplianceDashboard`, `get_compliance_status`, `VaultKeyRotated` |
 | 2025-06-20 | 1.0.0 | **Passwort-Rotation UI:** `RotationDialog.tsx`, Policy-Validierung, Lock-Check (`LockedBy`), Audit-Export-Verifikation |
+| 2025-06-20 | 1.0.0 | **Compliance-Dashboard Rotation:** Primary-Button bei Key-Age >90 Tage, Toast nach Erfolg, Compliance-Badge, v2-Migrations-Hinweis |
 
 ---
 
@@ -1922,7 +1923,9 @@ Payload-Block   → unverändert kopiert
 | **Policy-Status** | „GPO verwaltet?“ — `admin_policy_active()` |
 | **Audit-Status** | „Hash-Kette valide?“ — `verify_audit_chain({vault}.audit.log)` |
 | **Key-Age** | Tage seit `key_rotated_at` (Fallback: `key_created_at`, v1: Datei-mtime) |
-| **Hinweis** | Bei Key-Age > **90 Tage**: *„Ihre Sicherheitsrichtlinie empfiehlt eine Passwort-Rotation.“* |
+| **Hinweis** | Bei Key-Age > **90 Tage**: Primary-Button **Passwort rotieren** → `RotationDialog`; Toast + Refetch nach `reencrypt_vault` |
+| **Compliance-Badge** | „Compliance OK“ (grün) wenn Audit-Kette valide und Key-Age ≤ 90 Tage |
+| **Rotation-Hinweis** | Unter dem Button: sichere Key-Migration (v2), Payload bleibt verschlüsselt |
 
 **`ComplianceStatus` (IPC):**
 
