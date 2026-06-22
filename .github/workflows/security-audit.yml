@@ -80,3 +80,62 @@ jobs:
       # 7. PRÜFUNG 4: Automatisierte Krypto- und Funktionstests ausführen
       - name: Run Cargo Tests
         run: cargo test
+
+  frontend-audit:
+    name: Frontend Dependency Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect package manager
+        id: pm
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: ${{ steps.pm.outputs.manager }}
+
+      - name: Install frontend dependencies
+        run: |
+          case "${{ steps.pm.outputs.manager }}" in
+            pnpm)
+              corepack enable
+              pnpm install --frozen-lockfile
+              ;;
+            yarn)
+              yarn install --frozen-lockfile
+              ;;
+            npm)
+              npm ci
+              ;;
+          esac
+
+      - name: Run frontend dependency audit (high severity)
+        run: |
+          case "${{ steps.pm.outputs.manager }}" in
+            pnpm)
+              pnpm audit --audit-level high
+              ;;
+            yarn)
+              yarn audit --level high
+              ;;
+            npm)
+              npm audit --audit-level=high
+              ;;
+          esac
