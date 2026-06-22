@@ -22,7 +22,6 @@ const TICK_INTERVAL: Duration = Duration::from_secs(1);
 pub struct VaultLockedPayload {
     pub reason: String,
     pub info: VaultInfo,
-    /// Effective idle timeout when `reason` is `"idle"` (from live policy merge).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_lock_seconds: Option<u32>,
 }

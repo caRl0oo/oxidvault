@@ -208,8 +208,7 @@ fn handle_open_new_secret(app: &tauri::AppHandle, password: Option<&str>) -> Bri
         return BridgeResponse::locked(mfa_required);
     }
 
-    drop(vault);
-    state.touch_activity();
+    state.record_activity_for(&vault.info());
     emit_new_secret_prefill_if_pending(app);
     BridgeResponse::focus_sent()
 }
@@ -245,8 +244,7 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
 
     match vault.find_web_login_for_hostname(hostname) {
         Ok(Some((username, password))) => {
-            drop(vault);
-            state.touch_activity();
+            state.record_activity_for(&vault.info());
             BridgeResponse::ok_login(username, password.to_string())
         }
         Ok(None) => BridgeResponse::not_found(),

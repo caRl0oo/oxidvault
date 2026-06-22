@@ -14,9 +14,9 @@ pub fn get_system_diagnostics(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SystemDiagnostics, String> {
-    state.touch_activity_if_unlocked();
     let loaded_path = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
+        state.record_activity_for(&vault.info());
         vault.info().path
     };
 

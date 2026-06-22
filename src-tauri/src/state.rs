@@ -3,20 +3,21 @@
 // GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
 // weitergeben und/oder modifizieren.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::clipboard::SecureClipboard;
 use crate::nm_bridge::BridgeAuthState;
 use crate::ssh::SshManager;
+use vault_core::VaultInfo;
 
 pub struct AppState {
     pub vault: Mutex<vault_core::Vault>,
     pub ssh: SshManager,
     pub clipboard: SecureClipboard,
     pub bridge: Mutex<BridgeAuthState>,
-    last_activity: Mutex<SystemTime>,
+    last_activity_secs: AtomicU64,
     idle_warning_sent: AtomicBool,
 }
 
@@ -27,50 +28,58 @@ impl AppState {
             ssh: SshManager::new(),
             clipboard: SecureClipboard::new(),
             bridge: Mutex::new(BridgeAuthState::default()),
-            last_activity: Mutex::new(SystemTime::now()),
+            last_activity_secs: AtomicU64::new(unix_secs_now()),
             idle_warning_sent: AtomicBool::new(false),
         }
     }
 
-    /// Updates the last user/vault activity timestamp and clears any pending idle warning.
     pub fn touch_activity(&self) {
-        if let Ok(mut guard) = self.last_activity.lock() {
-            *guard = SystemTime::now();
-        }
+        self.last_activity_secs
+            .store(unix_secs_now(), Ordering::Relaxed);
         self.clear_idle_warning();
     }
 
-    /// Records activity only when the vault is initialized and unlocked.
-    pub fn touch_activity_if_unlocked(&self) {
-        if self.is_vault_unlocked() {
+    pub fn record_activity_for(&self, info: &VaultInfo) {
+        if info.initialized && !info.locked {
             self.touch_activity();
         }
+    }
+
+    pub fn touch_activity_if_unlocked(&self) {
+        let Ok(vault) = self.vault.lock() else {
+            return;
+        };
+        self.record_activity_for(&vault.info());
     }
 
     pub fn is_vault_unlocked(&self) -> bool {
         self.vault
             .lock()
-            .map(|vault| {
-                let info = vault.info();
-                info.initialized && !info.locked
-            })
+            .map(|vault| vault_is_unlocked(&vault.info()))
             .unwrap_or(false)
     }
 
     pub fn elapsed_since_activity(&self) -> Duration {
-        self.last_activity
-            .lock()
-            .ok()
-            .and_then(|instant| SystemTime::now().duration_since(*instant).ok())
-            .unwrap_or(Duration::ZERO)
+        let then = self.last_activity_secs.load(Ordering::Relaxed);
+        let now = unix_secs_now();
+        Duration::from_secs(now.saturating_sub(then))
     }
 
-    /// Returns `true` when the idle warning event should be emitted (once per idle cycle).
     pub fn try_mark_idle_warning_sent(&self) -> bool {
-        !self.idle_warning_sent.swap(true, Ordering::SeqCst)
+        !self.idle_warning_sent.swap(true, Ordering::Relaxed)
     }
 
     pub fn clear_idle_warning(&self) {
-        self.idle_warning_sent.store(false, Ordering::SeqCst);
+        self.idle_warning_sent.store(false, Ordering::Relaxed);
     }
+}
+
+fn vault_is_unlocked(info: &VaultInfo) -> bool {
+    info.initialized && !info.locked
+}
+
+fn unix_secs_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
 }

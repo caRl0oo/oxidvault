@@ -15,9 +15,9 @@ pub fn ssh_connect(
     state: State<'_, AppState>,
     entry_id: String,
 ) -> Result<SshSessionInfo, String> {
-    state.touch_activity_if_unlocked();
     let (host, username, private_key, passphrase) = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
+        state.record_activity_for(&vault.info());
         extract_ssh_credentials(&vault, &entry_id)?
     };
 
