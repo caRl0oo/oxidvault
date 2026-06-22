@@ -1,46 +1,55 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { isTauri, touchActivity } from "@/lib/ipc";
+import { runAsync } from "@/lib/runAsync";
 
-/** Default inactivity timeout before auto-lock (seconds). */
-export const AUTO_LOCK_SECONDS = 120;
+const UI_ACTIVITY_EVENTS = [
+  "mousemove",
+  "mousedown",
+  "keydown",
+  "scroll",
+  "wheel",
+  "touchstart",
+] as const;
 
 /**
- * Tracks user activity (mouse, keyboard, scroll) and calls `onLock`
- * after `timeoutSeconds` of total inactivity.
+ * Registers UI activity with the backend idle watcher and surfaces pre-lock warnings.
  */
 export function useAutoLock(
   enabled: boolean,
-  onLock: () => void,
-  timeoutSeconds = AUTO_LOCK_SECONDS,
+  onIdleWarning: (secondsRemaining: number) => void,
+  onActivity?: () => void,
 ) {
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isTauri()) {
+      return;
+    }
 
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let unlistenWarning: (() => void) | undefined;
 
-    const reset = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(onLock, timeoutSeconds * 1000);
+    const pingActivity = () => {
+      onActivity?.();
+      runAsync(touchActivity);
     };
 
-    const events = [
-      "mousemove",
-      "mousedown",
-      "keydown",
-      "scroll",
-      "wheel",
-      "touchstart",
-    ] as const;
-
-    for (const event of events) {
-      window.addEventListener(event, reset, { passive: true });
+    for (const event of UI_ACTIVITY_EVENTS) {
+      globalThis.addEventListener(event, pingActivity, { passive: true });
     }
-    reset();
+
+    runAsync(async () => {
+      unlistenWarning = await listen<{ secondsRemaining: number }>(
+        "vault-idle-warning",
+        (event) => {
+          onIdleWarning(event.payload.secondsRemaining);
+        },
+      );
+    });
 
     return () => {
-      if (timer) clearTimeout(timer);
-      for (const event of events) {
-        window.removeEventListener(event, reset);
+      unlistenWarning?.();
+      for (const event of UI_ACTIVITY_EVENTS) {
+        globalThis.removeEventListener(event, pingActivity);
       }
     };
-  }, [enabled, onLock, timeoutSeconds]);
+  }, [enabled, onIdleWarning, onActivity]);
 }

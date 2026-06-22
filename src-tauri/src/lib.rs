@@ -6,18 +6,17 @@
 mod clipboard;
 mod commands;
 mod git_sync;
+mod idle_worker;
 mod native_messaging;
 mod nm_bridge;
 mod probe;
 mod settings;
 mod ssh;
+mod state;
 mod window_events;
 
-use commands::AppState;
-use nm_bridge::BridgeAuthState;
-use ssh::SshManager;
+use state::AppState;
 use tauri::Manager;
-use vault_core::Vault;
 
 /// Headless Native Messaging host for the browser extension (no WebView).
 pub fn run_native_messaging() -> std::io::Result<()> {
@@ -30,14 +29,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             nm_bridge::spawn_server(app.handle().clone());
+            idle_worker::spawn(app.handle().clone());
             Ok(())
         })
-        .manage(AppState {
-            vault: std::sync::Mutex::new(Vault::new()),
-            ssh: SshManager::new(),
-            clipboard: clipboard::SecureClipboard::new(),
-            bridge: std::sync::Mutex::new(BridgeAuthState::default()),
-        })
+        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::health_check,
             commands::get_vault_info,
@@ -72,6 +67,7 @@ pub fn run() {
             commands::disable_mfa,
             commands::verify_mfa_code,
             commands::take_extension_new_secret,
+            commands::touch_activity,
             commands::ssh_connect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_disconnect,

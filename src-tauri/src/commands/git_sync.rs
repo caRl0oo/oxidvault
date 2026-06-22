@@ -33,6 +33,7 @@ pub fn update_git_sync_settings(
     enabled: bool,
     remote_url: Option<String>,
 ) -> Result<AppSettings, String> {
+    state.touch_activity_if_unlocked();
     let settings = load_settings(&app)?;
     let resolved = resolve_config(&settings.policy_preferences());
     if resolved.git_sync_enabled.disabled && enabled != resolved.git_sync_enabled.value {
@@ -60,6 +61,7 @@ pub async fn sync_vault_git(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<GitSyncResult, String> {
+    state.touch_activity_if_unlocked();
     let settings = load_settings(&app)?;
     let resolved = resolve_config(&settings.policy_preferences());
     if !resolved.git_sync_enabled.value {

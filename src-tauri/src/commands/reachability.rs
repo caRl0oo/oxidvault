@@ -6,8 +6,8 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::commands::AppState;
 use crate::probe::tcp_reachable;
+use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -289,4 +289,15 @@ Bitte beschreiben Sie betroffene Version, Plattform, Reproduktionsschritte und �
 
 ---
 
+## Enterprise & Compliance
+
+OxidVault unterstützt **Enterprise-Policies** über eine maschinenweite `policy.json` (Auto-Lock, Mindestpasswortlänge, Git-Sync, Lock-on-Minimize). IT-Teams können Vorgaben zentral per GPO oder Intune ausrollen, ohne dass End-User diese Einstellungen überschreiben können.
+
+| Ressource | Inhalt |
+|---|---|
+| [Admin-Deployment Guide](ARCHITECTURE.md#16-admin-deployment-guide) | GPO-Rollout in ~5 Minuten, Pfade, Fail-Safe-Logik, Verifikation |
+| [`docs/policy.json.example`](docs/policy.json.example) | Vorlage mit allen unterstützten Policy-Feldern |
+
+---
+
 *OxidVault — Built for admins who don't have time for slow tools.*

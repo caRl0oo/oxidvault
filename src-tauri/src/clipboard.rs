@@ -11,7 +11,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 use zeroize::Zeroizing;
 
-use crate::commands::AppState;
+use crate::state::AppState;
 
 const CLIPBOARD_CLEAR_SECONDS: u64 = 30;
 

@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
 import { SyncButton } from "@/components/SyncButton";
 import { VaultLockButton } from "@/components/ui/VaultLockButton";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
+import { useExtensionPrefillListener } from "@/hooks/useExtensionPrefillListener";
 import { useMfaRateLimit } from "@/hooks/useMfaRateLimit";
 import { useReachabilityPolling } from "@/hooks/useReachabilityPolling";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
+import { useVaultLockedListener } from "@/hooks/useVaultLockedListener";import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
 import { formatVaultError, isInvalidMfaError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
 import { cancelSecureClipboardClear, notifyBackendSecureCopy } from "@/lib/secureClipboard";
+import { vaultLockMessage, resolveIdleLockSeconds } from "@/lib/vaultLockMessages";
 import { filterEntries } from "@/lib/search";
 import { openWebsiteUrl } from "@/lib/openWebsite";
 import { sshConnect } from "@/lib/ssh";
@@ -86,6 +87,7 @@ export default function App() {
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
   const {
     isLockedOut: mfaLockedOut,
     secondsRemaining: mfaLockoutSeconds,
@@ -345,7 +347,8 @@ export default function App() {
     setDashboardFilter(null);
     setActiveTag(null);
     setScreen("unlock");
-    if (message) setError(message);
+    setIdleWarningSeconds(null);
+    setError(message ?? null);
   }, [resetMfaRateLimit]);
 
   const performLock = useCallback(async () => {
@@ -354,43 +357,28 @@ export default function App() {
     applyLockedUi(info);
   }, [applyLockedUi]);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    runAsync(async () => {
-      const fn = await listen<{ reason: string; info: VaultInfo }>("vault-locked", (event) => {
-        const msg =
-          event.payload.reason === "minimize"
-            ? t("app.lockedOnMinimize")
-            : undefined;
-        applyLockedUi(event.payload.info, msg);
-      });
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [applyLockedUi, t]);
+  const handleVaultLocked = useCallback(
+    (payload: { reason: string; info: VaultInfo; autoLockSeconds?: number }) => {
+      const seconds = resolveIdleLockSeconds(
+        payload.autoLockSeconds,
+        resolvedConfig?.autoLockSeconds.value,
+      );
+      applyLockedUi(payload.info, vaultLockMessage(payload.reason, seconds, t));
+    },
+    [applyLockedUi, resolvedConfig?.autoLockSeconds.value, t],
+  );
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    runAsync(async () => {
-      const fn = await listen("extension-new-secret-prefill", () => {
-        runAsync(async () => {
-          const password = await takeExtensionNewSecret();
-          if (password) {
-            setNewSecretPrefillPassword(password);
-            setShowAddForm(true);
-          }
-        });
-      });
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
+  useVaultLockedListener(handleVaultLocked);
+
+  const handleExtensionNewSecretPrefill = useCallback(async () => {
+    const password = await takeExtensionNewSecret();
+    if (password) {
+      setNewSecretPrefillPassword(password);
+      setShowAddForm(true);
+    }
   }, []);
+
+  useExtensionPrefillListener(handleExtensionNewSecretPrefill);
 
   const handleLock = useCallback(async () => {
     try {
@@ -401,28 +389,21 @@ export default function App() {
     }
   }, [performLock]);
 
-  const handleAutoLock = useCallback(async () => {
-    try {
-      await performLock();
-      setError(t("app.autoLocked"));
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [performLock, t]);
+  const handleIdleWarning = useCallback((secondsRemaining: number) => {
+    setIdleWarningSeconds(secondsRemaining);
+  }, []);
+
+  const clearIdleWarning = useCallback(() => {
+    setIdleWarningSeconds(null);
+  }, []);
+
+  const vaultUnlocked = screen === "vault" && !!vaultInfo && !vaultInfo.locked;
+  useAutoLock(vaultUnlocked, handleIdleWarning, clearIdleWarning);
 
   const openPasswordGenerator = useCallback((apply?: (pwd: string) => void) => {
     setGeneratorApply(apply ?? null);
     setShowPasswordGenerator(true);
   }, []);
-
-  const vaultUnlocked = screen === "vault" && !!vaultInfo && !vaultInfo.locked;
-  useAutoLock(
-    vaultUnlocked,
-    () => {
-      runAsync(handleAutoLock);
-    },
-    resolvedConfig?.autoLockSeconds.value ?? 120,
-  );
 
   const handleSelectEntry = useCallback(async (id: string) => {
     setVaultMainView("secrets");
@@ -522,6 +503,21 @@ export default function App() {
     [refreshEntries, handleSelectEntry, closeSecretForm],
   );
 
+  const syncGitAfterDelete = useCallback(async () => {
+    try {
+      const result = await syncVaultGit();
+      setGitSyncMessage(result.message);
+      if (result.vaultReloaded) {
+        const info = await getVaultInfo();
+        setVaultInfo(info);
+      }
+      globalThis.setTimeout(() => setGitSyncMessage(null), 4000);
+    } catch (syncErr) {
+      setGitSyncError(formatVaultError(syncErr));
+      globalThis.setTimeout(() => setGitSyncError(null), 5000);
+    }
+  }, []);
+
   const handleDeleteEntry = useCallback(
     async (id: string) => {
       setLoading(true);
@@ -535,18 +531,7 @@ export default function App() {
           prev ? { ...prev, entry_count: Math.max(0, prev.entry_count - 1) } : prev,
         );
         if (gitSyncSettings.enabled) {
-          try {
-            const result = await syncVaultGit();
-            setGitSyncMessage(result.message);
-            if (result.vaultReloaded) {
-              const info = await getVaultInfo();
-              setVaultInfo(info);
-            }
-            globalThis.setTimeout(() => setGitSyncMessage(null), 4000);
-          } catch (syncErr) {
-            setGitSyncError(formatVaultError(syncErr));
-            globalThis.setTimeout(() => setGitSyncError(null), 5000);
-          }
+          await syncGitAfterDelete();
         }
       } catch (e) {
         setError(formatVaultError(e));
@@ -554,7 +539,7 @@ export default function App() {
         setLoading(false);
       }
     },
-    [refreshEntries, gitSyncSettings.enabled],
+    [refreshEntries, gitSyncSettings.enabled, syncGitAfterDelete],
   );
 
   const startCreate = useCallback(() => {
@@ -608,28 +593,59 @@ export default function App() {
     setGeneratorApply(null);
   }, []);
 
+  const handleMfaAutoSubmit = useCallback(
+    (code: string) => {
+      void handleCompleteMfa(code);
+    },
+    [handleCompleteMfa],
+  );
+
+  const handleShowAddForm = useCallback(() => {
+    setShowAddForm(true);
+  }, []);
+
+  const handleCloseSshTerminal = useCallback(() => {
+    setSshTerminal(null);
+  }, []);
+
+  const handleVaultLockClick = useCallback(() => {
+    void handleLock();
+  }, [handleLock]);
+
+  const onShortcutLock = useCallback(() => {
+    if (vaultInfo && !vaultInfo.locked) {
+      void handleLock();
+    }
+  }, [vaultInfo, handleLock]);
+
+  const onShortcutSearch = useCallback(() => {
+    const el = searchRef.current;
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+
+  const onShortcutNewSecret = useCallback(() => {
+    if (screen === "vault") {
+      setShowAddForm(true);
+    }
+  }, [screen]);
+
+  const onShortcutGenerator = useCallback(() => {
+    if (vaultUnlocked) {
+      openPasswordGenerator();
+    }
+  }, [vaultUnlocked, openPasswordGenerator]);
+
   const shortcuts = useMemo(
     () => ({
-      "mod+l": () => {
-        if (vaultInfo && !vaultInfo.locked) {
-          runAsync(handleLock);
-        }
-      },
-      "mod+k": () => {
-        const el = searchRef.current;
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      },
-      "mod+n": () => {
-        if (screen === "vault") setShowAddForm(true);
-      },
-      "mod+g": () => {
-        if (vaultUnlocked) openPasswordGenerator();
-      },
+      "mod+l": onShortcutLock,
+      "mod+k": onShortcutSearch,
+      "mod+n": onShortcutNewSecret,
+      "mod+g": onShortcutGenerator,
     }),
-    [vaultInfo, handleLock, screen, vaultUnlocked, openPasswordGenerator],
+    [onShortcutLock, onShortcutSearch, onShortcutNewSecret, onShortcutGenerator],
   );
 
   useKeyboardShortcuts(shortcuts);
@@ -670,7 +686,7 @@ export default function App() {
         {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · v
         {vaultInfo.version}
       </span>
-      <VaultLockButton locked={vaultInfo.locked} onLock={() => runAsync(handleLock)} />
+      <VaultLockButton locked={vaultInfo.locked} onLock={handleVaultLockClick} />
     </div>
   ) : null;
 
@@ -688,7 +704,15 @@ export default function App() {
       vaultStatus={vaultStatus}
       onGitSyncChange={handleGitSyncChange}
     >
-      <AppScreenContent
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {idleWarningSeconds !== null && vaultUnlocked ? (
+          <output
+            className="block shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-100"
+          >
+            {t("app.idleLockWarning", { seconds: idleWarningSeconds })}
+          </output>
+        ) : null}
+        <AppScreenContent
         screen={screen}
         backendStatus={backendStatus}
         vaultInfo={vaultInfo}
@@ -711,7 +735,7 @@ export default function App() {
         mfaLockedOut={mfaLockedOut}
         mfaLockoutSeconds={mfaLockoutSeconds}
         onMfaCodeChange={setMfaCode}
-        onMfaAutoSubmit={(code) => runAsync(() => handleCompleteMfa(code))}
+        onMfaAutoSubmit={handleMfaAutoSubmit}
         onCancelMfaChallenge={handleCancelMfaChallenge}
         onSwitchVault={handleSwitchVault}
         onBackToWelcome={backToWelcome}
@@ -737,7 +761,7 @@ export default function App() {
         sidebarCopyingId={sidebarCopyingId}
         reachability={reachability}
         onApplyDashboardFilter={handleApplyDashboardFilter}
-        onShowAddForm={() => setShowAddForm(true)}
+        onShowAddForm={handleShowAddForm}
         onEditEntry={setEditEntry}
         showAddForm={showAddForm}
         editEntry={editEntry}
@@ -752,8 +776,9 @@ export default function App() {
         onClosePasswordGenerator={closePasswordGenerator}
         generatorApply={generatorApply ?? undefined}
         sshTerminal={sshTerminal}
-        onCloseSshTerminal={() => setSshTerminal(null)}
+        onCloseSshTerminal={handleCloseSshTerminal}
       />
+      </div>
     </Layout>
   );
 }

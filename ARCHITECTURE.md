@@ -368,27 +368,20 @@ Frontend: Lock-Screen, Passwort erforderlich
 
 #### RAM-Purge beim Auto-Lock / manuellen Lock (v0.1.0)
 
-> **Status:** ✅ Backend `vault.lock()` · Frontend `useAutoLock`
+> **Status:** ✅ Backend `idle_worker.rs` · `AppState::touch_activity` · Frontend `useAutoLock` (Warnung + UI-Pings)
 
 Bei jeder Sperrung (`lock_vault`, Auto-Lock, Lock-on-Minimize, `Ctrl+L`) werden entschlüsselte Daten aggressiv aus dem Arbeitsspeicher entfernt:
 
 ```
-Auto-Lock (120s Inaktivität) oder Ctrl+L
+Idle-Timeout (Backend) oder Ctrl+L / Minimize
          │
          ▼
-Frontend: performLock()
-  · cancelSecureClipboardClear()
-  · lockVault() IPC
-  · React-State leeren (entries, selectedEntry, password)
-  · screen → "unlock" (roter Status-Badge)
+Backend: perform_lock()  [SSH disconnect + Vault::lock() + RAM-Purge]
+         │
+         ├─ reason "idle" / "minimize" → Tauri Event `vault-locked`
          │
          ▼
-Backend: Vault::lock()
-  1. Für jeden Eintrag: SecretPayload::zeroize_secrets()
-     (Passwort, Token, Private Key, Passphrase → überschrieben)
-  2. master_key = None → MasterKey::drop() → ZeroizeOnDrop (32 Byte → 0)
-  3. entries.clear()
-  4. locked = true
+Frontend: Listener `vault-locked` → UI-Reset + Hinweis
 ```
 
 | Komponente | Purge-Mechanismus |
@@ -398,14 +391,17 @@ Backend: Vault::lock()
 | **Frontend-State** | Einträge, Detail-View, Formular-State zurücksetzen |
 | **Clipboard (Backend)** | `SecureClipboard::cancel_pending()` bei `perform_lock()` |
 
-**Auto-Lock-Parameter:**
+**Auto-Lock-Parameter (Backend-authoritative):**
 
-| Parameter | Wert |
+| Parameter | Wert / Quelle |
 |---|---|
-| **Inaktivitäts-Timeout** | 120 Sekunden (2 Minuten) |
-| **Implementierung** | `src/hooks/useAutoLock.ts` |
-| **Aktivitäts-Events** | `mousemove`, `mousedown`, `keydown`, `scroll`, `wheel`, `touchstart` |
-| **Aktiv nur wenn** | Vault entsperrt (`screen === "vault"`) |
+| **Inaktivitäts-Timeout** | `autoLockSeconds` aus `settings.json` + Admin-Override `policy.json` |
+| **Idle-Watcher** | `src-tauri/src/idle_worker.rs` — `tokio` 1s-Tick, liest Policy **pro Tick** neu |
+| **Activity-Tracking** | `AppState::last_activity` — Vault-Commands + NM-Bridge + IPC `touch_activity` |
+| **UI-Aktivität** | `useAutoLock.ts` → `touch_activity` bei DOM-Events (kein Frontend-Timer) |
+| **Vorwarnung** | Event `vault-idle-warning` { `secondsRemaining`: 30 } — 30 s vor Lock |
+| **Lock-Event** | `vault-locked` { `reason`: `"idle"`, `autoLockSeconds`: effektiver Timeout } |
+| **Reachability-Polling** | **Kein** Activity-Touch (würde Idle-Lock verhindern) |
 
 ### Passwort-Generator (v0.1.0)
 
@@ -777,6 +773,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `open_vault` | `path`, `password`, `mfa_code?` | `UnlockVaultResponse` | Atomarer Auth-Flow via `auth::unlock_vault`; Passwort/Code → `Zeroizing<String>` | ✅ |
 | `unlock_vault` | `password`, `mfa_code?` | `UnlockVaultResponse` | Re-Unlock; gleicher atomarer Flow | ✅ |
 | `lock_vault` | — | `VaultInfo` | RAM-Purge + Clipboard-Timer abbrechen | ✅ |
+| `touch_activity` | — | `()` | Idle-Lock: UI-/Client-Aktivität an Backend melden (nur wenn entsperrt) | ✅ |
 | `list_entries` | — | `SecretEntrySummary[]` | Eintragsliste ohne Secrets | ✅ |
 | `add_entry` | `input: SecretEntryInput` | `SecretEntrySummary` | Secret hinzufügen und Vault persistieren | ✅ |
 | `update_entry` | `id`, `input: SecretEntryInput` | `SecretEntrySummary` | Secret aktualisieren und persistieren (Zero-Clone) | ✅ |
@@ -1911,6 +1908,8 @@ remove(team.lock) → create_new erneut
 
 Die Datei wird beim App-Start via `policy::init_admin_policy()` geladen und im Prozess gecacht. Fehlerhaftes JSON führt zum Abbruch (Compliance).
 
+**Vorlage für Admins:** [`docs/policy.json.example`](../docs/policy.json.example) · **GPO-Rollout (5 Min.):** [Abschnitt 16 — Admin-Deployment Guide](#16-admin-deployment-guide)
+
 **Beispiel `policy.json`:**
 
 ```json
@@ -2071,7 +2070,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-20 | 1.0.0 | **UI Header & Sidebar-Nav:** Command-Bar ohne Doppel-Branding, Sidebar `w-80`, Tab-Nav mit lucide-Icons (FolderLock/Shield/Activity), volle Label-Ansicht ohne Ellipsis |
 | 2026-06-20 | 1.0.0 | **Audit-Log Erweiterung:** `SecretCreated`/`SecretModified`, `AuthFailed`, `SyncEvent`, `ConfigChanged`; UUID-only Secret-Referenzen; Aktivität-UI mit Icons/Farbcodes |
 | 2026-06-20 | 1.0.0 | **Enterprise MSI Browser-Extension:** Feste Extension-ID (RSA/CRX), Force-Install Policy (Chrome/Edge), WiX Custom Action, `installer/README.md` |
-| 2026-06-22 | 1.0.0 | **Web Store Remote-Code:** Staging validiert `pkg/vault_wasm_bg.wasm` + keine http/file-Pfade in Quellen; ARCHITECTURE CSP/WASM-Doku |
+| 2026-06-22 | 1.0.0 | **Admin-Deployment Guide:** Abschnitt 16, `docs/policy.json.example`, README Enterprise & Compliance |
+| 2026-06-22 | 1.0.0 | **Backend Idle-Lock:** `state.rs`, `idle_worker.rs`, `touch_activity` IPC, `vault-idle-warning`, Frontend-Warnbanner |
 
 ---
 
@@ -2145,6 +2145,106 @@ Payload-Block   → unverändert kopiert
 | `versionInfo` | `VersionDiagnostics` | `VAULT_VERSION` |
 
 Stabile Status-Codes (Backend → Frontend): `ok`, `vault_not_loaded`, `vault_file_not_found`, `vault_path_not_reachable`, `vault_dir_not_writable`, `policy_not_configured`, `policy_invalid`, `policy_not_readable`, `audit_no_vault`, `audit_not_writable`, `audit_chain_invalid`, `audit_not_present`.
+
+---
+
+## 16. Admin-Deployment Guide
+
+> **Zielgruppe:** IT-Administratoren · **Rollout-Zeit:** ~5 Minuten pro Mandant (MSI + `policy.json` + optional Chrome Web Store)  
+> **Technische Referenz:** [Abschnitt 13 — Policy-Management](#13-zentrales-policy-management--admin-gpos) · **Vorlage:** [`docs/policy.json.example`](../docs/policy.json.example)
+
+### 1. Übersicht
+
+OxidVault trennt **Installation** (MSI / Desktop-App, Chrome Web Store Extension) von **Governance** (`policy.json`). Die Policy-Datei wird **nicht** vom Installer erzeugt — Admins legen sie bewusst per GPO, Intune, Ansible oder Image-Build ab.
+
+| Komponente | Wer deployt | Pfad / Quelle |
+|---|---|---|
+| Desktop-App (MSI) | IT | `C:\Program Files\OxidVault\` |
+| Browser-Extension | User / IT (Web Store) | [Chrome Web Store](https://chrome.google.com/webstore) (Unlisted) |
+| Admin-Policy | IT (Pflicht nur bei zentralen Vorgaben) | siehe unten |
+| Native Messaging | User/Dev oder Skript nach Store-ID | `register_native_host.ps1` |
+
+### 2. Policy-Datei — Pfade
+
+| Plattform | Verzeichnis | Datei |
+|---|---|---|
+| **Windows** | `C:\ProgramData\OxidVault\` | `policy.json` |
+| **Linux / macOS** | `/etc/oxidvault/` | `policy.json` |
+
+End-User benötigen **keine** Schreibrechte auf diese Pfade. Unter Windows: Ordner anlegen, JSON deployen, ACLs auf `Administrators` + `SYSTEM` (Lesen für `Users` reicht).
+
+### 3. Beispiel `policy.json`
+
+Alle Felder sind **optional** — nur gesetzte Keys sind für User bindend. Vorlage mit Feldbeschreibung: [`docs/policy.json.example`](../docs/policy.json.example).
+
+```json
+{
+  "forceLockOnMinimize": true,
+  "autoLockSeconds": 120,
+  "gitSyncEnabled": false,
+  "minMasterPasswordLen": 16
+}
+```
+
+| Feld (camelCase) | Typ | Wirkung |
+|---|---|---|
+| `forceLockOnMinimize` | `bool` | Tresor sperrt bei Minimieren des Fensters |
+| `autoLockSeconds` | `u32` | Inaktivitäts-Auto-Lock (Sekunden) |
+| `gitSyncEnabled` | `bool` | Git-Sync erlauben/verbieten |
+| `minMasterPasswordLen` | `u32` | Mindestlänge Master-Passwort (Default ohne Policy: **12**) |
+
+Weitere Felder existieren in `AdminPolicy` derzeit **nicht** — unbekannte JSON-Keys werden von serde **ignoriert** (inkl. `_documentation` in der Vorlage).
+
+### 4. Fail-Safe — warum die App bei kaputtem JSON nicht startet
+
+Beim Start ruft `main.rs` `vault_core::policy::init_admin_policy()` auf:
+
+| Zustand | Verhalten |
+|---|---|
+| `policy.json` **fehlt** | Normal — App startet mit User-Defaults (`settings.json`) |
+| Datei **vorhanden, gültiges JSON** | Admin-Werte überschreiben User-Einstellungen; UI-Felder mit `disabled: true` |
+| Datei **vorhanden, ungültiges JSON** | **Prozess beendet sich** — Meldung `OxidVault policy error: admin policy init failed` |
+
+**Begründung (Compliance):** Eine defekte oder manipulierte Policy darf nicht still ignoriert werden. Sonst könnten z. B. erzwungene Auto-Lock- oder Mindestpasswort-Regeln aushebeln werden, ohne dass Admins es merken. Lieber **kein Start** als unsicherer Betrieb.
+
+### 5. Verifikation — System-Diagnose & UI
+
+Nach dem Rollout auf einem Test-Client:
+
+1. OxidVault starten → Tab **Security**
+2. **Compliance-Dashboard:** „GPO verwaltet?“ (`adminPolicyActive` / `policyManagedByGpo`)
+3. **System-Diagnose** → „Diagnose-Bericht kopieren“
+
+Der Markdown-Export enthält u. a.:
+
+| Diagnose-Feld | Bedeutung |
+|---|---|
+| `policyStatus.path` | Erwarteter Policy-Pfad |
+| `policyStatus.ok` / `status` | `ok`, `policy_not_configured`, `policy_invalid`, … |
+| `policyStatus.policyHash` | SHA-256 der Datei (Integritätsnachweis) |
+
+In der App zeigt `get_resolved_config` → `adminPolicyActive: true`, wenn `policy.json` existiert. Gesperrte Settings zeigen den Hinweis „Admin-Richtlinie aktiv“.
+
+### 6. GPO-Rollout — Checkliste (Windows, ~5 Min.)
+
+1. **MSI** auf Clients installieren (`npm run tauri:build` → MSI aus `src-tauri/target/release/bundle/msi/`)
+2. **Extension:** User installiert aus Chrome Web Store (Unlisted) **oder** IT setzt `ExtensionInstallForcelist` mit Store-Update-URL:  
+   `<extension_id>;https://clients2.google.com/service/update2/crx`
+3. **`policy.json`** aus [`docs/policy.json.example`](../docs/policy.json.example) anpassen
+4. Per **GPO** (Computer Configuration → Preferences → Files) oder Intune **File** deployen nach:  
+   `C:\ProgramData\OxidVault\policy.json`
+5. **Native Messaging:** Nach bekannter Store-Extension-ID einmalig (Login-Skript oder Anleitung):  
+   `register_native_host.ps1 -BuildProfile installed -ExtensionId <id>`
+6. **Test-Client:** System-Diagnose + Vault öffnen → Policy-Felder gesperrt?
+
+### 7. Linux / macOS
+
+```bash
+sudo mkdir -p /etc/oxidvault
+sudo cp docs/policy.json.example /etc/oxidvault/policy.json
+sudo chmod 644 /etc/oxidvault/policy.json
+# JSON bearbeiten — Keys mit '_' entfernen oder belassen (werden ignoriert)
+```
 
 ---
 

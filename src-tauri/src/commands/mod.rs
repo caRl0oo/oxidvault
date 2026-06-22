@@ -10,16 +10,12 @@ use vault_core::{
 };
 use zeroize::Zeroizing;
 
-use crate::clipboard::SecureClipboard;
-use crate::nm_bridge::BridgeAuthState;
 use crate::settings;
-use crate::ssh::SshManager;
 
-pub struct AppState {
-    pub vault: std::sync::Mutex<vault_core::Vault>,
-    pub ssh: SshManager,
-    pub clipboard: SecureClipboard,
-    pub bridge: std::sync::Mutex<BridgeAuthState>,
+pub use crate::state::AppState;
+
+fn touch_if_unlocked(state: &AppState) {
+    state.touch_activity_if_unlocked();
 }
 
 fn note_unlock_error(state: &AppState, err: &VaultError) {
@@ -34,6 +30,7 @@ fn note_unlock_success(state: &AppState, app: &tauri::AppHandle, vault: &vault_c
     if let Ok(mut bridge) = state.bridge.lock() {
         bridge.clear_mfa_failed();
     }
+    state.touch_activity();
     let _ = settings::save_vault_mfa_configured(app, vault.mfa_status().mfa_enabled);
     crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
 }
@@ -56,8 +53,14 @@ pub fn health_check() -> String {
 
 #[tauri::command]
 pub fn get_vault_info(state: State<'_, AppState>) -> Result<VaultInfo, String> {
+    touch_if_unlocked(&state);
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     Ok(vault.info())
+}
+
+#[tauri::command]
+pub fn touch_activity(state: State<'_, AppState>) {
+    state.touch_activity_if_unlocked();
 }
 
 #[tauri::command]
@@ -75,6 +78,7 @@ pub fn create_vault(
         .map_err(|e| e.to_string())?;
     let info = vault.info();
     bootstrap::remember_vault_path(&app, &info);
+    state.touch_activity();
     Ok(info)
 }
 
@@ -140,6 +144,7 @@ pub fn lock_vault(state: State<'_, AppState>) -> Result<VaultInfo, String> {
 
 #[tauri::command]
 pub fn list_entries(state: State<'_, AppState>) -> Result<Vec<SecretEntrySummary>, String> {
+    touch_if_unlocked(&state);
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.list_entries().map_err(|e| e.to_string())
 }
@@ -149,6 +154,7 @@ pub fn add_entry(
     input: SecretEntryInput,
     state: State<'_, AppState>,
 ) -> Result<SecretEntrySummary, String> {
+    touch_if_unlocked(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.add_entry(input).map_err(|e| e.to_string())
 }
@@ -159,12 +165,14 @@ pub fn update_entry(
     input: SecretEntryInput,
     state: State<'_, AppState>,
 ) -> Result<SecretEntrySummary, String> {
+    touch_if_unlocked(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.update_entry(&id, input).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_entry(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    touch_if_unlocked(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.delete_entry(&id).map_err(|e| e.to_string())
 }
@@ -172,6 +180,7 @@ pub fn delete_entry(id: String, state: State<'_, AppState>) -> Result<(), String
 /// Metadata-only entry view — no plaintext secrets over IPC.
 #[tauri::command]
 pub fn get_entry(id: String, state: State<'_, AppState>) -> Result<SecretEntryPublic, String> {
+    touch_if_unlocked(&state);
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.get_entry_public(&id).map_err(|e| e.to_string())
 }
@@ -183,6 +192,7 @@ pub fn reveal_secret(
     field: Option<SecretField>,
     state: State<'_, AppState>,
 ) -> Result<RevealedSecret, String> {
+    touch_if_unlocked(&state);
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault
         .reveal_secret(&entry_id, field.unwrap_or(SecretField::Primary))
@@ -197,6 +207,7 @@ pub fn copy_to_clipboard(
     field: Option<SecretField>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    touch_if_unlocked(&state);
     let secret = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
         let secret = vault
@@ -217,18 +228,21 @@ pub fn generate_password_cmd(options: PasswordGenOptions) -> Result<String, Stri
 
 #[tauri::command]
 pub fn enable_mfa(state: State<'_, AppState>) -> Result<vault_core::MfaSetupInfo, String> {
+    touch_if_unlocked(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.begin_mfa_enrollment().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_mfa_status(state: State<'_, AppState>) -> Result<vault_core::MfaStatus, String> {
+    touch_if_unlocked(&state);
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     Ok(vault.mfa_status())
 }
 
 #[tauri::command]
 pub fn take_extension_new_secret(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    touch_if_unlocked(&state);
     let mut bridge = state.bridge.lock().map_err(|e| e.to_string())?;
     Ok(bridge
         .take_pending_new_secret()
@@ -237,6 +251,7 @@ pub fn take_extension_new_secret(state: State<'_, AppState>) -> Result<Option<St
 
 #[tauri::command]
 pub fn disable_mfa(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    touch_if_unlocked(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.disable_mfa().map_err(|e| e.to_string())?;
     let _ = settings::save_vault_mfa_configured(&app, false);
@@ -249,6 +264,7 @@ pub fn verify_mfa_code(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    touch_if_unlocked(&state);
     let code = Zeroizing::new(code);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     let verified = vault

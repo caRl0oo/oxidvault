@@ -1,0 +1,17 @@
+{
+  "_documentation": "OxidVault machine-wide admin policy (GPO-style). Copy to the platform path below. Keys starting with '_' are ignored by the app and may stay in the file or be removed before deploy.",
+  "_deployPaths": {
+    "windows": "C:\\ProgramData\\OxidVault\\policy.json",
+    "linuxMacos": "/etc/oxidvault/policy.json"
+  },
+  "_fieldDocumentation": {
+    "forceLockOnMinimize": "Optional (boolean). If set, vault locks when the main window is minimized. UI toggle is disabled for users.",
+    "autoLockSeconds": "Optional (unsigned integer). Inactivity timeout in seconds before the vault auto-locks. UI control is disabled when set.",
+    "gitSyncEnabled": "Optional (boolean). Enables or disables Git sync for all users on this machine. UI toggle is disabled when set.",
+    "minMasterPasswordLen": "Optional (unsigned integer). Minimum master password length for new vaults (app default without policy: 12)."
+  },
+  "forceLockOnMinimize": true,
+  "autoLockSeconds": 120,
+  "gitSyncEnabled": false,
+  "minMasterPasswordLen": 16
+}

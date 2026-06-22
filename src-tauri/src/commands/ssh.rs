@@ -6,7 +6,7 @@
 use tauri::{AppHandle, State};
 use vault_core::Vault;
 
-use crate::commands::AppState;
+use crate::state::AppState;
 
 pub use crate::ssh::SshSessionInfo;
 
@@ -15,6 +15,7 @@ pub fn ssh_connect(
     state: State<'_, AppState>,
     entry_id: String,
 ) -> Result<SshSessionInfo, String> {
+    state.touch_activity_if_unlocked();
     let (host, username, private_key, passphrase) = {
         let vault = state.vault.lock().map_err(|e| e.to_string())?;
         extract_ssh_credentials(&vault, &entry_id)?
@@ -31,6 +32,7 @@ pub fn ssh_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    state.touch_activity_if_unlocked();
     state.ssh.write(&session_id, data.as_bytes())
 }
 

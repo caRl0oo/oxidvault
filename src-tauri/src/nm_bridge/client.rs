@@ -115,7 +115,7 @@ fn locked_mfa_required(app: &tauri::AppHandle, vault: &vault_core::Vault) -> boo
 }
 
 fn handle_vault_status(app: &tauri::AppHandle) -> BridgeResponse {
-    let state = match app.try_state::<crate::commands::AppState>() {
+    let state = match app.try_state::<crate::state::AppState>() {
         Some(state) => state,
         None => return BridgeResponse::unavailable(),
     };
@@ -139,7 +139,7 @@ fn handle_vault_status(app: &tauri::AppHandle) -> BridgeResponse {
 fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
     focus_main_window(app);
 
-    let state = match app.try_state::<crate::commands::AppState>() {
+    let state = match app.try_state::<crate::state::AppState>() {
         Some(state) => state,
         None => return BridgeResponse::unavailable(),
     };
@@ -168,7 +168,7 @@ fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
 /// Notifies the desktop UI when a browser extension queued a new-secret prefill.
 pub fn emit_new_secret_prefill_if_pending(app: &tauri::AppHandle) {
     let has_pending = app
-        .try_state::<crate::commands::AppState>()
+        .try_state::<crate::state::AppState>()
         .is_some_and(|state| {
             state
                 .bridge
@@ -187,7 +187,7 @@ fn handle_open_new_secret(app: &tauri::AppHandle, password: Option<&str>) -> Bri
         return BridgeResponse::error("missing password");
     };
 
-    let state = match app.try_state::<crate::commands::AppState>() {
+    let state = match app.try_state::<crate::state::AppState>() {
         Some(state) => state,
         None => return BridgeResponse::unavailable(),
     };
@@ -208,6 +208,8 @@ fn handle_open_new_secret(app: &tauri::AppHandle, password: Option<&str>) -> Bri
         return BridgeResponse::locked(mfa_required);
     }
 
+    drop(vault);
+    state.touch_activity();
     emit_new_secret_prefill_if_pending(app);
     BridgeResponse::focus_sent()
 }
@@ -217,7 +219,7 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
         return BridgeResponse::error("missing url");
     };
 
-    let state = match app.try_state::<crate::commands::AppState>() {
+    let state = match app.try_state::<crate::state::AppState>() {
         Some(state) => state,
         None => return BridgeResponse::unavailable(),
     };
@@ -242,7 +244,11 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
     }
 
     match vault.find_web_login_for_hostname(hostname) {
-        Ok(Some((username, password))) => BridgeResponse::ok_login(username, password.to_string()),
+        Ok(Some((username, password))) => {
+            drop(vault);
+            state.touch_activity();
+            BridgeResponse::ok_login(username, password.to_string())
+        }
         Ok(None) => BridgeResponse::not_found(),
         Err(vault_core::VaultError::Locked) => {
             let mfa_required = locked_mfa_required(app, &vault);

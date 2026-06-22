@@ -8,10 +8,11 @@ use vault_core::{
     export_audit_report, read_audit_logs, AuditLogEntry, ExportFormat, SecurityAuditReport,
 };
 
-use crate::commands::AppState;
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn audit_vault_security(state: State<'_, AppState>) -> Result<SecurityAuditReport, String> {
+    state.touch_activity_if_unlocked();
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.audit_security().map_err(|e| e.to_string())
 }
@@ -21,6 +22,7 @@ pub fn get_audit_logs(
     state: State<'_, AppState>,
     limit: usize,
 ) -> Result<Vec<AuditLogEntry>, String> {
+    state.touch_activity_if_unlocked();
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     let path = vault
         .info()
@@ -35,6 +37,7 @@ pub fn export_audit_log(
     target_path: String,
     format: String,
 ) -> Result<(), String> {
+    state.touch_activity_if_unlocked();
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
     let vault_path = vault
         .info()

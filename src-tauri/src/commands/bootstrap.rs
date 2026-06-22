@@ -6,8 +6,8 @@
 use tauri::{AppHandle, State};
 use vault_core::{Vault, VaultInfo};
 
-use crate::commands::AppState;
 use crate::settings::{last_vault_path_if_exists, save_last_vault_path};
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn bootstrap_vault(app: AppHandle, state: State<'_, AppState>) -> Result<VaultInfo, String> {

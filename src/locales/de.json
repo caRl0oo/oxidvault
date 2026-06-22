@@ -39,7 +39,8 @@
     "lockVaultAria": "Vault sperren",
     "defaultVaultName": "Mein Vault",
     "lockedOnMinimize": "Vault gesperrt — Fenster wurde minimiert.",
-    "autoLocked": "Automatisch gesperrt nach 2 Minuten Inaktivität.",
+    "autoLocked": "Automatisch gesperrt nach {{seconds}} Sekunden Inaktivität.",
+    "idleLockWarning": "Automatische Sperrung in {{seconds}} Sekunden wegen Inaktivität.",
     "backendBrowserOnly": "browser-only",
     "backendOffline": "offline"
   },

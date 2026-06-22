@@ -67,6 +67,10 @@ export async function lockVault(): Promise<VaultInfo> {
   return invoke<VaultInfo>("lock_vault");
 }
 
+export async function touchActivity(): Promise<void> {
+  return invoke<void>("touch_activity");
+}
+
 export async function listEntries(): Promise<SecretEntrySummary[]> {
   return invoke<SecretEntrySummary[]>("list_entries");
 }

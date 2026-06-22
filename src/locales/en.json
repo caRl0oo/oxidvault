@@ -39,7 +39,8 @@
     "lockVaultAria": "Lock vault",
     "defaultVaultName": "My Vault",
     "lockedOnMinimize": "Vault locked — window was minimized.",
-    "autoLocked": "Automatically locked after 2 minutes of inactivity.",
+    "autoLocked": "Automatically locked after {{seconds}} seconds of inactivity.",
+    "idleLockWarning": "Automatic lock in {{seconds}} seconds due to inactivity.",
     "backendBrowserOnly": "browser-only",
     "backendOffline": "offline"
   },

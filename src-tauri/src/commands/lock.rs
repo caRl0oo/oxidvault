@@ -6,7 +6,7 @@
 use tauri::State;
 use vault_core::VaultInfo;
 
-use crate::commands::AppState;
+use crate::state::AppState;
 
 /// Locks the vault (RAM purge + SSH disconnect). No-op if already locked.
 pub fn perform_lock(state: &AppState) -> Result<VaultInfo, String> {

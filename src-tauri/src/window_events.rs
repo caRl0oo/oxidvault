@@ -3,19 +3,13 @@
 // GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
 // weitergeben und/oder modifizieren.
 
-use serde::Serialize;
 use tauri::{Emitter, Manager, State, Window, WindowEvent};
 use vault_core::policy::{resolve_config, UserPolicyPreferences};
 
-use crate::commands::{perform_lock, AppState};
+use crate::commands::perform_lock;
+use crate::idle_worker::VaultLockedPayload;
 use crate::settings::load_settings;
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VaultLockedPayload {
-    reason: String,
-    info: vault_core::VaultInfo,
-}
+use crate::state::AppState;
 
 /// Locks the vault when the main window is minimized (Focus loss + is_minimized).
 pub fn on_main_window_event(window: &Window, event: &WindowEvent, state: &State<'_, AppState>) {
@@ -57,6 +51,7 @@ pub fn on_main_window_event(window: &Window, event: &WindowEvent, state: &State<
             VaultLockedPayload {
                 reason: "minimize".into(),
                 info,
+                auto_lock_seconds: None,
             },
         );
     }
