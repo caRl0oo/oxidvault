@@ -5,8 +5,8 @@
 
 //! ISO 27001 compliance audit log — metadata-only, append-only, hash-chained.
 //!
-//! This module never accepts secret values. Only [`AuditAction`] variants and optional
-//! entry identifiers (`entry_id`) are recorded.
+//! This module never accepts secret values. Only [`AuditAction`] variants and non-sensitive
+//! reference tokens (UUIDs, config area names, sync status labels) are recorded.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -16,47 +16,161 @@ use std::sync::Mutex;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::audit_secure;
 use crate::error::VaultError;
 
 pub use audit_secure::secure_audit_log_file;
 
-/// Metadata-only security events — no variant carries secret payloads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+const MAX_DETAIL_TOKEN_LEN: usize = 120;
+
+/// Metadata-only security events — no variant carries passwords, usernames, or secret payloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditAction {
     VaultCreated,
     VaultOpened,
-    VaultUnlocked,
+    VaultUnlocked {
+        lock_id: String,
+    },
     VaultLocked,
+    /// Legacy log label — superseded by [`Self::SecretCreated`] for new writes.
     EntryCreated,
+    /// Legacy log label — superseded by [`Self::SecretModified`] for new writes.
     EntryUpdated,
-    EntryDeleted,
-    SecretCopied,
-    SecretRevealed,
+    SecretCreated {
+        id: Uuid,
+    },
+    SecretModified {
+        id: Uuid,
+    },
+    EntryDeleted {
+        id: Uuid,
+    },
+    SecretCopied {
+        id: Uuid,
+    },
+    SecretRevealed {
+        id: Uuid,
+    },
     VaultKeyRotated,
+    /// Failed vault unlock attempt (wrong master password).
+    AuthFailed,
+    SyncEvent {
+        status: String,
+    },
+    ConfigChanged {
+        area: String,
+    },
 }
 
 impl AuditAction {
-    pub fn as_str(self) -> &'static str {
+    pub fn action_name(&self) -> &'static str {
         match self {
             Self::VaultCreated => "VaultCreated",
             Self::VaultOpened => "VaultOpened",
-            Self::VaultUnlocked => "VaultUnlocked",
+            Self::VaultUnlocked { .. } => "VaultUnlocked",
             Self::VaultLocked => "VaultLocked",
             Self::EntryCreated => "EntryCreated",
             Self::EntryUpdated => "EntryUpdated",
-            Self::EntryDeleted => "EntryDeleted",
-            Self::SecretCopied => "SecretCopied",
-            Self::SecretRevealed => "SecretRevealed",
+            Self::SecretCreated { .. } => "SecretCreated",
+            Self::SecretModified { .. } => "SecretModified",
+            Self::EntryDeleted { .. } => "EntryDeleted",
+            Self::SecretCopied { .. } => "SecretCopied",
+            Self::SecretRevealed { .. } => "SecretRevealed",
             Self::VaultKeyRotated => "VaultKeyRotated",
+            Self::AuthFailed => "AuthFailed",
+            Self::SyncEvent { .. } => "SyncEvent",
+            Self::ConfigChanged { .. } => "ConfigChanged",
         }
+    }
+
+    fn detail_token(&self) -> String {
+        match self {
+            Self::VaultCreated
+            | Self::VaultOpened
+            | Self::VaultLocked
+            | Self::VaultKeyRotated
+            | Self::AuthFailed
+            | Self::EntryCreated
+            | Self::EntryUpdated => "-".to_string(),
+            Self::VaultUnlocked { lock_id } => sanitize_detail_token(lock_id),
+            Self::SecretCreated { id }
+            | Self::SecretModified { id }
+            | Self::EntryDeleted { id }
+            | Self::SecretCopied { id }
+            | Self::SecretRevealed { id } => id.to_string(),
+            Self::SyncEvent { status } => sanitize_detail_token(status),
+            Self::ConfigChanged { area } => sanitize_detail_token(area),
+        }
+    }
+
+    /// Parses a persisted action label back into an [`AuditAction`] shell for display/export.
+    ///
+    /// Structured fields are reconstructed from the third log bracket when possible.
+    pub fn from_log_parts(action: &str, entry_id: &str) -> Self {
+        match action {
+            "VaultUnlocked" => Self::VaultUnlocked {
+                lock_id: entry_id.to_string(),
+            },
+            "SecretCreated" | "EntryCreated" => {
+                parse_uuid_action(entry_id, |id| Self::SecretCreated { id })
+            }
+            "SecretModified" | "EntryUpdated" => {
+                parse_uuid_action(entry_id, |id| Self::SecretModified { id })
+            }
+            "EntryDeleted" => parse_uuid_action(entry_id, |id| Self::EntryDeleted { id }),
+            "SecretCopied" => parse_uuid_action(entry_id, |id| Self::SecretCopied { id }),
+            "SecretRevealed" => parse_uuid_action(entry_id, |id| Self::SecretRevealed { id }),
+            "SyncEvent" => Self::SyncEvent {
+                status: entry_id.to_string(),
+            },
+            "ConfigChanged" => Self::ConfigChanged {
+                area: entry_id.to_string(),
+            },
+            "AuthFailed" => Self::AuthFailed,
+            "VaultCreated" => Self::VaultCreated,
+            "VaultOpened" => Self::VaultOpened,
+            "VaultLocked" => Self::VaultLocked,
+            "VaultKeyRotated" => Self::VaultKeyRotated,
+            other => Self::ConfigChanged {
+                area: sanitize_detail_token(other),
+            },
+        }
+    }
+}
+
+fn parse_uuid_action<F>(entry_id: &str, build: F) -> AuditAction
+where
+    F: FnOnce(Uuid) -> AuditAction,
+{
+    if entry_id == "-" || entry_id.trim().is_empty() {
+        return AuditAction::EntryCreated;
+    }
+    match Uuid::parse_str(entry_id.trim()) {
+        Ok(id) => build(id),
+        Err(_) => AuditAction::ConfigChanged {
+            area: sanitize_detail_token(entry_id),
+        },
+    }
+}
+
+fn sanitize_detail_token(value: &str) -> String {
+    let trimmed: String = value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(MAX_DETAIL_TOKEN_LEN)
+        .collect();
+    if trimmed.trim().is_empty() {
+        "-".to_string()
+    } else {
+        trimmed.trim().to_string()
     }
 }
 
 /// Trait for append-only compliance logging from [`crate::vault::Vault`].
 pub trait AuditLog {
-    fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError>;
+    fn log(&self, action: AuditAction) -> Result<(), VaultError>;
 }
 
 const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -87,23 +201,11 @@ impl AuditLogger {
         })
     }
 
-    fn format_entry_id(entry_id: Option<&str>) -> String {
-        match entry_id {
-            Some(id) if !id.trim().is_empty() => id.trim().to_string(),
-            _ => "-".to_string(),
-        }
-    }
-
-    fn build_record(
-        timestamp: &str,
-        action: AuditAction,
-        entry_id: &str,
-        prev_hash: &str,
-    ) -> String {
+    fn build_record(timestamp: &str, action: &str, entry_id: &str, prev_hash: &str) -> String {
         format!(
             "[{timestamp}] [{action}] [{entry_id}] prev_hash={prev_hash}",
             timestamp = timestamp,
-            action = action.as_str(),
+            action = action,
             entry_id = entry_id,
             prev_hash = prev_hash,
         )
@@ -129,20 +231,21 @@ impl AuditLogger {
     }
 
     /// Records a metadata-only audit event (no secrets).
-    pub fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
+    pub fn log(&self, action: AuditAction) -> Result<(), VaultError> {
         if self.path.is_none() {
             return Ok(());
         }
 
         let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let entry_token = Self::format_entry_id(entry_id);
+        let action_name = action.action_name();
+        let entry_token = action.detail_token();
 
         let mut last_hash = self
             .last_hash
             .lock()
             .map_err(|_| VaultError::Other("audit logger lock poisoned".into()))?;
 
-        let record = Self::build_record(&timestamp, action, &entry_token, &last_hash);
+        let record = Self::build_record(&timestamp, action_name, &entry_token, &last_hash);
         let entry_hash = Self::compute_hash(&record);
         let line = format!("{record} entry_hash={entry_hash}");
 
@@ -153,8 +256,8 @@ impl AuditLogger {
 }
 
 impl AuditLog for AuditLogger {
-    fn log(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
-        AuditLogger::log(self, action, entry_id)
+    fn log(&self, action: AuditAction) -> Result<(), VaultError> {
+        AuditLogger::log(self, action)
     }
 }
 
@@ -162,6 +265,12 @@ impl Default for AuditLogger {
     fn default() -> Self {
         Self::disabled()
     }
+}
+
+/// Appends a single audit event to `{vault}.audit.log` without holding a live vault session.
+pub fn log_event_for_vault(vault_path: &Path, action: AuditAction) -> Result<(), VaultError> {
+    let logger = AuditLogger::for_vault(vault_path)?;
+    logger.log(action)
 }
 
 pub fn audit_log_path(vault_path: &Path) -> PathBuf {
@@ -336,10 +445,13 @@ mod tests {
 
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
         logger
-            .log(AuditAction::VaultUnlocked, None)
+            .log(AuditAction::VaultUnlocked {
+                lock_id: "lock-1".into(),
+            })
             .expect("log unlock");
+        let entry_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         logger
-            .log(AuditAction::EntryCreated, Some("entry-uuid-1"))
+            .log(AuditAction::SecretCreated { id: entry_id })
             .expect("log create");
 
         let log_path = audit_log_path(&vault_path);
@@ -347,10 +459,10 @@ mod tests {
         let lines: Vec<_> = raw.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("[VaultUnlocked]"));
-        assert!(lines[0].contains("[-]"));
+        assert!(lines[0].contains("[lock-1]"));
         assert!(lines[0].contains(&format!("prev_hash={GENESIS_HASH}")));
-        assert!(lines[1].contains("[EntryCreated]"));
-        assert!(lines[1].contains("[entry-uuid-1]"));
+        assert!(lines[1].contains("[SecretCreated]"));
+        assert!(lines[1].contains("[550e8400-e29b-41d4-a716-446655440000]"));
         assert!(lines[1].contains("prev_hash="));
         assert!(!lines[1].contains(&format!("prev_hash={GENESIS_HASH}")));
 
@@ -366,19 +478,20 @@ mod tests {
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
         for i in 0..5 {
             logger
-                .log(AuditAction::EntryCreated, Some(&format!("entry-{i}")))
+                .log(AuditAction::SecretCreated {
+                    id: Uuid::parse_str(&format!("550e8400-e29b-41d4-a716-44665544000{i}"))
+                        .unwrap(),
+                })
                 .expect("log");
         }
 
         let all = read_audit_logs(&vault_path, 10).expect("read");
         assert_eq!(all.len(), 5);
-        assert_eq!(all[0].entry_id, "entry-4");
-        assert_eq!(all[4].entry_id, "entry-0");
+        assert!(all[0].entry_id.contains('4'));
+        assert!(all[4].entry_id.contains('0'));
 
         let limited = read_audit_logs(&vault_path, 2).expect("read limited");
         assert_eq!(limited.len(), 2);
-        assert_eq!(limited[0].entry_id, "entry-4");
-        assert_eq!(limited[1].entry_id, "entry-3");
     }
 
     #[test]
@@ -392,9 +505,7 @@ mod tests {
     #[test]
     fn disabled_logger_is_noop() {
         let logger = AuditLogger::disabled();
-        logger
-            .log(AuditAction::VaultLocked, None)
-            .expect("noop log");
+        logger.log(AuditAction::VaultLocked).expect("noop log");
     }
 
     #[test]
@@ -405,7 +516,7 @@ mod tests {
         let log_path = audit_log_path(&vault_path);
 
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
-        logger.log(AuditAction::VaultOpened, None).unwrap();
+        logger.log(AuditAction::VaultOpened).unwrap();
 
         let mut content = std::fs::read_to_string(&log_path).unwrap();
         content = content.replace("[VaultOpened]", "[VaultUnlocked]");
@@ -413,5 +524,40 @@ mod tests {
 
         let err = verify_audit_chain(&log_path).expect_err("tampered chain");
         assert!(matches!(err, VaultError::AuditLogCorrupted));
+    }
+
+    #[test]
+    fn auth_failed_and_sync_event_tokens() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("team.oxid");
+        std::fs::write(&vault_path, b"dummy").unwrap();
+        let logger = AuditLogger::for_vault(&vault_path).unwrap();
+
+        logger.log(AuditAction::AuthFailed).expect("auth failed");
+        logger
+            .log(AuditAction::SyncEvent {
+                status: "success".into(),
+            })
+            .expect("sync");
+        logger
+            .log(AuditAction::ConfigChanged {
+                area: "git_sync".into(),
+            })
+            .expect("config");
+
+        let entries = read_audit_logs(&vault_path, 10).expect("read");
+        assert_eq!(entries[0].action, "ConfigChanged");
+        assert_eq!(entries[1].action, "SyncEvent");
+        assert_eq!(entries[2].action, "AuthFailed");
+    }
+
+    #[test]
+    fn from_log_parts_maps_legacy_entry_created() {
+        let action =
+            AuditAction::from_log_parts("EntryCreated", "550e8400-e29b-41d4-a716-446655440000");
+        assert!(matches!(
+            action,
+            AuditAction::SecretCreated { id } if id.to_string() == "550e8400-e29b-41d4-a716-446655440000"
+        ));
     }
 }

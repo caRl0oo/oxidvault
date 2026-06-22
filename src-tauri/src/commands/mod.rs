@@ -203,7 +203,7 @@ pub fn copy_to_clipboard(
             .extract_secret(&entry_id, field.unwrap_or(SecretField::Primary))
             .map_err(|e| e.to_string())?;
         vault
-            .record_audit(vault_core::AuditAction::SecretCopied, Some(&entry_id))
+            .record_secret_copied(&entry_id)
             .map_err(|e| e.to_string())?;
         secret
     };

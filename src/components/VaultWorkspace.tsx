@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Activity, FolderLock, Shield } from "lucide-react";
 import { AuditLogTable } from "@/components/AuditLogTable";
 import { ClipboardToast } from "@/components/ClipboardToast";
 import { ComplianceDashboard } from "@/dashboard";
@@ -114,19 +115,22 @@ export function VaultWorkspace({
 
   return (
     <div className="flex flex-1">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-vault-border bg-vault-surface">
-        <div className="flex gap-1 border-b border-vault-border p-2">
+      <aside className="flex w-80 shrink-0 flex-col border-r border-vault-border bg-vault-surface">
+        <div className="flex w-full flex-nowrap items-center gap-0.5 border-b border-vault-border bg-vault-bg px-1 pt-1">
           <SidebarNavTab
+            icon={FolderLock}
             label={t("nav.secrets")}
             active={vaultMainView === "secrets"}
             onClick={() => onVaultMainViewChange("secrets")}
           />
           <SidebarNavTab
+            icon={Shield}
             label={t("nav.security")}
             active={vaultMainView === "security"}
             onClick={() => onVaultMainViewChange("security")}
           />
           <SidebarNavTab
+            icon={Activity}
             label={t("nav.activity")}
             active={vaultMainView === "activity"}
             onClick={() => onVaultMainViewChange("activity")}

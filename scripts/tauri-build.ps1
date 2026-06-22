@@ -42,5 +42,9 @@ Installiere Visual Studio Build Tools mit C++:
 }
 
 Set-Location $root
+
+Write-Host "Building Native-Messaging host (oxidvault-nmh.exe)..."
+cargo build --release --manifest-path (Join-Path $root "src-tauri\Cargo.toml") --bin oxidvault-nmh
+
 Write-Host "Starte OxidVault Release-Build (tauri build)..."
 npx tauri build

@@ -8,6 +8,11 @@ import {
   formatAuditEntryId,
   formatAuditTimestampUtc,
 } from "@/lib/auditLogLabels";
+import {
+  auditActionBadgeClass,
+  auditActionToneClass,
+  getAuditActionVisual,
+} from "@/lib/auditActionVisual";
 import { runAsync } from "@/lib/runAsync";
 import { BTN_SECONDARY_CLASS } from "@/lib/uiClasses";
 import type { AuditLogEntry } from "@/types/auditLog";
@@ -73,7 +78,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
     }
     return entries.filter((entry) => {
       const actionLabel = formatAuditAction(entry.action).toLowerCase();
-      const entryId = formatAuditEntryId(entry.entryId).toLowerCase();
+      const entryId = formatAuditEntryId(entry.action, entry.entryId).toLowerCase();
       const timestamp = formatAuditTimestampUtc(entry.timestampUtc).toLowerCase();
       return (
         entry.action.toLowerCase().includes(query) ||
@@ -134,7 +139,11 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
               </tr>
             </thead>
             <tbody>
-              {filteredEntries.map((entry) => (
+              {filteredEntries.map((entry) => {
+                const visual = getAuditActionVisual(entry.action);
+                const Icon = visual.icon;
+                const label = formatAuditAction(entry.action);
+                return (
                 <tr
                   key={`${entry.timestampUtc}-${entry.entryHash}`}
                   className="border-b border-vault-border/60 text-vault-text"
@@ -142,15 +151,27 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
                   <td className="py-2 pr-4 align-top whitespace-nowrap text-vault-muted">
                     {formatAuditTimestampUtc(entry.timestampUtc)}
                   </td>
-                  <td className="py-2 pr-4 align-top">{formatAuditAction(entry.action)}</td>
+                  <td className="py-2 pr-4 align-top">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 ${auditActionBadgeClass(visual.tone)}`}
+                    >
+                      <Icon
+                        className={`h-3.5 w-3.5 shrink-0 ${auditActionToneClass(visual.tone)}`}
+                        strokeWidth={2}
+                        aria-hidden
+                      />
+                      <span>{label}</span>
+                    </span>
+                  </td>
                   <td className="py-2 pr-4 align-top break-all text-vault-muted">
-                    {formatAuditEntryId(entry.entryId)}
+                    {formatAuditEntryId(entry.action, entry.entryId)}
                   </td>
                   <td className="py-2 align-top break-all text-vault-muted/80">
                     {entry.entryHash.slice(0, 12)}…
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         )}

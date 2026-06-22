@@ -203,9 +203,23 @@
       "EntryCreated": "Eintrag wurde erstellt",
       "EntryUpdated": "Eintrag wurde aktualisiert",
       "EntryDeleted": "Eintrag wurde gelöscht",
+      "SecretCreated": "Secret wurde erstellt",
+      "SecretModified": "Secret wurde geändert",
       "SecretCopied": "Secret wurde in die Zwischenablage kopiert",
       "SecretRevealed": "Secret wurde angezeigt",
-      "VaultKeyRotated": "Master-Schlüssel wurde rotiert"
+      "VaultKeyRotated": "Master-Schlüssel wurde rotiert",
+      "AuthFailed": "Entsperrversuch fehlgeschlagen",
+      "SyncEvent": "Git-Synchronisation",
+      "ConfigChanged": "Sicherheitsrelevante Einstellung geändert"
+    },
+    "syncStatus": {
+      "success": "Erfolgreich",
+      "failed": "Fehlgeschlagen"
+    },
+    "configAreas": {
+      "git_sync": "Git-Synchronisation",
+      "mfa_enabled": "Zwei-Faktor-Authentifizierung aktiviert",
+      "mfa_disabled": "Zwei-Faktor-Authentifizierung deaktiviert"
     }
   },
   "passwordPolicy": {

@@ -1,0 +1,5 @@
+# Copy to extension.id (gitignored) after Chrome Web Store publish.
+# 32 lowercase letters a-p — shown on chrome://extensions in developer mode.
+#
+# Example:
+# belagnpfebgljfamjihdoinbcehingjd

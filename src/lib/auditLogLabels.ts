@@ -8,23 +8,51 @@ const AUDIT_ACTION_KEYS = [
   "EntryCreated",
   "EntryUpdated",
   "EntryDeleted",
+  "SecretCreated",
+  "SecretModified",
   "SecretCopied",
   "SecretRevealed",
   "VaultKeyRotated",
+  "AuthFailed",
+  "SyncEvent",
+  "ConfigChanged",
 ] as const;
 
+const LEGACY_ACTION_ALIASES: Record<string, (typeof AUDIT_ACTION_KEYS)[number]> = {
+  EntryCreated: "SecretCreated",
+  EntryUpdated: "SecretModified",
+};
+
 export function formatAuditAction(action: string): string {
-  const key = `audit.actions.${action}`;
-  if (AUDIT_ACTION_KEYS.includes(action as (typeof AUDIT_ACTION_KEYS)[number])) {
+  const normalized = LEGACY_ACTION_ALIASES[action] ?? action;
+  const key = `audit.actions.${normalized}`;
+  if ((AUDIT_ACTION_KEYS as readonly string[]).includes(normalized)) {
     return i18n.t(key);
   }
   return action;
 }
 
-export function formatAuditEntryId(entryId: string): string {
+export function formatAuditEntryId(action: string, entryId: string): string {
   if (entryId === "-" || entryId.trim() === "") {
     return i18n.t("common.dash");
   }
+
+  if (action === "SyncEvent") {
+    const statusKey = `audit.syncStatus.${entryId}`;
+    if (i18n.exists(statusKey)) {
+      return i18n.t(statusKey);
+    }
+    return entryId;
+  }
+
+  if (action === "ConfigChanged") {
+    const areaKey = `audit.configAreas.${entryId}`;
+    if (i18n.exists(areaKey)) {
+      return i18n.t(areaKey);
+    }
+    return entryId;
+  }
+
   return entryId;
 }
 

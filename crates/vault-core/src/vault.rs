@@ -118,17 +118,38 @@ impl Vault {
         Ok(())
     }
 
-    fn audit(&self, action: AuditAction, entry_id: Option<&str>) -> Result<(), VaultError> {
-        self.audit_logger.log(action, entry_id)
+    fn audit(&self, action: AuditAction) -> Result<(), VaultError> {
+        self.audit_logger.log(action)
     }
 
     /// Records a compliance audit event (metadata-only — no secret payloads).
-    pub fn record_audit(
-        &self,
-        action: AuditAction,
-        entry_id: Option<&str>,
-    ) -> Result<(), VaultError> {
-        self.audit(action, entry_id)
+    pub fn record_audit(&self, action: AuditAction) -> Result<(), VaultError> {
+        self.audit(action)
+    }
+
+    fn parse_entry_uuid(id: &str) -> Result<uuid::Uuid, VaultError> {
+        uuid::Uuid::parse_str(id).map_err(|_| VaultError::Other("invalid entry UUID".into()))
+    }
+
+    /// Logs a failed vault unlock attempt when the master password is wrong.
+    pub fn record_auth_failed(&self) -> Result<(), VaultError> {
+        self.audit(AuditAction::AuthFailed)
+    }
+
+    pub fn record_sync_event(&self, status: impl Into<String>) -> Result<(), VaultError> {
+        self.audit(AuditAction::SyncEvent {
+            status: status.into(),
+        })
+    }
+
+    pub fn record_config_changed(&self, area: impl Into<String>) -> Result<(), VaultError> {
+        self.audit(AuditAction::ConfigChanged { area: area.into() })
+    }
+
+    pub fn record_secret_copied(&self, id: &str) -> Result<(), VaultError> {
+        self.audit(AuditAction::SecretCopied {
+            id: Self::parse_entry_uuid(id)?,
+        })
     }
 
     pub fn create(
@@ -176,7 +197,7 @@ impl Vault {
         self.cached_entry_count = 0;
         self.locked = false;
         self.bind_audit_logger(&path)?;
-        self.audit(AuditAction::VaultCreated, None)?;
+        self.audit(AuditAction::VaultCreated)?;
         Ok(())
     }
 
@@ -204,7 +225,10 @@ impl Vault {
                 Ok(UnlockStep::Complete)
             }
             Err(AuthError::MfaRequired) => Ok(UnlockStep::MfaRequired),
-            Err(AuthError::InvalidPassword) => Err(VaultError::InvalidPassword),
+            Err(AuthError::InvalidPassword) => {
+                let _ = crate::audit::log_event_for_vault(&path, AuditAction::AuthFailed);
+                Err(VaultError::InvalidPassword)
+            }
             Err(AuthError::InvalidMfa) => Err(VaultError::InvalidMfaCode),
             Err(AuthError::Vault(err)) => Err(err),
         };
@@ -247,7 +271,10 @@ impl Vault {
                 Ok(UnlockStep::Complete)
             }
             Err(AuthError::MfaRequired) => Ok(UnlockStep::MfaRequired),
-            Err(AuthError::InvalidPassword) => Err(VaultError::InvalidPassword),
+            Err(AuthError::InvalidPassword) => {
+                let _ = self.record_auth_failed();
+                Err(VaultError::InvalidPassword)
+            }
             Err(AuthError::InvalidMfa) => Err(VaultError::InvalidMfaCode),
             Err(AuthError::Vault(err)) => Err(err),
         }
@@ -256,7 +283,7 @@ impl Vault {
     /// Locks the vault and purges decrypted secrets and the master key from RAM.
     pub fn lock(&mut self) {
         if !self.locked {
-            let _ = self.audit(AuditAction::VaultLocked, None);
+            let _ = self.audit(AuditAction::VaultLocked);
         }
         self.cached_entry_count = self.entries.len();
         for entry in &mut self.entries {
@@ -304,7 +331,9 @@ impl Vault {
         let summary = entry.summary();
         self.entries.push(entry);
         self.persist()?;
-        self.audit(AuditAction::EntryCreated, Some(&summary.id))?;
+        self.audit(AuditAction::SecretCreated {
+            id: Self::parse_entry_uuid(&summary.id)?,
+        })?;
         Ok(summary)
     }
 
@@ -330,7 +359,9 @@ impl Vault {
         let summary = entry.summary();
         self.entries[idx] = entry;
         self.persist()?;
-        self.audit(AuditAction::EntryUpdated, Some(id))?;
+        self.audit(AuditAction::SecretModified {
+            id: Self::parse_entry_uuid(id)?,
+        })?;
         Ok(summary)
     }
 
@@ -350,7 +381,9 @@ impl Vault {
         self.entries.remove(idx);
         self.cached_entry_count = self.entries.len();
         self.persist()?;
-        self.audit(AuditAction::EntryDeleted, Some(id))?;
+        self.audit(AuditAction::EntryDeleted {
+            id: Self::parse_entry_uuid(id)?,
+        })?;
         Ok(())
     }
 
@@ -396,7 +429,9 @@ impl Vault {
         field: SecretField,
     ) -> Result<RevealedSecret, VaultError> {
         let value = self.extract_secret(id, field)?;
-        self.audit(AuditAction::SecretRevealed, Some(id))?;
+        self.audit(AuditAction::SecretRevealed {
+            id: Self::parse_entry_uuid(id)?,
+        })?;
         Ok(RevealedSecret {
             value: value.to_string(),
             warning: REVEAL_SECRET_WARNING.to_string(),
@@ -510,7 +545,7 @@ impl Vault {
         self.format_version = format::FORMAT_VERSION_V2;
         self.key_created_at = Some(created);
         self.key_rotated_at = Some(now);
-        self.audit(AuditAction::VaultKeyRotated, None)?;
+        self.audit(AuditAction::VaultKeyRotated)?;
         Ok(())
     }
 
@@ -603,6 +638,9 @@ impl Vault {
             let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
             self.mfa = Some(mfa::encrypt_mfa_secret(payload_key, pending.as_ref())?);
             self.persist()?;
+            self.audit(AuditAction::ConfigChanged {
+                area: "mfa_enabled".into(),
+            })?;
         }
 
         Ok(true)
@@ -625,6 +663,9 @@ impl Vault {
         self.mfa = None;
         self.pending_mfa_secret = None;
         self.persist()?;
+        self.audit(AuditAction::ConfigChanged {
+            area: "mfa_disabled".into(),
+        })?;
         Ok(())
     }
 
@@ -647,9 +688,9 @@ impl Vault {
         self.apply_payload(handle.payload);
         self.locked = false;
         match audit {
-            UnlockAuditAction::Opened => self.audit(AuditAction::VaultOpened, None)?,
+            UnlockAuditAction::Opened => self.audit(AuditAction::VaultOpened)?,
             UnlockAuditAction::Unlocked { lock_id } => {
-                self.audit(AuditAction::VaultUnlocked, Some(&lock_id))?
+                self.audit(AuditAction::VaultUnlocked { lock_id })?
             }
         }
         Ok(())

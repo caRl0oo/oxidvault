@@ -13,6 +13,14 @@ use crate::settings::{load_settings, save_settings, AppSettings, GitSyncSettings
 
 use super::AppState;
 
+fn record_vault_audit<F>(state: &AppState, write: F) -> Result<(), String>
+where
+    F: FnOnce(&vault_core::Vault) -> Result<(), vault_core::VaultError>,
+{
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    write(&vault).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
     load_settings(&app)
@@ -21,6 +29,7 @@ pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
 #[tauri::command]
 pub fn update_git_sync_settings(
     app: AppHandle,
+    state: State<'_, AppState>,
     enabled: bool,
     remote_url: Option<String>,
 ) -> Result<AppSettings, String> {
@@ -42,6 +51,7 @@ pub fn update_git_sync_settings(
             .filter(|url| !url.is_empty()),
     };
     save_settings(&app, &settings)?;
+    record_vault_audit(&state, |vault| vault.record_config_changed("git_sync"))?;
     Ok(settings)
 }
 
@@ -70,15 +80,23 @@ pub async fn sync_vault_git(
     };
 
     let vault_path_buf = PathBuf::from(vault_path);
-    let result =
+    let sync_result =
         tokio::task::spawn_blocking(move || git_sync::sync_vault(&vault_path_buf, &remote_url))
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| e.to_string())?;
 
-    if result.vault_reloaded {
-        let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-        vault.reload_from_disk().map_err(|e| e.to_string())?;
+    match sync_result {
+        Ok(result) => {
+            record_vault_audit(&state, |vault| vault.record_sync_event("success"))?;
+            if result.vault_reloaded {
+                let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+                vault.reload_from_disk().map_err(|e| e.to_string())?;
+            }
+            Ok(result)
+        }
+        Err(err) => {
+            let _ = record_vault_audit(&state, |vault| vault.record_sync_event("failed"));
+            Err(err)
+        }
     }
-
-    Ok(result)
 }

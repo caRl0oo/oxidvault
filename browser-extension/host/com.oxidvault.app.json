@@ -1,9 +1,7 @@
 {
   "name": "com.oxidvault.app",
-  "description": "OxidVault Native Messaging Host (Phase 2 ping/pong)",
-  "path": "E:\\dev\\OxidVault\\target\\release\\oxidvault-nmh.exe",
+  "description": "OxidVault Native Messaging Host",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_oxidvault-nmh.exe",
   "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://mjgaigjoicaehgnobjjacipaalfnceob/"
-  ]
+  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
 }

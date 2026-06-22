@@ -582,7 +582,7 @@ export default function App() {
 
   const backFromOpen = useCallback(() => {
     if (mfaChallengeActive) {
-      runAsync(handleCancelMfaChallenge);
+      handleCancelMfaChallenge();
       return;
     }
     setScreen("welcome");
@@ -649,26 +649,28 @@ export default function App() {
 
   const reachability = useReachabilityPolling(entries, vaultUnlocked);
 
-  const statusBadge = vaultInfo ? (
-    <div className="flex items-center gap-2 font-mono text-xs">
+  const connectionStatus =
+    vaultInfo?.initialized && gitSyncSettings.enabled ? (
       <SyncButton
-        visible={vaultInfo.initialized && gitSyncSettings.enabled}
+        visible
         syncing={gitSyncing}
         syncMessage={gitSyncMessage}
         syncError={gitSyncError}
         onSync={handleGitSync}
       />
+    ) : undefined;
+
+  const vaultStatus = vaultInfo ? (
+    <div className="flex items-center gap-2 font-mono text-[11px]">
       <span
-        className={`h-2 w-2 rounded-full ${vaultInfo.locked ? "bg-vault-danger" : "bg-vault-success"}`}
+        className={`h-1.5 w-1.5 rounded-full ${vaultInfo.locked ? "bg-vault-danger" : "bg-vault-success"}`}
+        aria-hidden
       />
       <span className="text-vault-muted">
-        {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · {vaultInfo.name} · v
+        {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · v
         {vaultInfo.version}
       </span>
-      <VaultLockButton
-        locked={vaultInfo.locked}
-        onLock={() => runAsync(handleLock)}
-      />
+      <VaultLockButton locked={vaultInfo.locked} onLock={() => runAsync(handleLock)} />
     </div>
   ) : null;
 
@@ -681,7 +683,11 @@ export default function App() {
   }
 
   return (
-    <Layout status={statusBadge} onGitSyncChange={handleGitSyncChange}>
+    <Layout
+      connectionStatus={connectionStatus}
+      vaultStatus={vaultStatus}
+      onGitSyncChange={handleGitSyncChange}
+    >
       <AppScreenContent
         screen={screen}
         backendStatus={backendStatus}
@@ -706,7 +712,7 @@ export default function App() {
         mfaLockoutSeconds={mfaLockoutSeconds}
         onMfaCodeChange={setMfaCode}
         onMfaAutoSubmit={(code) => runAsync(() => handleCompleteMfa(code))}
-        onCancelMfaChallenge={() => runAsync(handleCancelMfaChallenge)}
+        onCancelMfaChallenge={handleCancelMfaChallenge}
         onSwitchVault={handleSwitchVault}
         onBackToWelcome={backToWelcome}
         onBackFromOpen={backFromOpen}

@@ -26,8 +26,8 @@ pub mod url_match;
 pub mod vault;
 
 pub use audit::{
-    init as init_audit_log, read_audit_logs, verify_audit_chain, AuditAction, AuditLog,
-    AuditLogEntry, AuditLogger,
+    init as init_audit_log, log_event_for_vault, read_audit_logs, verify_audit_chain, AuditAction,
+    AuditLog, AuditLogEntry, AuditLogger,
 };
 pub use audit_export::{export_audit_report, ExportFormat};
 pub use auth::{unlock_vault as authenticate_unlock, AuthError, VaultHandle};

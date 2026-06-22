@@ -120,7 +120,7 @@ mod tests {
         write_vault_file_v1(&path, "Vault", kdf, &salt, &key, &[]).unwrap();
 
         let logger = AuditLogger::for_vault(&path).unwrap();
-        logger.log(AuditAction::VaultCreated, None).expect("log");
+        logger.log(AuditAction::VaultCreated).expect("log");
 
         let status = compliance_status(&path).expect("status");
         assert!(status.audit_chain_valid);

@@ -293,9 +293,7 @@ mod tests {
         write_vault_file_v1(&path, "Vault", kdf, &salt, &key, &[]).expect("write");
 
         let logger = AuditLogger::for_vault(&path).expect("logger");
-        logger
-            .log(AuditAction::VaultCreated, None)
-            .expect("audit log");
+        logger.log(AuditAction::VaultCreated).expect("audit log");
 
         let path_str = path.display().to_string();
         let report = collect_system_diagnostics(Some(&path_str), None);

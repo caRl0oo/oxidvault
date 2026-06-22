@@ -1,21 +1,26 @@
+import type { LucideIcon } from "lucide-react";
+
 interface SidebarNavTabProps {
   readonly label: string;
+  readonly icon: LucideIcon;
   readonly active: boolean;
   readonly onClick: () => void;
 }
 
-export function SidebarNavTab({ label, active, onClick }: Readonly<SidebarNavTabProps>) {
+export function SidebarNavTab({ label, icon: Icon, active, onClick }: Readonly<SidebarNavTabProps>) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 rounded px-2 py-1.5 font-mono text-[11px] transition ${
+      aria-current={active ? "page" : undefined}
+      className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-0.5 py-2 font-mono text-xs font-medium transition ${
         active
-          ? "bg-vault-accent/20 text-vault-text"
-          : "text-vault-muted hover:bg-vault-border/50 hover:text-vault-text"
+          ? "border-vault-accent text-vault-accent"
+          : "border-transparent text-vault-muted hover:border-vault-border hover:text-vault-text"
       }`}
     >
-      {label}
+      <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+      <span>{label}</span>
     </button>
   );
 }

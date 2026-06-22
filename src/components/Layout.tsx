@@ -1,32 +1,42 @@
 import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsMenu } from "@/components/SettingsMenu";
-import { AppLogo } from "@/components/AppLogo";
 import type { GitSyncSettings } from "@/types/settings";
 
 interface LayoutProps {
   readonly children: ReactNode;
-  readonly status?: ReactNode;
+  /** Left command-bar slot: Git sync control or offline indicator. */
+  readonly connectionStatus?: ReactNode;
+  /** Right command-bar slot: vault lock state, version, lock action. */
+  readonly vaultStatus?: ReactNode;
   readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
 }
 
-export function Layout({ children, status, onGitSyncChange }: Readonly<LayoutProps>) {
+function OfflineBadge() {
+  const { t } = useTranslation();
+  return (
+    <span className="rounded border border-vault-border/60 bg-vault-border/30 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-vault-muted">
+      {t("common.offline")}
+    </span>
+  );
+}
+
+export function Layout({
+  children,
+  connectionStatus,
+  vaultStatus,
+  onGitSyncChange,
+}: Readonly<LayoutProps>) {
   const { t } = useTranslation();
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-vault-border bg-vault-surface px-4">
-        <div className="flex items-center gap-2.5">
-          <AppLogo size="sm" />
-          <span className="font-mono text-sm font-semibold tracking-tight text-vault-text">
-            {t("common.appName")}
-          </span>
-          <span className="rounded bg-vault-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-            {t("common.offline")}
-          </span>
+      <header className="flex h-9 shrink-0 items-center justify-between border-b border-vault-border/40 bg-vault-bg px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          {connectionStatus ?? <OfflineBadge />}
         </div>
-        <div className="flex items-center gap-3">
-          {status}
+        <div className="flex shrink-0 items-center gap-2">
+          {vaultStatus}
           <SettingsMenu onGitSyncChange={onGitSyncChange} />
         </div>
       </header>

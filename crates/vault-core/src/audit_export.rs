@@ -254,7 +254,11 @@ mod tests {
         std::fs::write(&vault_path, b"dummy").unwrap();
 
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
-        logger.log(AuditAction::VaultUnlocked, None).expect("log");
+        logger
+            .log(AuditAction::VaultUnlocked {
+                lock_id: "lock-1".into(),
+            })
+            .expect("log");
 
         let target = dir.path().join("report.json");
         export_audit_report(vault_path.clone(), target.clone(), ExportFormat::Json)
@@ -276,7 +280,9 @@ mod tests {
 
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
         logger
-            .log(AuditAction::EntryCreated, Some("entry-1"))
+            .log(AuditAction::SecretCreated {
+                id: uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            })
             .expect("log");
 
         let target = dir.path().join("report.csv");
@@ -284,8 +290,8 @@ mod tests {
 
         let raw = std::fs::read_to_string(target).unwrap();
         assert!(raw.starts_with("timestamp_utc,action,entry_id,prev_hash,entry_hash"));
-        assert!(raw.contains("EntryCreated"));
-        assert!(raw.contains("entry-1"));
+        assert!(raw.contains("SecretCreated"));
+        assert!(raw.contains("550e8400-e29b-41d4-a716-446655440000"));
     }
 
     #[test]
@@ -296,7 +302,7 @@ mod tests {
         let log_path = audit_log_path(&vault_path);
 
         let logger = AuditLogger::for_vault(&vault_path).unwrap();
-        logger.log(AuditAction::VaultOpened, None).unwrap();
+        logger.log(AuditAction::VaultOpened).unwrap();
 
         let mut content = std::fs::read_to_string(&log_path).unwrap();
         content = content.replace("[VaultOpened]", "[VaultUnlocked]");

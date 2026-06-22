@@ -41,7 +41,7 @@ export function SyncButton({
 
       {(syncing || syncMessage || syncError) && (
         <output
-          className={`absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border px-2 py-1 font-mono text-[10px] shadow-lg ${
+          className={`absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded border px-2 py-1 font-mono text-[10px] shadow-lg ${
             syncError
               ? "border-vault-danger/50 bg-vault-surface text-vault-danger"
               : "border-vault-border bg-vault-surface text-vault-muted"

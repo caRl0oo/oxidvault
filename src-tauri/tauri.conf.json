@@ -1,48 +1,49 @@
-{
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OxidVault",
-  "version": "1.0.0",
-  "identifier": "com.oxidvault.app",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "OxidVault",
-        "width": 1100,
-        "height": 720,
-        "minWidth": 800,
-        "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false,
-        "decorations": true,
-        "transparent": false,
-        "devtools": false
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; media-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
-      "devCsp": "default-src 'self' http://localhost:1420 ws://localhost:1420; script-src 'self' http://localhost:1420 'unsafe-inline'; style-src 'self' http://localhost:1420 'unsafe-inline'; img-src 'self' asset: data: blob: http://localhost:1420; font-src 'self' http://localhost:1420; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420; media-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "shortDescription": "B2B password and secret manager",
-    "longDescription": "Ultra-fast, minimalist, self-hosted password and secret manager for IT administrators and DevOps engineers.",
-    "category": "Utility"
-  },
-  "plugins": {}
-}
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OxidVault",
+  "version": "1.0.0",
+  "identifier": "com.oxidvault.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OxidVault",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 560,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "devtools": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; media-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self' http://localhost:1420 ws://localhost:1420; script-src 'self' http://localhost:1420 'unsafe-inline'; style-src 'self' http://localhost:1420 'unsafe-inline'; img-src 'self' asset: data: blob: http://localhost:1420; font-src 'self' http://localhost:1420; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420; media-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "B2B password and secret manager",
+    "longDescription": "Ultra-fast, minimalist, self-hosted password and secret manager for IT administrators and DevOps engineers.",
+    "category": "Utility"
+  },
+  "plugins": {}
+}
+

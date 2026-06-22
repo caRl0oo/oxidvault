@@ -100,4 +100,18 @@ Bei Fehlern (z. B. `Native host disconnected`) zuerst prüfen:
 | `background.js` | `connectNative`, `get_login` / `vault_status` / `request_unlock` |
 | `host/com.oxidvault.app.json` | Native-Host-Manifest (wird vom PS-Skript geschrieben) |
 
-Weitere Architekturdetails: [ARCHITECTURE.md §10](../ARCHITECTURE.md#10-browser-erweiterung--native-messaging-phase-1).
+Weitere Architekturdetails: [ARCHITECTURE.md §10](../ARCHITECTURE.md#10-browser-erweiterung--native-messaging-phase-13).
+
+---
+
+## Enterprise MSI (Web Store + Native Host)
+
+Die Browser-Extension wird über den **Chrome Web Store (Unlisted)** verteilt. Die Desktop-MSI enthält nur `oxidvault-nmh.exe`.
+
+| Schritt | Befehl |
+|---|---|
+| ZIP für Store-Upload | `npm run extension:package` → `installer/dist/OxidVault-extension-<version>.zip` |
+| Desktop-MSI | `npm run tauri:build` |
+| Native Host (nach Store-ID) | `.\scripts\register_native_host.ps1` |
+
+Anleitung: [`../installer/README.md`](../installer/README.md)

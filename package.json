@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-dev.ps1",
     "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-build.ps1",
+    "extension:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-browser-extension.ps1",
     "icons": "tauri icon logo.png"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@zxcvbn-ts/language-common": "^3.0.4",
     "@zxcvbn-ts/language-en": "^3.0.2",
     "i18next": "^26.3.1",
+    "lucide-react": "^1.21.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-i18next": "^17.0.8"

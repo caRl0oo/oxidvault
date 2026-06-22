@@ -1089,7 +1089,7 @@ ReachabilityDot — Sidebar + Detailansicht
 |---|---|
 | **Sichtbarkeit** | Aktionen erscheinen bei Hover; bei ausgewähltem Eintrag dauerhaft sichtbar |
 | **Design** | Dezente Mono-Icons, Theme-Variablen — kein visuelles Überladen (Dracula-kompatibel) |
-| **Sidebar-Breite** | `w-64` für Platz neben Titel/Subtitle |
+| **Sidebar-Breite** | `w-80` (320px) — Platz für Tab-Nav mit Icons und vollen DE-Labels |
 
 #### IPC-Typen
 
@@ -1638,7 +1638,34 @@ Optional: `-BuildProfile debug` für `target/debug/oxidvault-nmh.exe`.
 
 Details und Fehlerbehebung: [`browser-extension/README.md`](browser-extension/README.md).
 
-### Registrierung (Windows, manuell)
+### Web Store Distribution (Unlisted)
+
+> **Status:** ✅ `scripts/stage-browser-extension.ps1` · `scripts/register_native_host.ps1` · `installer/README.md`
+
+| Aspekt | Detail |
+|---|---|
+| **Verteilung** | Chrome Web Store (Unlisted) — Upload-ZIP via `npm run extension:package` |
+| **Upload-Artefakt** | `installer/dist/OxidVault-extension-<version>.zip` (kein CRX, kein `update_url` im Manifest) |
+| **Extension-ID** | Von Google beim ersten Upload vergeben → lokal in `browser-extension/extension.id` (gitignored, Vorlage: `extension.id.example`) |
+| **Manifest** | MV3, `permissions: ["nativeMessaging"]` — kein `key`, kein `update_url` im Store-Build |
+| **Desktop-MSI** | Tauri-Bundle: App + `oxidvault-nmh.exe` — **ohne** `browser-extension/` im MSI |
+| **Native Messaging** | `register_native_host.ps1` — HKCU-Registry; ID aus Datei, Parameter oder `$env:OXIDVAULT_EXTENSION_ID` |
+| **Updates (Store)** | `manifest.json` `version` erhöhen → neues ZIP → Developer Dashboard |
+| **Optional GPO** | `ExtensionInstallForcelist`: `<store_id>;https://clients2.google.com/service/update2/crx` |
+
+**Workflow:**
+
+1. `npm run extension:package` — WASM-Build + ZIP
+2. Upload im [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
+3. Extension-ID in `browser-extension/extension.id` speichern
+4. `register_native_host.ps1` (Dev: `-BuildProfile release`, MSI: `-BuildProfile installed`)
+5. Optional: Enterprise-Policy mit Web-Store-Update-URL (kein localhost-Server)
+
+| **Remote Code (Web Store)** | Gesamter JS/WASM-Code im Upload-ZIP; WASM via `import.meta.url` + `fetch(chrome-extension://…)` — **kein** externes JS; `wasm-unsafe-eval` in CSP (kein `unsafe-eval`) |
+
+**Web Store — „Remote Code“:** Antwort **Nein**. Der Passwort-Generator lädt `pkg/vault_wasm_bg.wasm` aus dem Extension-Paket (wasm-bindgen: `new URL('vault_wasm_bg.wasm', import.meta.url)`). Native Messaging spricht nur mit der lokalen Desktop-Binary — das ist kein nachgeladenes JavaScript.
+
+**CSP:** `script-src 'self' 'wasm-unsafe-eval'` — von Chrome für lokales WebAssembly in MV3 vorgesehen; erlaubt **nicht** `eval()` auf Strings.
 
 **Chrome** — Registry (HKCU):
 
@@ -1686,23 +1713,37 @@ Revisionssichere Protokollierung sicherheitsrelevanter Vault-Events für ISO-270
 
 | Regel | Umsetzung |
 |---|---|
-| **Keine Secrets im Log** | [`AuditAction`](crates/vault-core/src/audit.rs) ist ein Enum — nur Metadaten-Events, kein `String`-Passwort/Key-Parameter |
-| **Nur Entry-Referenz** | Optional `entry_id` (UUID), nie Inhalt |
-| **Trait-Anbindung** | [`AuditLog::log`](crates/vault-core/src/audit.rs) — `Vault` ruft intern `audit_logger.log(...)` auf |
+| **Keine Secrets im Log** | [`AuditAction`](crates/vault-core/src/audit.rs) ist ein Enum — nur Metadaten-Events; keine Passwörter, Benutzernamen oder Secret-Payloads |
+| **Nur Entry-Referenz** | Bei Secret-Events nur UUID im `entry_id`-Feld (optional Titel nur in der UI via Lookup — **nie** im Log persistiert) |
+| **Trait-Anbindung** | [`AuditLog::log`](crates/vault-core/src/audit.rs) — `Vault` ruft intern `audit_logger.log(action)` auf |
 
 ### AuditAction (Metadaten-Events)
 
-| Variante | Auslöser |
+| Variante | Auslöser | Detail-Feld (`entry_id`) |
+|---|---|---|
+| `VaultCreated` | `Vault::create` | `-` |
+| `VaultOpened` | `Vault::open` | `-` |
+| `VaultUnlocked { lock_id }` | `Vault::unlock` | Lock-ID |
+| `VaultLocked` | `Vault::lock` | `-` |
+| `SecretCreated { id }` | `Vault::add_entry` | UUID (kein Passwort/Benutzername) |
+| `SecretModified { id }` | `Vault::update_entry` | UUID |
+| `EntryDeleted { id }` | `Vault::delete_entry` | UUID |
+| `SecretCopied { id }` | `copy_to_clipboard` IPC | UUID |
+| `SecretRevealed { id }` | `Vault::reveal_secret` | UUID |
+| `VaultKeyRotated` | `Vault::reencrypt_vault` | `-` |
+| `AuthFailed` | Fehlgeschlagenes Entsperren (falsches Master-Passwort bei `open`/`unlock`) | `-` |
+| `SyncEvent { status }` | `sync_vault_git` Erfolg/Fehlschlag | `success` / `failed` |
+| `ConfigChanged { area }` | Git-Sync-Settings, MFA an/aus | z. B. `git_sync`, `mfa_enabled`, `mfa_disabled` |
+
+**Legacy (nur Lesen alter Logs):** `EntryCreated`, `EntryUpdated` — werden im Frontend als `SecretCreated` / `SecretModified` dargestellt.
+
+### Nachvollziehbarkeit vs. Datenschutz
+
+| Ziel | Umsetzung |
 |---|---|
-| `VaultCreated` | `Vault::create` |
-| `VaultOpened` | `Vault::open` |
-| `VaultUnlocked` | `Vault::unlock` (mit Lock-ID als `entry_id`) |
-| `VaultLocked` | `Vault::lock` |
-| `EntryCreated` | `Vault::add_entry` |
-| `EntryUpdated` | `Vault::update_entry` |
-| `EntryDeleted` | `Vault::delete_entry` |
-| `SecretRevealed` | `Vault::reveal_secret` |
-| `VaultKeyRotated` | `Vault::reencrypt_vault` |
+| **Nachvollziehbarkeit** | Wer/wann/was auf Vault-Ebene: Entsperren, Secret-Lifecycle, Sync, sicherheitsrelevante Settings |
+| **Datenschutz** | Keine Klartext-Credentials; Secret-Events referenzieren nur UUIDs; Sync/Config-Details ohne Pfade oder Remote-URLs |
+| **Integrität** | Append-only + SHA-256 Hash-Kette unverändert |
 
 ### Speicherformat
 
@@ -1747,7 +1788,7 @@ Manipulation bricht die Kette; Verifikation via `verify_audit_chain(path)`.
 
 ```rust
 // vault.rs (vereinfacht)
-self.audit_logger.log(AuditAction::EntryCreated, Some(&summary.id))?;
+self.audit_logger.log(AuditAction::SecretCreated { id: entry_uuid })?;
 ```
 
 Öffentliche API für Commands: `Vault::record_audit(action, entry_id)`.
@@ -2027,6 +2068,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Browser-Extension MFA (Phase 4):** `mfa_required`/`mfa_failed`/`success` im NM-Protokoll, `vault_status` + `request_unlock`, Popup + In-Page-Banner, `settings.vaultMfaConfigured`, kein MFA-Input in der Extension |
 | 2025-06-20 | 1.0.0 | **Browser-Extension WASM-Generator (Phase 5):** `vault-generator`/`vault-wasm`, Popup-Generator mit Desktop-Themes, `open_new_secret` → `NewSecretModal` Prefill |
 | 2025-06-20 | 1.0.0 | **Secret Hard-Delete:** `Vault::delete_entry`/`delete_secret`, Zeroizing vor Entfernung, `delete_entry` IPC, `DeleteConfirmationModal`, Git-Sync nach Löschung, Audit `EntryDeleted` |
+| 2026-06-20 | 1.0.0 | **UI Header & Sidebar-Nav:** Command-Bar ohne Doppel-Branding, Sidebar `w-80`, Tab-Nav mit lucide-Icons (FolderLock/Shield/Activity), volle Label-Ansicht ohne Ellipsis |
+| 2026-06-20 | 1.0.0 | **Audit-Log Erweiterung:** `SecretCreated`/`SecretModified`, `AuthFailed`, `SyncEvent`, `ConfigChanged`; UUID-only Secret-Referenzen; Aktivität-UI mit Icons/Farbcodes |
+| 2026-06-20 | 1.0.0 | **Enterprise MSI Browser-Extension:** Feste Extension-ID (RSA/CRX), Force-Install Policy (Chrome/Edge), WiX Custom Action, `installer/README.md` |
+| 2026-06-22 | 1.0.0 | **Web Store Remote-Code:** Staging validiert `pkg/vault_wasm_bg.wasm` + keine http/file-Pfade in Quellen; ARCHITECTURE CSP/WASM-Doku |
 
 ---
 

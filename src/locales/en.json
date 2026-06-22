@@ -203,9 +203,23 @@
       "EntryCreated": "Entry was created",
       "EntryUpdated": "Entry was updated",
       "EntryDeleted": "Entry was deleted",
+      "SecretCreated": "Secret was created",
+      "SecretModified": "Secret was modified",
       "SecretCopied": "Secret was copied to clipboard",
       "SecretRevealed": "Secret was revealed",
-      "VaultKeyRotated": "Master key was rotated"
+      "VaultKeyRotated": "Master key was rotated",
+      "AuthFailed": "Unlock attempt failed",
+      "SyncEvent": "Git synchronization",
+      "ConfigChanged": "Security-relevant setting changed"
+    },
+    "syncStatus": {
+      "success": "Successful",
+      "failed": "Failed"
+    },
+    "configAreas": {
+      "git_sync": "Git synchronization",
+      "mfa_enabled": "Two-factor authentication enabled",
+      "mfa_disabled": "Two-factor authentication disabled"
     }
   },
   "passwordPolicy": {
