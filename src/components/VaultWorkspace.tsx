@@ -171,7 +171,7 @@ export function VaultWorkspace({
           <button
             type="button"
             onClick={onShowAddForm}
-            className="w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-white hover:bg-vault-accent-hover"
+            className="w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover"
           >
             {t("vault.addSecret")}
           </button>

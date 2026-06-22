@@ -1,8 +1,8 @@
 const THEME_SWATCH_COLORS: Record<string, [string, string]> = {
   oxid: ["#3b82f6", "#12141a"],
+  "oxid-light": ["#2563eb", "#f3f4f6"],
   dracula: ["#bd93f9", "#282a36"],
   nord: ["#88c0d0", "#2e3440"],
-  matrix: ["#00ff41", "#0d0d0d"],
 };
 
 export function ThemeSwatch({ themeId }: Readonly<{ themeId: string }>) {

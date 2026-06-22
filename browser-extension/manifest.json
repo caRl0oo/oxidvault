@@ -1,18 +1,22 @@
-{
-  "manifest_version": 3,
-  "name": "OxidVault Connector",
-  "version": "0.2.0",
-  "description": "Native-Messaging-Brücke zu OxidVault (Phase 3 — AutoFill get_login)",
-  "permissions": ["nativeMessaging"],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ]
-}
-
+{
+  "manifest_version": 3,
+  "name": "OxidVault",
+  "version": "0.2.1",
+  "description": "Sicherer Passwort-Manager für dein Unternehmen.",
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": ["nativeMessaging"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

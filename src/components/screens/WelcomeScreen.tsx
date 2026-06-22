@@ -26,7 +26,7 @@ export function WelcomeScreen({ onCreate, onOpen, backendStatus }: Readonly<Welc
           <button
             type="button"
             onClick={onCreate}
-            className="rounded bg-vault-accent py-2.5 text-sm font-medium text-white hover:bg-vault-accent-hover"
+            className="rounded bg-vault-accent py-2.5 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover"
           >
             {t("welcome.createVault")}
           </button>

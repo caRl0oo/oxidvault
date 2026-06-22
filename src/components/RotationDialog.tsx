@@ -120,7 +120,7 @@ export function RotationDialog({ open, onClose, onSuccess }: Readonly<RotationDi
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-[60] m-0 flex h-full max-h-none w-full max-w-none items-center justify-center border-0 bg-black/60 p-4 backdrop-blur-sm open:flex"
+      className="fixed inset-0 z-[60] m-0 flex h-full max-h-none w-full max-w-none items-center justify-center border-0 bg-vault-overlay p-4 backdrop-blur-sm open:flex"
       onCancel={(event) => {
         if (loading) {
           event.preventDefault();
@@ -227,7 +227,7 @@ export function RotationDialog({ open, onClose, onSuccess }: Readonly<RotationDi
               type="button"
               disabled={!canSubmit}
               onClick={() => runAsync(handleSubmit)}
-              className="rounded bg-vault-accent px-3 py-1.5 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
+              className="rounded bg-vault-accent px-3 py-1.5 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
             >
               {t("rotation.submit")}
             </button>

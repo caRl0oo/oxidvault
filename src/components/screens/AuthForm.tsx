@@ -93,7 +93,7 @@ export function AuthForm({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full rounded bg-vault-accent py-2 text-sm font-medium text-white hover:bg-vault-accent-hover disabled:opacity-50"
+            className="w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
           >
             {loading ? t("common.pleaseWait") : t(submitLabelKey)}
           </button>

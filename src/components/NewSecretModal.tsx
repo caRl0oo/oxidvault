@@ -601,7 +601,7 @@ export function NewSecretModal({
             type="submit"
             form="secret-form"
             disabled={loading || loadingSecrets || !canSubmit}
-            className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
+            className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
           >
             {submitLabel}
           </button>

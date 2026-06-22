@@ -54,7 +54,7 @@ export function OverlayModal({
       <button
         type="button"
         aria-label={closeLabel}
-        className="absolute inset-0 z-0 cursor-default border-0 bg-black/60 p-0 backdrop-blur-sm"
+        className="absolute inset-0 z-0 cursor-default border-0 bg-vault-overlay p-0 backdrop-blur-sm"
         onClick={handleBackdropClose}
         disabled={closeDisabled}
       />

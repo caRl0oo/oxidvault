@@ -4,46 +4,73 @@
  */
 
 const LOG_PREFIX = "[OxidVault]";
-let autofillAttempted = false;
+const OBSERVER_TIMEOUT_MS = 3000;
+const HIGHLIGHT_DURATION_MS = 500;
+const PENDING_STORAGE_PREFIX = "oxidvault:pending:";
 
-function hasPasswordField() {
-  return Boolean(document.querySelector('input[type="password"]'));
+/** @type {{ username: string, password: string } | null} */
+let cachedCredentials = null;
+let usernameFillAttempted = false;
+let passwordFillAttempted = false;
+let getLoginInFlight = false;
+
+const USERNAME_SELECTORS = [
+  'input[type="email"]',
+  'input[autocomplete="username"]',
+  'input[name*="user" i]',
+  'input[name*="login" i]',
+  'input[name*="email" i]',
+  'input[id*="user" i]',
+  'input[id*="email" i]',
+  'input[type="text"]',
+];
+
+function pendingStorageKey(hostname) {
+  return `${PENDING_STORAGE_PREFIX}${hostname}`;
 }
 
-function setNativeValue(element, value) {
-  if (!element) {
-    return;
+function readPendingCredentials(hostname) {
+  try {
+    const raw = sessionStorage.getItem(pendingStorageKey(hostname));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.username === "string" && typeof parsed?.password === "string") {
+      return parsed;
+    }
+  } catch {
+    /* ignore corrupt session data */
   }
-  const descriptor = Object.getOwnPropertyDescriptor(
-    globalThis.HTMLInputElement.prototype,
-    "value"
-  );
-  if (descriptor?.set) {
-    descriptor.set.call(element, value);
-  } else {
-    element.value = value;
+  return null;
+}
+
+function storePendingCredentials(hostname, credentials) {
+  try {
+    sessionStorage.setItem(pendingStorageKey(hostname), JSON.stringify(credentials));
+  } catch {
+    /* private browsing / blocked storage */
   }
-  element.dispatchEvent(new Event("input", { bubbles: true }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function clearPendingCredentials(hostname) {
+  try {
+    sessionStorage.removeItem(pendingStorageKey(hostname));
+  } catch {
+    /* ignore */
+  }
+}
+
+function findPasswordInput(root = document) {
+  return root.querySelector('input[type="password"]');
 }
 
 function findUsernameInput(passwordInput) {
-  const root = passwordInput.closest("form") ?? document;
+  const root = passwordInput?.closest("form") ?? document;
 
-  const selectors = [
-    'input[type="email"]',
-    'input[autocomplete="username"]',
-    'input[name*="user" i]',
-    'input[name*="login" i]',
-    'input[name*="email" i]',
-    'input[id*="user" i]',
-    'input[id*="email" i]',
-    'input[type="text"]',
-  ];
-
-  for (const selector of selectors) {
+  for (const selector of USERNAME_SELECTORS) {
     const candidate = root.querySelector(selector);
-    if (candidate && candidate !== passwordInput) {
+    if (candidate && candidate !== passwordInput && candidate.type !== "password") {
       return candidate;
     }
   }
@@ -51,79 +78,266 @@ function findUsernameInput(passwordInput) {
   return null;
 }
 
-function fillCredentials(username, password) {
-  const passwordInput = document.querySelector('input[type="password"]');
-  if (!passwordInput) {
+function findStandaloneUsernameInput() {
+  for (const selector of USERNAME_SELECTORS) {
+    const candidate = document.querySelector(selector);
+    if (candidate && candidate.type !== "password") {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function detectLoginFields() {
+  const passwordInput = findPasswordInput();
+  const usernameInput = passwordInput
+    ? findUsernameInput(passwordInput)
+    : findStandaloneUsernameInput();
+
+  return { passwordInput, usernameInput };
+}
+
+function hasActionableLoginField() {
+  const { passwordInput, usernameInput } = detectLoginFields();
+  return Boolean(passwordInput || usernameInput);
+}
+
+function dispatchInputEvents(element) {
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+
+  try {
+    element.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertFromPaste",
+      })
+    );
+  } catch {
+    /* InputEvent unsupported in older engines */
+  }
+}
+
+function setNativeValue(element, value) {
+  if (!element) {
     return;
   }
 
-  const usernameInput = findUsernameInput(passwordInput);
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis.HTMLInputElement.prototype,
+    "value"
+  );
 
-  if (usernameInput && username) {
-    setNativeValue(usernameInput, username);
+  if (descriptor?.set) {
+    descriptor.set.call(element, value);
+  } else {
+    element.value = value;
   }
 
-  if (password) {
-    setNativeValue(passwordInput, password);
+  dispatchInputEvents(element);
+}
+
+function highlightPasswordField(element) {
+  const previous = {
+    outline: element.style.outline,
+    outlineOffset: element.style.outlineOffset,
+    transition: element.style.transition,
+  };
+
+  element.style.transition = "outline-color 150ms ease";
+  element.style.outline = "2px solid #22c55e";
+  element.style.outlineOffset = "2px";
+
+  globalThis.setTimeout(() => {
+    element.style.outline = previous.outline;
+    element.style.outlineOffset = previous.outlineOffset;
+    element.style.transition = previous.transition;
+  }, HIGHLIGHT_DURATION_MS);
+
+  element.focus({ preventScroll: false });
+}
+
+/**
+ * Fills only fields present on the page (supports split username/password steps).
+ * @returns {boolean} Whether at least one field was filled.
+ */
+function fillCredentials(username, password) {
+  const hostname = globalThis.location.hostname;
+  const pending = readPendingCredentials(hostname);
+  const resolvedUsername = username || pending?.username || "";
+  const resolvedPassword = password || pending?.password || "";
+
+  const { passwordInput, usernameInput } = detectLoginFields();
+  let filled = false;
+
+  if (usernameInput && resolvedUsername && usernameInput !== passwordInput) {
+    setNativeValue(usernameInput, resolvedUsername);
+    filled = true;
   }
 
-  console.log(`${LOG_PREFIX} AutoFill applied for ${globalThis.location.hostname}`);
+  if (passwordInput && resolvedPassword) {
+    setNativeValue(passwordInput, resolvedPassword);
+    highlightPasswordField(passwordInput);
+    filled = true;
+  }
+
+  if (!filled) {
+    return false;
+  }
+
+  if (filled && resolvedUsername && resolvedPassword) {
+    storePendingCredentials(hostname, {
+      username: resolvedUsername,
+      password: resolvedPassword,
+    });
+  }
+
+  if (passwordInput && resolvedPassword) {
+    passwordFillAttempted = true;
+    if (usernameInput && resolvedUsername) {
+      usernameFillAttempted = true;
+      clearPendingCredentials(hostname);
+    }
+  } else if (usernameInput && resolvedUsername && resolvedPassword) {
+    usernameFillAttempted = true;
+    storePendingCredentials(hostname, {
+      username: resolvedUsername,
+      password: resolvedPassword,
+    });
+  }
+
+  console.log(`${LOG_PREFIX} AutoFill applied for ${hostname}`);
+  return true;
+}
+
+function credentialsForFill(response) {
+  const hostname = globalThis.location.hostname;
+  const pending = readPendingCredentials(hostname);
+
+  return {
+    username: response?.username || pending?.username || "",
+    password: response?.password || pending?.password || "",
+  };
+}
+
+function shouldRequestLogin() {
+  const { passwordInput, usernameInput } = detectLoginFields();
+
+  if (passwordInput && !passwordFillAttempted) {
+    return true;
+  }
+
+  if (usernameInput && !usernameFillAttempted && !passwordInput) {
+    return true;
+  }
+
+  return false;
+}
+
+function applyCachedCredentialsIfPossible() {
+  if (!cachedCredentials) {
+    const pending = readPendingCredentials(globalThis.location.hostname);
+    if (pending) {
+      cachedCredentials = pending;
+    }
+  }
+
+  if (!cachedCredentials) {
+    return false;
+  }
+
+  const { passwordInput } = detectLoginFields();
+  if (passwordInput && !passwordFillAttempted) {
+    return fillCredentials(cachedCredentials.username, cachedCredentials.password);
+  }
+
+  return false;
 }
 
 function requestAutofill() {
-  if (autofillAttempted || !hasPasswordField()) {
+  if (getLoginInFlight || !shouldRequestLogin()) {
     return;
   }
 
-  autofillAttempted = true;
+  if (applyCachedCredentialsIfPossible()) {
+    return;
+  }
+
   const hostname = globalThis.location.hostname;
   if (!hostname) {
     return;
   }
 
-  chrome.runtime.sendMessage(
-    { type: "GET_LOGIN", hostname },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn(`${LOG_PREFIX} GET_LOGIN failed:`, chrome.runtime.lastError.message);
-        autofillAttempted = false;
-        return;
-      }
+  getLoginInFlight = true;
 
-      if (response?.status === "ok") {
-        fillCredentials(response.username, response.password);
-      } else if (response?.status === "not_found") {
-        console.log(`${LOG_PREFIX} No vault entry for ${hostname}`);
-      } else if (response?.status === "locked") {
-        console.log(`${LOG_PREFIX} Vault locked — unlock OxidVault desktop app`);
-      } else if (response?.status === "unavailable") {
-        console.log(`${LOG_PREFIX} Desktop app not running`);
-        autofillAttempted = false;
-      } else if (response?.status === "error") {
-        console.warn(`${LOG_PREFIX} Host error:`, response.error ?? response);
-        autofillAttempted = false;
-      }
+  chrome.runtime.sendMessage({ type: "GET_LOGIN", hostname }, (response) => {
+    getLoginInFlight = false;
+
+    if (chrome.runtime.lastError) {
+      console.warn(`${LOG_PREFIX} GET_LOGIN failed:`, chrome.runtime.lastError.message);
+      return;
     }
-  );
+
+    if (response?.status === "ok") {
+      const credentials = credentialsForFill(response);
+      cachedCredentials = credentials;
+      storePendingCredentials(hostname, credentials);
+      fillCredentials(credentials.username, credentials.password);
+      return;
+    }
+
+    if (response?.status === "not_found") {
+      console.log(`${LOG_PREFIX} No vault entry for ${hostname}`);
+      return;
+    }
+
+    if (response?.status === "locked") {
+      console.log(`${LOG_PREFIX} Vault locked — unlock OxidVault desktop app`);
+      return;
+    }
+
+    if (response?.status === "unavailable") {
+      console.log(`${LOG_PREFIX} Desktop app not running`);
+      return;
+    }
+
+    if (response?.status === "error") {
+      console.warn(`${LOG_PREFIX} Host error:`, response.error ?? response);
+    }
+  });
 }
 
 function scanForLoginForm() {
-  if (hasPasswordField()) {
+  if (hasActionableLoginField()) {
     requestAutofill();
   }
 }
 
-scanForLoginForm();
+function startLoginFieldWatcher() {
+  scanForLoginForm();
 
-const observer = new MutationObserver(() => {
-  if (!autofillAttempted && hasPasswordField()) {
-    requestAutofill();
-  }
-});
+  const deadline = Date.now() + OBSERVER_TIMEOUT_MS;
 
-if (document.documentElement) {
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
+  const observer = new MutationObserver(() => {
+    if (Date.now() > deadline) {
+      observer.disconnect();
+      return;
+    }
+
+    if (hasActionableLoginField()) {
+      requestAutofill();
+    }
   });
+
+  if (document.documentElement) {
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  globalThis.setTimeout(() => observer.disconnect(), OBSERVER_TIMEOUT_MS);
 }
+
+startLoginFieldWatcher();

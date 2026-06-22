@@ -1,14 +1,14 @@
 // Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
 // weitergeben und/oder modifizieren.
 
 pub mod audit;
 pub mod audit_export;
 mod audit_secure;
 pub mod compliance;
-pub mod diagnostics;
 pub mod crypto;
+pub mod diagnostics;
 pub mod entry;
 pub mod error;
 pub mod expiry;

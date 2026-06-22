@@ -159,7 +159,7 @@ export function ComplianceDashboard() {
             <button
               type="button"
               onClick={() => setRotationOpen(true)}
-              className="mt-3 rounded bg-vault-accent px-4 py-2 font-mono text-xs font-semibold text-white hover:bg-vault-accent-hover"
+              className="mt-3 rounded bg-vault-accent px-4 py-2 font-mono text-xs font-semibold text-vault-on-accent hover:bg-vault-accent-hover"
             >
               {t("compliance.rotate_password")}
             </button>

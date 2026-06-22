@@ -1,6 +1,6 @@
 // Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
 // weitergeben und/oder modifizieren.
 
 //! Admin system diagnostics for support and IT overview (no secrets).
@@ -81,10 +81,7 @@ pub fn collect_system_diagnostics(
     }
 }
 
-fn diagnose_vault_path(
-    loaded: Option<&str>,
-    stored: Option<&str>,
-) -> VaultPathDiagnostics {
+fn diagnose_vault_path(loaded: Option<&str>, stored: Option<&str>) -> VaultPathDiagnostics {
     let candidate = loaded.or(stored);
     let Some(path_str) = candidate else {
         return VaultPathDiagnostics {
@@ -260,11 +257,7 @@ fn is_network_path_str(path: &str) -> bool {
 
 fn is_directory_writable(dir: &Path) -> bool {
     let probe = dir.join(format!(".oxidvault-write-probe-{}", std::process::id()));
-    match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&probe)
-    {
+    match OpenOptions::new().write(true).create_new(true).open(&probe) {
         Ok(_) => {
             let _ = fs::remove_file(&probe);
             true
@@ -315,10 +308,7 @@ mod tests {
 
     #[test]
     fn diagnostics_detects_missing_vault_file() {
-        let report = collect_system_diagnostics(
-            Some("/nonexistent/path/vault.oxid"),
-            None,
-        );
+        let report = collect_system_diagnostics(Some("/nonexistent/path/vault.oxid"), None);
         assert!(!report.vault_path.ok);
         assert_eq!(report.vault_path.status, "vault_file_not_found");
     }

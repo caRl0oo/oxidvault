@@ -11,6 +11,10 @@
   --color-vault-success: #22c55e;
   --color-vault-danger: #ef4444;
   --color-vault-tag: #a78bfa;
+  --color-vault-on-accent: #ffffff;
+  --color-vault-overlay: rgb(0 0 0 / 60%);
+  --color-vault-hover-overlay: rgb(0 0 0 / 10%);
+  --color-vault-elevated-shadow: none;
   --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }
 
@@ -25,6 +29,23 @@
   --color-vault-accent-hover: #2563eb;
   --color-vault-success: #22c55e;
   --color-vault-danger: #ef4444;
+}
+
+[data-theme="oxid-light"] {
+  --color-vault-bg: #f3f4f6;
+  --color-vault-surface: #ffffff;
+  --color-vault-border: #e5e7eb;
+  --color-vault-muted: #6b7280;
+  --color-vault-text: #1f2937;
+  --color-vault-accent: #2563eb;
+  --color-vault-accent-hover: #1d4ed8;
+  --color-vault-success: #15803d;
+  --color-vault-danger: #dc2626;
+  --color-vault-tag: #7c3aed;
+  --color-vault-on-accent: #ffffff;
+  --color-vault-overlay: rgb(17 24 39 / 35%);
+  --color-vault-hover-overlay: rgb(0 0 0 / 5%);
+  --color-vault-elevated-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 1px 3px rgb(0 0 0 / 4%);
 }
 
 [data-theme="dracula"] {
@@ -52,18 +73,6 @@
   --color-vault-danger: #bf616a;
 }
 
-[data-theme="matrix"] {
-  --color-vault-bg: #0a0a0a;
-  --color-vault-surface: #0d120d;
-  --color-vault-border: #1a3d1a;
-  --color-vault-muted: #2d6b2d;
-  --color-vault-text: #00ff41;
-  --color-vault-accent: #00ff41;
-  --color-vault-accent-hover: #39ff14;
-  --color-vault-success: #00ff41;
-  --color-vault-danger: #ff1744;
-}
-
 @layer base {
   html,
   body,
@@ -73,10 +82,6 @@
 
   body {
     @apply bg-vault-bg text-vault-text font-sans;
-  }
-
-  [data-theme="matrix"] body {
-    font-family: var(--font-mono);
   }
 
   ::selection {
@@ -95,7 +100,17 @@
   }
 
   dialog::backdrop {
-    background: rgb(0 0 0 / 60%);
+    background: var(--color-vault-overlay);
     backdrop-filter: blur(4px);
+  }
+
+  [data-theme="oxid-light"] input:not([type="checkbox"]),
+  [data-theme="oxid-light"] select,
+  [data-theme="oxid-light"] textarea {
+    box-shadow: var(--color-vault-elevated-shadow);
+  }
+
+  [data-theme="oxid-light"] .vault-elevated {
+    box-shadow: var(--color-vault-elevated-shadow);
   }
 }

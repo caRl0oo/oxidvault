@@ -1135,9 +1135,9 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### Design-System
 
-- **Themes:** 4 wählbare Dark-Themes via `data-theme` auf `<html>` (siehe unten)
+- **Themes:** 4 wählbare Themes via `data-theme` auf `<html>` — drei Dark-Themes plus **Oxid Light** (siehe unten)
 - **Design-Tokens:** Tailwind-Utilities `vault-*` (CSS-Variablen in `globals.css`)
-- **Typografie:** System-Sans + Monospace; Matrix-Theme erzwingt Monospace global
+- **Typografie:** System-Sans + Monospace
 - **Layout:** Header (Theme + Status) · Main (Sidebar + Content) · Footer (Shortcut-Hints)
 
 ### Dynamisches Theme-System (v0.1.0)
@@ -1174,9 +1174,9 @@ ReachabilityDot — Sidebar + Detailansicht
 | ID | Name | Charakter |
 |---|---|---|
 | `oxid` | Oxid Default | Dunkelblau, aktuelles Standard-Design |
+| `oxid-light` | Oxid Light | Hell (#F3F4F6 / #FFFFFF), Text #1F2937, dezente Schatten |
 | `dracula` | Dracula | Violett/Purpur-Akzente |
 | `nord` | Nord Arctic | Eisiges Blaugrau |
-| `matrix` | Matrix Green | Tiefschwarz, Neon-Grün, Monospace-UI |
 
 **Ablauf:**
 
@@ -1910,6 +1910,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Frontend i18n:** `i18next`/`react-i18next`, `src/locales/de.json` + `en.json`, Sprachwahl in `SettingsMenu`, Security/Compliance-UI |
 | 2025-06-20 | 1.0.0 | **Full-Coverage i18n:** Alle UI-Komponenten, `auditLogLabels.ts`, `errors.ts`, `vaultLabels.ts`, `passwordPolicy.ts`; `fallbackLng: false` |
 | 2025-06-20 | 1.0.0 | **Admin System-Diagnose:** `vault-core/diagnostics.rs`, `get_system_diagnostics`, Security-Tab `SystemDiagnosticsPanel`, Markdown-Clipboard-Export, i18n-Statuscodes |
+| 2025-06-20 | 1.0.0 | **Theme-Refresh:** Matrix entfernt; neues **Oxid Light** (Enterprise-Hellmodus); semantische Tokens `vault-on-accent`, `vault-overlay`, `vault-elevated-shadow` |
 
 ---
 

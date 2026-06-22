@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GearIcon } from "@/components/ui/GearIcon";
+import { AboutModal } from "@/components/AboutModal";
 import { ThemeSwatch } from "@/components/ui/ThemeSwatch";
 import { useTheme } from "@/hooks/useTheme";
 import { changeAppLocale } from "@/lib/i18n";
@@ -19,6 +20,7 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const [gitEnabled, setGitEnabled] = useState(false);
@@ -79,6 +81,11 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const currentThemeId = theme;
   const gitSaveLabel = gitSaveButtonLabel(t, gitSaving, gitSaved);
   const currentLocale = isLocaleId(i18n.language) ? i18n.language : i18n.language.split("-")[0];
+
+  const openAboutDialog = () => {
+    setOpen(false);
+    setAboutOpen(true);
+  };
 
   return (
     <div ref={rootRef} className="relative">
@@ -211,13 +218,25 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
               type="button"
               onClick={() => runAsync(saveGitSettings)}
               disabled={gitSaving}
-              className="mt-3 w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-white hover:bg-vault-accent-hover disabled:opacity-50"
+              className="mt-3 w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
             >
               {gitSaveLabel}
             </button>
           </div>
+
+          <div className="border-t border-vault-border px-3 py-2">
+            <button
+              type="button"
+              onClick={openAboutDialog}
+              className="w-full rounded px-2 py-2 text-left font-mono text-xs text-vault-muted transition hover:bg-vault-bg hover:text-vault-text"
+            >
+              {t("about.menuItem")}
+            </button>
+          </div>
         </div>
       )}
+
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>
   );
 }

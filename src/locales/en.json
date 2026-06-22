@@ -269,6 +269,10 @@
       "label": "Oxid Default",
       "description": "Classic dark blue"
     },
+    "oxid-light": {
+      "label": "Oxid Light",
+      "description": "Light enterprise layout with anthracite text"
+    },
     "dracula": {
       "label": "Dracula",
       "description": "Dark violet & purple"
@@ -276,10 +280,6 @@
     "nord": {
       "label": "Nord Arctic",
       "description": "Icy blue-gray"
-    },
-    "matrix": {
-      "label": "Matrix Green",
-      "description": "Neon green hacker look"
     }
   },
   "locale": {
@@ -346,6 +346,13 @@
     "saveGit": "Save Git settings",
     "saving": "Saving…",
     "saved": "Saved ✓"
+  },
+  "about": {
+    "title": "About OxidVault",
+    "menuItem": "About OxidVault",
+    "version": "Version {{version}}",
+    "licenseNotice": "Licensed under",
+    "licenseLink": "AGPL-3.0"
   },
   "compliance": {
     "title": "Compliance overview",

@@ -38,7 +38,7 @@ export function DashboardFilterBar({ label, kind, onClear }: Readonly<DashboardF
           onClick={onClear}
           aria-label={t("common.filterClearAria")}
           title={t("common.filterClear")}
-          className="shrink-0 rounded px-1 opacity-70 transition hover:bg-black/10 hover:opacity-100"
+          className="shrink-0 rounded px-1 opacity-70 transition hover:bg-vault-hover-overlay hover:opacity-100"
         >
           ✕
         </button>
