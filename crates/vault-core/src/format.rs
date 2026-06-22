@@ -1,3 +1,8 @@
+// Copyright (C) 2026 [Pascal Kuhn]
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// weitergeben und/oder modifizieren.
+
 //! `.oxid` on-disk format — v1 (direct key) and v2 (wrapped DEK header).
 #![allow(clippy::too_many_arguments)]
 

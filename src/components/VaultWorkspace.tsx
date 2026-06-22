@@ -46,7 +46,6 @@ interface VaultWorkspaceProps {
   readonly reachability: Record<string, ReachabilityState>;
   readonly onApplyDashboardFilter: (filter: DashboardFilter) => void;
   readonly onShowAddForm: () => void;
-  readonly onLock: () => void;
   readonly onEditEntry: (entry: SecretEntryPublic) => void;
   readonly error: string | null;
   readonly showAddForm: boolean;
@@ -87,7 +86,6 @@ export function VaultWorkspace({
   reachability,
   onApplyDashboardFilter,
   onShowAddForm,
-  onLock,
   onEditEntry,
   error,
   showAddForm,
@@ -188,7 +186,6 @@ export function VaultWorkspace({
           dashboardFilterKind={dashboardFilter?.kind ?? null}
           onSelectEntry={onSelectEntry}
           onApplyDashboardFilter={onApplyDashboardFilter}
-          onLock={onLock}
           onEditEntry={onEditEntry}
           onQuickConnect={onQuickConnect}
           sshConnecting={sshConnecting}
@@ -231,7 +228,6 @@ interface VaultMainPanelProps {
   readonly dashboardFilterKind: DashboardFilterKind | null;
   readonly onSelectEntry: (id: string) => void;
   readonly onApplyDashboardFilter: (filter: DashboardFilter) => void;
-  readonly onLock: () => void;
   readonly onEditEntry: (entry: SecretEntryPublic) => void;
   readonly onQuickConnect: (id: string) => void;
   readonly sshConnecting: boolean;
@@ -245,7 +241,6 @@ function VaultMainPanel({
   dashboardFilterKind,
   onSelectEntry,
   onApplyDashboardFilter,
-  onLock,
   onEditEntry,
   onQuickConnect,
   sshConnecting,
@@ -272,7 +267,6 @@ function VaultMainPanel({
     return (
       <EntryDetail
         entry={selectedEntry}
-        onLock={onLock}
         onEdit={() => onEditEntry(selectedEntry)}
         onQuickConnect={onQuickConnect}
         sshConnecting={sshConnecting}
@@ -281,30 +275,21 @@ function VaultMainPanel({
     );
   }
 
-  return <VaultSecretsPlaceholder entriesCount={entriesCount} onLock={onLock} />;
+  return <VaultSecretsPlaceholder entriesCount={entriesCount} />;
 }
 
 function VaultSecretsPlaceholder({
   entriesCount,
-  onLock,
 }: {
   readonly entriesCount: number;
-  readonly onLock: () => void;
 }) {
   const { t } = useTranslation();
   const emptyVault = entriesCount === 0;
   const hint = emptyVault ? t("vault.emptyHint") : t("vault.selectHint");
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
       <p className="text-sm text-vault-muted">{hint}</p>
-      <button
-        type="button"
-        onClick={onLock}
-        className="mt-2 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-danger hover:text-vault-danger"
-      >
-        {t("vault.lockVault")}
-      </button>
     </div>
   );
 }

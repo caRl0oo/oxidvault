@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
 import { SyncButton } from "@/components/SyncButton";
+import { VaultLockButton } from "@/components/ui/VaultLockButton";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
 import { useReachabilityPolling } from "@/hooks/useReachabilityPolling";
@@ -508,6 +509,10 @@ export default function App() {
         {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · {vaultInfo.name} · v
         {vaultInfo.version}
       </span>
+      <VaultLockButton
+        locked={vaultInfo.locked}
+        onLock={() => runAsync(handleLock)}
+      />
     </div>
   ) : null;
 
@@ -564,7 +569,6 @@ export default function App() {
         reachability={reachability}
         onApplyDashboardFilter={handleApplyDashboardFilter}
         onShowAddForm={() => setShowAddForm(true)}
-        onLock={handleLock}
         onEditEntry={setEditEntry}
         showAddForm={showAddForm}
         editEntry={editEntry}

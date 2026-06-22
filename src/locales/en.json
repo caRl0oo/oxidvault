@@ -36,6 +36,7 @@
   "app": {
     "statusLocked": "locked",
     "statusUnlocked": "unlocked",
+    "lockVaultAria": "Lock vault",
     "defaultVaultName": "My Vault",
     "lockedOnMinimize": "Vault locked — window was minimized.",
     "autoLocked": "Automatically locked after 2 minutes of inactivity.",

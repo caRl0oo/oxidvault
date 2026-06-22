@@ -16,7 +16,6 @@ import { isProbeableEntryType } from "@/types/vault";
 
 interface EntryDetailProps {
   readonly entry: SecretEntryPublic;
-  readonly onLock: () => void;
   readonly onEdit: () => void;
   readonly onQuickConnect?: (entryId: string) => void;
   readonly sshConnecting?: boolean;
@@ -37,7 +36,6 @@ function absorbDiscarded(_discarded: string): void {
 
 export function EntryDetail({
   entry,
-  onLock,
   onEdit,
   onQuickConnect,
   sshConnecting,
@@ -298,13 +296,6 @@ export function EntryDetail({
           />
         )}
 
-        <button
-          type="button"
-          onClick={onLock}
-          className="rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-danger hover:text-vault-danger"
-        >
-          {t("sidebar.lockVault")}
-        </button>
       </div>
     </div>
   );

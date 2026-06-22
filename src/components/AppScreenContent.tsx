@@ -58,7 +58,6 @@ interface AppScreenContentProps {
   readonly reachability: Record<string, ReachabilityState>;
   readonly onApplyDashboardFilter: (filter: DashboardFilter) => void;
   readonly onShowAddForm: () => void;
-  readonly onLock: () => void;
   readonly onEditEntry: (entry: SecretEntryPublic) => void;
   readonly showAddForm: boolean;
   readonly editEntry: SecretEntryPublic | null;
@@ -161,7 +160,6 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           reachability={props.reachability}
           onApplyDashboardFilter={props.onApplyDashboardFilter}
           onShowAddForm={props.onShowAddForm}
-          onLock={props.onLock}
           onEditEntry={props.onEditEntry}
           error={props.error}
           showAddForm={props.showAddForm}

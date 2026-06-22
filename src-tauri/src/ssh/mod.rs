@@ -1,3 +1,8 @@
+// Copyright (C) 2026 [Pascal Kuhn]
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// weitergeben und/oder modifizieren.
+
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::net::ToSocketAddrs;

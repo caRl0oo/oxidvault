@@ -1,3 +1,8 @@
+// Copyright (C) 2026 [Pascal Kuhn]
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// weitergeben und/oder modifizieren.
+
 //! OS-level access control for `{vault}.audit.log` files (ISO 27001).
 
 use std::path::Path;

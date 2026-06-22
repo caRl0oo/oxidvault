@@ -36,6 +36,7 @@
   "app": {
     "statusLocked": "gesperrt",
     "statusUnlocked": "entsperrt",
+    "lockVaultAria": "Vault sperren",
     "defaultVaultName": "Mein Vault",
     "lockedOnMinimize": "Vault gesperrt — Fenster wurde minimiert.",
     "autoLocked": "Automatisch gesperrt nach 2 Minuten Inaktivität.",

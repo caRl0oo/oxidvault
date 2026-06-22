@@ -1,3 +1,8 @@
+// Copyright (C) 2026 [Pascal Kuhn]
+// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der 
+// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht, 
+// weitergeben und/oder modifizieren.
+
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
