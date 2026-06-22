@@ -32,6 +32,9 @@ pub struct AppSettings {
     pub force_lock_on_minimize: bool,
     #[serde(default = "default_auto_lock_seconds")]
     pub auto_lock_seconds: u32,
+    /// Persisted hint for browser bridge when vault is locked (no secrets).
+    #[serde(default)]
+    pub vault_mfa_configured: bool,
 }
 
 impl Default for AppSettings {
@@ -41,6 +44,7 @@ impl Default for AppSettings {
             git_sync: GitSyncSettings::default(),
             force_lock_on_minimize: default_force_lock_on_minimize(),
             auto_lock_seconds: default_auto_lock_seconds(),
+            vault_mfa_configured: false,
         }
     }
 }
@@ -93,6 +97,13 @@ fn write_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String>
 pub fn save_last_vault_path(app: &AppHandle, vault_path: &str) -> Result<(), String> {
     let mut settings = load_settings(app).unwrap_or_default();
     settings.last_vault_path = Some(vault_path.to_string());
+    write_settings(app, &settings)
+}
+
+/// Persists whether the active vault uses MFA — metadata only, for browser bridge hints.
+pub fn save_vault_mfa_configured(app: &AppHandle, configured: bool) -> Result<(), String> {
+    let mut settings = load_settings(app).unwrap_or_default();
+    settings.vault_mfa_configured = configured;
     write_settings(app, &settings)
 }
 

@@ -7,10 +7,11 @@ import { SyncButton } from "@/components/SyncButton";
 import { VaultLockButton } from "@/components/ui/VaultLockButton";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
+import { useMfaRateLimit } from "@/hooks/useMfaRateLimit";
 import { useReachabilityPolling } from "@/hooks/useReachabilityPolling";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
-import { formatVaultError } from "@/lib/errors";
+import { formatVaultError, isInvalidMfaError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
 import { cancelSecureClipboardClear, notifyBackendSecureCopy } from "@/lib/secureClipboard";
 import { filterEntries } from "@/lib/search";
@@ -19,10 +20,8 @@ import { sshConnect } from "@/lib/ssh";
 import {
   addEntry,
   bootstrapVault,
-  cancelPendingUnlock,
   copyToClipboard,
   createVault,
-  completeUnlockVault,
   detachVault,
   getAppSettings,
   getEntry,
@@ -36,6 +35,8 @@ import {
   syncVaultGit,
   unlockVault,
   updateEntry,
+  deleteEntry,
+  takeExtensionNewSecret,
 } from "@/lib/ipc";
 import type { ResolvedConfig } from "@/types/policy";
 import type { GitSyncSettings } from "@/types/settings";
@@ -65,6 +66,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<SecretEntryPublic | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [newSecretPrefillPassword, setNewSecretPrefillPassword] = useState<string | null>(
+    null,
+  );
   const [editEntry, setEditEntry] = useState<SecretEntryPublic | null>(null);
   const [showPasswordGenerator, setShowPasswordGenerator] = useState(false);
   const [generatorApply, setGeneratorApply] = useState<((pwd: string) => void) | null>(null);
@@ -82,6 +86,12 @@ export default function App() {
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const {
+    isLockedOut: mfaLockedOut,
+    secondsRemaining: mfaLockoutSeconds,
+    recordInvalidMfa,
+    reset: resetMfaRateLimit,
+  } = useMfaRateLimit();
   const passwordRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -201,6 +211,7 @@ export default function App() {
 
   const finishVaultUnlock = useCallback(
     async (info: VaultInfo) => {
+      resetMfaRateLimit();
       setVaultInfo(info);
       setPassword("");
       setMfaCode("");
@@ -208,7 +219,7 @@ export default function App() {
       setScreen("vault");
       await refreshEntries();
     },
-    [refreshEntries],
+    [refreshEntries, resetMfaRateLimit],
   );
 
   const handleOpen = useCallback(async () => {
@@ -219,7 +230,6 @@ export default function App() {
       const result = await openVault(vaultPath, password);
       setVaultInfo(result.vault);
       if (result.mfaRequired) {
-        setPassword("");
         setMfaChallengeActive(true);
         return;
       }
@@ -236,6 +246,7 @@ export default function App() {
     setError(null);
     try {
       await detachVault();
+      resetMfaRateLimit();
       setVaultInfo(null);
       setVaultPath(null);
       setPassword("");
@@ -247,7 +258,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [resetMfaRateLimit]);
 
   const handleUnlock = useCallback(async () => {
     if (!password.trim()) return;
@@ -257,7 +268,6 @@ export default function App() {
       const result = await unlockVault(password);
       setVaultInfo(result.vault);
       if (result.mfaRequired) {
-        setPassword("");
         setMfaChallengeActive(true);
         return;
       }
@@ -271,43 +281,54 @@ export default function App() {
 
   const handleCompleteMfa = useCallback(async (codeOverride?: string) => {
     const code = codeOverride ?? mfaCode;
-    if (code.length !== 6 || loading) return;
+    if (code.length !== 6 || loading || !password.trim() || mfaLockedOut) return;
     setLoading(true);
     setError(null);
     try {
-      const info = await completeUnlockVault(code);
-      await finishVaultUnlock(info);
+      const result =
+        screen === "open" && vaultPath
+          ? await openVault(vaultPath, password, code)
+          : await unlockVault(password, code);
+      setVaultInfo(result.vault);
+      if (result.mfaRequired) {
+        setError(formatVaultError("MFA code required"));
+        return;
+      }
+      await finishVaultUnlock(result.vault);
     } catch (e) {
+      if (isInvalidMfaError(e)) {
+        recordInvalidMfa();
+      }
       setError(formatVaultError(e));
       setMfaCode("");
     } finally {
       setLoading(false);
     }
-  }, [mfaCode, finishVaultUnlock, loading]);
+  }, [
+    mfaCode,
+    finishVaultUnlock,
+    loading,
+    mfaLockedOut,
+    password,
+    screen,
+    vaultPath,
+    recordInvalidMfa,
+  ]);
 
-  const handleCancelMfaChallenge = useCallback(async () => {
-    setLoading(true);
+  const handleCancelMfaChallenge = useCallback(() => {
+    setMfaChallengeActive(false);
+    setMfaCode("");
     setError(null);
-    try {
-      await cancelPendingUnlock();
-      setMfaChallengeActive(false);
-      setMfaCode("");
+    if (screen === "open") {
+      setVaultPath(null);
       setPassword("");
-      const info = await getVaultInfo();
-      setVaultInfo(info);
-      if (screen === "open") {
-        setVaultPath(null);
-        setScreen("welcome");
-      }
-    } catch (e) {
-      setError(formatVaultError(e));
-    } finally {
-      setLoading(false);
+      setScreen("welcome");
     }
   }, [screen]);
 
   const applyLockedUi = useCallback((info: VaultInfo, message?: string) => {
     cancelSecureClipboardClear();
+    resetMfaRateLimit();
     setVaultInfo(info);
     setEntries([]);
     setSelectedId(null);
@@ -325,7 +346,7 @@ export default function App() {
     setActiveTag(null);
     setScreen("unlock");
     if (message) setError(message);
-  }, []);
+  }, [resetMfaRateLimit]);
 
   const performLock = useCallback(async () => {
     cancelSecureClipboardClear();
@@ -350,6 +371,26 @@ export default function App() {
       unlisten?.();
     };
   }, [applyLockedUi, t]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    runAsync(async () => {
+      const fn = await listen("extension-new-secret-prefill", () => {
+        runAsync(async () => {
+          const password = await takeExtensionNewSecret();
+          if (password) {
+            setNewSecretPrefillPassword(password);
+            setShowAddForm(true);
+          }
+        });
+      });
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const handleLock = useCallback(async () => {
     try {
@@ -439,6 +480,7 @@ export default function App() {
   const closeSecretForm = useCallback(() => {
     setShowAddForm(false);
     setEditEntry(null);
+    setNewSecretPrefillPassword(null);
   }, []);
 
   const handleAddEntry = useCallback(
@@ -478,6 +520,41 @@ export default function App() {
       }
     },
     [refreshEntries, handleSelectEntry, closeSecretForm],
+  );
+
+  const handleDeleteEntry = useCallback(
+    async (id: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await deleteEntry(id);
+        await refreshEntries();
+        setSelectedId(null);
+        setSelectedEntry(null);
+        setVaultInfo((prev) =>
+          prev ? { ...prev, entry_count: Math.max(0, prev.entry_count - 1) } : prev,
+        );
+        if (gitSyncSettings.enabled) {
+          try {
+            const result = await syncVaultGit();
+            setGitSyncMessage(result.message);
+            if (result.vaultReloaded) {
+              const info = await getVaultInfo();
+              setVaultInfo(info);
+            }
+            globalThis.setTimeout(() => setGitSyncMessage(null), 4000);
+          } catch (syncErr) {
+            setGitSyncError(formatVaultError(syncErr));
+            globalThis.setTimeout(() => setGitSyncError(null), 5000);
+          }
+        }
+      } catch (e) {
+        setError(formatVaultError(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refreshEntries, gitSyncSettings.enabled],
   );
 
   const startCreate = useCallback(() => {
@@ -625,6 +702,8 @@ export default function App() {
         onUnlock={handleAuthSubmit}
         mfaChallengeActive={mfaChallengeActive}
         mfaCode={mfaCode}
+        mfaLockedOut={mfaLockedOut}
+        mfaLockoutSeconds={mfaLockoutSeconds}
         onMfaCodeChange={setMfaCode}
         onMfaAutoSubmit={(code) => runAsync(() => handleCompleteMfa(code))}
         onCancelMfaChallenge={() => runAsync(handleCancelMfaChallenge)}
@@ -656,9 +735,12 @@ export default function App() {
         onEditEntry={setEditEntry}
         showAddForm={showAddForm}
         editEntry={editEntry}
+        newSecretPrefillPassword={newSecretPrefillPassword}
         onCloseSecretForm={closeSecretForm}
         onAddEntry={handleAddEntry}
         onUpdateEntry={handleUpdateEntry}
+        onDeleteEntry={handleDeleteEntry}
+        deleteEntryLoading={loading}
         onOpenGenerator={openPasswordGenerator}
         showPasswordGenerator={showPasswordGenerator}
         onClosePasswordGenerator={closePasswordGenerator}

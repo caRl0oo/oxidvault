@@ -1,5 +1,5 @@
 /**
- * OxidVault Browser Extension — Phase 3
+ * OxidVault Browser Extension — Phase 3 + MFA bridge
  * Routes page hostname lookups to the Native-Messaging host (least privilege).
  *
  * Classic MV3 service worker (no "type": "module") — top-level await is invalid here
@@ -19,9 +19,11 @@ function disconnectNativePort(port) {
 
 /**
  * @param {object} payload Native-messaging JSON body
+ * @param {number} [timeoutMs]
  * @returns {Promise<object>}
  */
-function queryNativeHost(payload) {
+function queryNativeHost(payload, waitMs = 10000) {
+
   return new Promise(function (resolve) {
     const port = chrome.runtime.connectNative(HOST_NAME);
 
@@ -33,14 +35,13 @@ function queryNativeHost(payload) {
       return;
     }
 
-    const timeoutMs = 10000;
     const timeoutId = setTimeout(function () {
       disconnectNativePort(port);
       resolve({
         status: "error",
-        error: "native host timeout after " + timeoutMs / 1000 + "s",
+        error: "native host timeout after " + waitMs / 1000 + "s",
       });
-    }, timeoutMs);
+    }, waitMs);
 
     port.onMessage.addListener(function (message) {
       clearTimeout(timeoutId);
@@ -76,15 +77,59 @@ async function handleGetLogin(hostname, sendResponse) {
   }
 }
 
+async function handleVaultStatus(sendResponse) {
+  try {
+    const response = await queryNativeHost({ action: "vault_status" });
+    sendResponse(response);
+  } catch (err) {
+    console.debug(LOG_PREFIX + " VAULT_STATUS failed:", err);
+    sendResponse({ status: "error", error: String(err) });
+  }
+}
+
+async function handleRequestUnlock(sendResponse) {
+  try {
+    const response = await queryNativeHost({ action: "request_unlock" });
+    sendResponse(response);
+  } catch (err) {
+    console.debug(LOG_PREFIX + " REQUEST_UNLOCK failed:", err);
+    sendResponse({ status: "error", error: String(err) });
+  }
+}
+
+async function handleOpenNewSecret(password, sendResponse) {
+  try {
+    const response = await queryNativeHost({ action: "open_new_secret", password });
+    sendResponse(response);
+  } catch (err) {
+    console.debug(LOG_PREFIX + " OPEN_NEW_SECRET failed:", err);
+    sendResponse({ status: "error", error: String(err) });
+  }
+}
+
 chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
-  if (message?.type !== "GET_LOGIN" || !message?.hostname) {
-    return false;
+  if (message?.type === "GET_LOGIN" && message?.hostname) {
+    console.log(LOG_PREFIX + " get_login for", message.hostname);
+    void handleGetLogin(message.hostname, sendResponse);
+    return true;
   }
 
-  console.log(LOG_PREFIX + " get_login for", message.hostname);
-  void handleGetLogin(message.hostname, sendResponse);
+  if (message?.type === "VAULT_STATUS") {
+    void handleVaultStatus(sendResponse);
+    return true;
+  }
 
-  return true;
+  if (message?.type === "REQUEST_UNLOCK") {
+    void handleRequestUnlock(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "OPEN_NEW_SECRET" && typeof message.password === "string") {
+    void handleOpenNewSecret(message.password, sendResponse);
+    return true;
+  }
+
+  return false;
 });
 
 async function runStartupPing() {

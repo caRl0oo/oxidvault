@@ -14,6 +14,7 @@ mod ssh;
 mod window_events;
 
 use commands::AppState;
+use nm_bridge::BridgeAuthState;
 use ssh::SshManager;
 use tauri::Manager;
 use vault_core::Vault;
@@ -35,6 +36,7 @@ pub fn run() {
             vault: std::sync::Mutex::new(Vault::new()),
             ssh: SshManager::new(),
             clipboard: clipboard::SecureClipboard::new(),
+            bridge: std::sync::Mutex::new(BridgeAuthState::default()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::health_check,
@@ -42,12 +44,11 @@ pub fn run() {
             commands::create_vault,
             commands::open_vault,
             commands::unlock_vault,
-            commands::complete_unlock_vault,
-            commands::cancel_pending_unlock,
             commands::lock_vault,
             commands::list_entries,
             commands::add_entry,
             commands::update_entry,
+            commands::delete_entry,
             commands::get_entry,
             commands::reveal_secret,
             commands::copy_to_clipboard,
@@ -70,6 +71,7 @@ pub fn run() {
             commands::get_mfa_status,
             commands::disable_mfa,
             commands::verify_mfa_code,
+            commands::take_extension_new_secret,
             commands::ssh_connect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_disconnect,

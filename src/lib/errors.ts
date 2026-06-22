@@ -57,3 +57,8 @@ export function formatVaultError(error: unknown): string {
   }
   return raw || i18n.t("errors.unknown");
 }
+
+export function isInvalidMfaError(error: unknown): boolean {
+  const lower = String(error).replace(/^Error:\s*/i, "").trim().toLowerCase();
+  return lower.includes("invalid mfa code");
+}

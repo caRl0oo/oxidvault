@@ -6,17 +6,36 @@
 use tauri::State;
 use vault_core::{
     generate_password, PasswordGenOptions, RevealedSecret, SecretEntryInput, SecretEntryPublic,
-    SecretEntrySummary, SecretField, UnlockStep, UnlockVaultResponse, VaultInfo,
+    SecretEntrySummary, SecretField, UnlockStep, UnlockVaultResponse, VaultError, VaultInfo,
 };
 use zeroize::Zeroizing;
 
 use crate::clipboard::SecureClipboard;
+use crate::nm_bridge::BridgeAuthState;
+use crate::settings;
 use crate::ssh::SshManager;
 
 pub struct AppState {
     pub vault: std::sync::Mutex<vault_core::Vault>,
     pub ssh: SshManager,
     pub clipboard: SecureClipboard,
+    pub bridge: std::sync::Mutex<BridgeAuthState>,
+}
+
+fn note_unlock_error(state: &AppState, err: &VaultError) {
+    if matches!(err, VaultError::InvalidMfaCode) {
+        if let Ok(mut bridge) = state.bridge.lock() {
+            bridge.note_mfa_failed();
+        }
+    }
+}
+
+fn note_unlock_success(state: &AppState, app: &tauri::AppHandle, vault: &vault_core::Vault) {
+    if let Ok(mut bridge) = state.bridge.lock() {
+        bridge.clear_mfa_failed();
+    }
+    let _ = settings::save_vault_mfa_configured(app, vault.mfa_status().mfa_enabled);
+    crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
 }
 
 fn wrap_password(password: String) -> Zeroizing<String> {
@@ -63,12 +82,27 @@ pub fn create_vault(
 pub fn open_vault(
     path: String,
     password: String,
+    mfa_code: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<UnlockVaultResponse, String> {
     let password = wrap_password(password);
+    let mfa_code = mfa_code.map(wrap_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    let step = vault.open(&path, &password).map_err(|e| e.to_string())?;
+    let step = match vault.open(
+        &path,
+        &password,
+        mfa_code.as_ref().map(|code| code.as_str()),
+    ) {
+        Ok(step) => step,
+        Err(err) => {
+            note_unlock_error(&state, &err);
+            return Err(err.to_string());
+        }
+    };
+    if step == UnlockStep::Complete {
+        note_unlock_success(&state, &app, &vault);
+    }
     let response = unlock_response(&vault, step);
     if response.vault.initialized {
         bootstrap::remember_vault_path(&app, &response.vault);
@@ -79,31 +113,24 @@ pub fn open_vault(
 #[tauri::command]
 pub fn unlock_vault(
     password: String,
+    mfa_code: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<UnlockVaultResponse, String> {
     let password = wrap_password(password);
+    let mfa_code = mfa_code.map(wrap_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    let step = vault.unlock(&password).map_err(|e| e.to_string())?;
+    let step = match vault.unlock(&password, mfa_code.as_ref().map(|code| code.as_str())) {
+        Ok(step) => step,
+        Err(err) => {
+            note_unlock_error(&state, &err);
+            return Err(err.to_string());
+        }
+    };
+    if step == UnlockStep::Complete {
+        note_unlock_success(&state, &app, &vault);
+    }
     Ok(unlock_response(&vault, step))
-}
-
-#[tauri::command]
-pub fn complete_unlock_vault(
-    code: String,
-    state: State<'_, AppState>,
-) -> Result<VaultInfo, String> {
-    let code = Zeroizing::new(code);
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault
-        .complete_unlock_with_mfa(code.as_str())
-        .map_err(|e| e.to_string())?;
-    Ok(vault.info())
-}
-
-#[tauri::command]
-pub fn cancel_pending_unlock(state: State<'_, AppState>) -> Result<(), String> {
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.cancel_pending_unlock().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -134,6 +161,12 @@ pub fn update_entry(
 ) -> Result<SecretEntrySummary, String> {
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     vault.update_entry(&id, input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_entry(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.delete_entry(&id).map_err(|e| e.to_string())
 }
 
 /// Metadata-only entry view — no plaintext secrets over IPC.
@@ -195,18 +228,36 @@ pub fn get_mfa_status(state: State<'_, AppState>) -> Result<vault_core::MfaStatu
 }
 
 #[tauri::command]
-pub fn disable_mfa(state: State<'_, AppState>) -> Result<(), String> {
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.disable_mfa().map_err(|e| e.to_string())
+pub fn take_extension_new_secret(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let mut bridge = state.bridge.lock().map_err(|e| e.to_string())?;
+    Ok(bridge
+        .take_pending_new_secret()
+        .map(|password| password.to_string()))
 }
 
 #[tauri::command]
-pub fn verify_mfa_code(code: String, state: State<'_, AppState>) -> Result<bool, String> {
+pub fn disable_mfa(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.disable_mfa().map_err(|e| e.to_string())?;
+    let _ = settings::save_vault_mfa_configured(&app, false);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn verify_mfa_code(
+    code: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
     let code = Zeroizing::new(code);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault
+    let verified = vault
         .verify_mfa_code(code.as_str())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if verified {
+        let _ = settings::save_vault_mfa_configured(&app, true);
+    }
+    Ok(verified)
 }
 
 pub mod ssh;

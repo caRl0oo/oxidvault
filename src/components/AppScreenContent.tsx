@@ -35,6 +35,8 @@ interface AppScreenContentProps {
   readonly onUnlock: () => void;
   readonly mfaChallengeActive: boolean;
   readonly mfaCode: string;
+  readonly mfaLockedOut: boolean;
+  readonly mfaLockoutSeconds: number;
   readonly onMfaCodeChange: (value: string) => void;
   readonly onMfaAutoSubmit: (code: string) => void;
   readonly onCancelMfaChallenge: () => void;
@@ -66,9 +68,12 @@ interface AppScreenContentProps {
   readonly onEditEntry: (entry: SecretEntryPublic) => void;
   readonly showAddForm: boolean;
   readonly editEntry: SecretEntryPublic | null;
+  readonly newSecretPrefillPassword?: string | null;
   readonly onCloseSecretForm: () => void;
   readonly onAddEntry: (input: SecretEntryInputFull) => void;
   readonly onUpdateEntry: (id: string, input: SecretEntryInputFull) => void;
+  readonly onDeleteEntry: (id: string) => void;
+  readonly deleteEntryLoading?: boolean;
   readonly onOpenGenerator: (apply?: (pwd: string) => void) => void;
   readonly showPasswordGenerator: boolean;
   readonly onClosePasswordGenerator: () => void;
@@ -115,6 +120,8 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onPasswordChange={props.onPasswordChange}
           mfaChallenge={props.mfaChallengeActive}
           mfaCode={props.mfaCode}
+          mfaLockedOut={props.mfaLockedOut}
+          mfaLockoutSeconds={props.mfaLockoutSeconds}
           onMfaCodeChange={props.onMfaCodeChange}
           onMfaAutoSubmit={props.onMfaAutoSubmit}
           error={props.error}
@@ -135,6 +142,8 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onPasswordChange={props.onPasswordChange}
           mfaChallenge={props.mfaChallengeActive}
           mfaCode={props.mfaCode}
+          mfaLockedOut={props.mfaLockedOut}
+          mfaLockoutSeconds={props.mfaLockoutSeconds}
           onMfaCodeChange={props.onMfaCodeChange}
           onMfaAutoSubmit={props.onMfaAutoSubmit}
           error={props.error}
@@ -179,10 +188,13 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           error={props.error}
           showAddForm={props.showAddForm}
           editEntry={props.editEntry}
+          newSecretPrefillPassword={props.newSecretPrefillPassword}
           loading={props.loading}
           onCloseSecretForm={props.onCloseSecretForm}
           onAddEntry={props.onAddEntry}
           onUpdateEntry={props.onUpdateEntry}
+          onDeleteEntry={props.onDeleteEntry}
+          deleteEntryLoading={props.deleteEntryLoading}
           onOpenGenerator={props.onOpenGenerator}
           showPasswordGenerator={props.showPasswordGenerator}
           onClosePasswordGenerator={props.onClosePasswordGenerator}

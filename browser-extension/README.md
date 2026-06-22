@@ -16,7 +16,19 @@ Minimale Manifest-V3-Erweiterung: Native-Messaging-Brücke + dynamisches AutoFil
 2. Extension neu laden, Login-Seite im Browser öffnen.
 3. Bei erkanntem Passwort-Feld füllt `content.js` User/Passwort automatisch (Service-Worker-Konsole: `get_login for …`).
 
-**Voraussetzung:** Desktop-App muss laufen — der NM-Host (`oxidvault-nmh.exe`) leitet `get_login` per localhost-IPC an die GUI weiter.
+**Bei gesperrtem Vault mit MFA:** Extension zeigt Hinweis (Popup + Banner) — Entsperrung nur in der Desktop-App (Passwort + MFA). Die Extension fordert **keinen** MFA-Code an.
+
+### WASM-Generator (Phase 5)
+
+Vor dem Laden der Extension:
+
+```powershell
+.\scripts\build-wasm.ps1
+```
+
+Das Popup nutzt `browser-extension/pkg/vault_wasm.js` — dieselbe Logik wie `generate_password_cmd` auf dem Desktop. **Speichern & AutoFill** öffnet OxidVault mit vorbefülltem Passwort im Dialog „Neues Secret“.
+
+**Voraussetzung:** Desktop-App muss laufen — der NM-Host (`oxidvault-nmh.exe`) leitet Anfragen per localhost-IPC an die GUI weiter.
 
 ---
 
@@ -80,9 +92,12 @@ Bei Fehlern (z. B. `Native host disconnected`) zuerst prüfen:
 
 | Datei | Rolle |
 |---|---|
-| `manifest.json` | Manifest V3, Permission `nativeMessaging`, Background Service Worker |
-| `content.js` | Login-Formular-Erkennung, AutoFill |
-| `background.js` | `connectNative`, `get_login`-Relay, Ping |
+| `manifest.json` | Manifest V3, Permission `nativeMessaging`, Background Service Worker, Popup |
+| `popup.html` / `popup.js` | Vault-Status, WASM-Generator, Theme-Auswahl |
+| `themes.css` / `popup.css` | Oxid/Dracula/Nord Theme-Variablen (`--color-vault-*`) |
+| `pkg/` | wasm-pack Output (`vault_wasm.js` + `.wasm`) — via `scripts/build-wasm.ps1` |
+| `content.js` | Login-Formular-Erkennung, AutoFill, MFA-Banner |
+| `background.js` | `connectNative`, `get_login` / `vault_status` / `request_unlock` |
 | `host/com.oxidvault.app.json` | Native-Host-Manifest (wird vom PS-Skript geschrieben) |
 
 Weitere Architekturdetails: [ARCHITECTURE.md §10](../ARCHITECTURE.md#10-browser-erweiterung--native-messaging-phase-1).

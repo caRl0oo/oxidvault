@@ -18,8 +18,79 @@ OxidVault ist ein **Offline-First**-Tresor für Passwörter, SSH-Zugänge und we
 | **Zero-Knowledge** | Master-Passwort und Secret-Payloads verbleiben im Rust-Backend; Klartext gelangt nicht dauerhaft in die UI-Schicht |
 | **Governance-ready** | Zentrale Richtlinien per Policy-Datei, auditierbare Ereignisse, Compliance-Dashboard |
 | **Betriebssicher** | Atomare Schreibvorgänge, exklusives Datei-Locking, Key-Rotation ohne Payload-Re-Encrypt |
+| **MFA-geschützt** | TOTP (RFC 6238) als zweite Faktor-Hürde; atomare Entsperrung ohne Zwischenzustände im RAM |
 
 Ausführliche technische Spezifikationen: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+
+---
+
+## Sicherheit & Architektur
+
+OxidVault ist als **speichersicherer, offline-fähiger Tresor** konzipiert. Sicherheitsentscheidungen werden im Rust-Kern (`vault-core`) durchgesetzt — die React-Oberfläche ist reine Präsentationsschicht ohne Zugriff auf Schlüsselmaterial.
+
+### Offline-First & lokale Souveränität
+
+- **Keine Cloud-Abhängigkeit** — Vault-Dateien (`.oxid`) verbleiben vollständig unter Ihrer Kontrolle (lokal, UNC-Pfad, optional Git-Sync der *verschlüsselten* Datei).
+- **Kein Fremd-Hosting** — Secrets werden nicht an Drittanbieter übertragen; Autofill-Integrationen (Browser-Erweiterung) nutzen kontrollierte Native-Messaging-Kanäle.
+- **On-Premise by Design** — geeignet für AD-Umgebungen, isolierte Netzwerke und regulierte Branchen.
+
+### Zwei-Faktor-Authentifizierung (TOTP / MFA)
+
+- **RFC 6238** — zeitbasierte Einmalpasswörter (TOTP) vollständig **offline** validierbar; kein SMS-Gateway, kein OAuth-Provider.
+- **Enrollment in den Einstellungen** — CSPRNG-Secret, QR-Code (otpauth-URI), verschlüsselte Persistenz im Vault-Payload (AES-256-GCM).
+- **Entsperr-Flow** — nach korrektem Master-Passwort erscheint die MFA-Challenge; Auto-Fokus, Auto-Submit und **UI-seitiges Rate-Limiting** (3 Fehlversuche → 30 s Sperre) erschweren Brute-Force-Versuche am Desktop.
+
+### Atomare Entsperrung
+
+Der Tresor kann **technisch nicht** nur mit dem Master-Passwort geöffnet werden, wenn MFA aktiv ist:
+
+```
+Passwort ──► KEK-Ableitung (Argon2id) ──► Payload-Entschlüsselung (ephemer)
+                    │
+                    ▼
+            MFA aktiv? ──Nein──► VaultHandle committen ──► entsperrt
+                    │
+                   Ja
+                    ▼
+            mfa_code vorhanden & gültig? ──Nein──► AuthError (kein Commit)
+                    │
+                   Ja
+                    ▼
+            Keys & Einträge erst jetzt in Vault-Session
+```
+
+- Zentrale Funktion: `vault-core/src/auth.rs` → `unlock_vault(password, mfa_code)` → `VaultHandle` | `AuthError`
+- **Kein `PendingUnlock`** — bei `MfaRequired`, `InvalidPassword` oder `InvalidMfa` wird **nichts** an der live `Vault`-Session committet.
+- Entschlüsselte Daten existieren während der Prüfung nur in **ephemerem Stack-Speicher** und werden bei Abbruch explizit zeroized.
+
+### Zero-Knowledge & Speicherschutz
+
+| Aspekt | Umsetzung |
+|---|---|
+| Master-Passwort | Nur zur KEK-Ableitung; `Zeroizing<String>` an IPC-Grenzen |
+| MFA-Codes | `Zeroizing<String>`; keine Persistenz |
+| Gesperrter Vault | `master_key`, `kek`, Einträge und Klartext-Secrets werden aus dem RAM entfernt |
+| Lock / Close | `zeroize` auf allen kryptografischen Puffern und Secret-Feldern |
+| IPC | Keine dauerhafte Klartext-Übertragung — Metadaten via `SecretEntryPublic`; Reveal/Clipboard bewusst einmalig |
+
+> Selbst im gesperrten Zustand verbleiben **keine entschlüsselten Secrets** in der aktiven Vault-Session.
+
+### Enterprise-Oberfläche & Betrieb
+
+- **Modulares Theme-System** — Oxid Default, Oxid Light, Dracula, Nord u. a.; semantische Design-Tokens (`vault-accent`, `vault-danger`, …) für konsistente Darstellung in hellen, dunklen und High-Contrast-Umgebungen.
+- **Admin-Policy (GPO-Stil)** — zentrale Vorgaben für Passwortlänge, Auto-Lock, UI-Sperren.
+- **Audit & Compliance** — append-only Audit-Log mit Hash-Kette, Export für Prüfer, Compliance-Dashboard.
+
+### Relevante Module (Auszug)
+
+| Modul / Komponente | Verantwortung |
+|---|---|
+| `crates/vault-core/src/auth.rs` | Atomare Authentifizierung (`AuthError`, `VaultHandle`, `unlock_vault`) |
+| `crates/vault-core/src/mfa.rs` | TOTP-Enrollment, Verifikation (RFC 6238), verschlüsselte MFA-Secret-Speicherung |
+| `crates/vault-core/src/crypto.rs` | Argon2id, AES-256-GCM, `MasterKey`, Zeroizing |
+| `src/hooks/useMfaRateLimit.ts` | UI-Rate-Limiting für MFA-Fehlversuche (Lockout + Countdown) |
+| `src/components/screens/AuthForm.tsx` | Entsperr-Modal mit dynamischer MFA-Challenge |
+| `src-tauri/src/commands/` | IPC-Bridge; `Zeroizing` für Passwörter und MFA-Codes |
 
 ---
 
@@ -52,6 +123,7 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 
 ### Weitere Enterprise-Funktionen
 
+- **Zwei-Faktor-Authentifizierung (TOTP)** — MFA-Enrollment, atomare Entsperrung, UI-Rate-Limiting
 - **Security Dashboard** — Offline-Schwachstellenanalyse (Duplikate, Entropie, Ablaufdaten)
 - **Compliance-Dashboard** — Policy-, Audit- und Key-Age-Status mit Rotations-Empfehlung (> 90 Tage)
 - **SSH Quick Connect** — Integriertes Terminal für gespeicherte SSH-Zugänge
@@ -61,13 +133,16 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 
 ## Compliance & Sicherheit
 
+> Ausführliche Architektur- und MFA-Spezifikation: Abschnitt [Sicherheit & Architektur](#sicherheit--architektur) und [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ### Zero-Knowledge-Architektur
 
 OxidVault folgt einem **Zero-Knowledge-Modell**:
 
 - Das **Master-Passwort** wird ausschließlich zur Ableitung des Master-Keys (Argon2id) verwendet und nicht persistiert.
 - **Secret-Payloads** werden mit AES-256-GCM verschlüsselt und verlassen den Rust-Kern standardmäßig nicht als Klartext über die IPC-Bridge.
-- Sensible Puffer werden mit **`zeroize`** beim Sperren und Schließen aus dem Speicher entfernt.
+- **MFA-TOTP-Secrets** liegen verschlüsselt im Vault-Payload; Validierung erfolgt offline im Backend.
+- Sensible Puffer werden mit **`zeroize`** beim Sperren, bei Auth-Fehlern und Schließen aus dem Speicher entfernt.
 - Explizite Freigabe (Reveal, Clipboard) ist bewusst eingeschränkt und auditierbar.
 
 ### Kryptografie (Auszug)
@@ -76,6 +151,7 @@ OxidVault folgt einem **Zero-Knowledge-Modell**:
 |---|---|
 | Key-Ableitung | Argon2id (OWASP-Empfehlung) |
 | Verschlüsselung | AES-256-GCM |
+| Zweiter Faktor | TOTP / RFC 6238 (SHA-1, 6 Stellen, 30 s Fenster) |
 | Zufallszahlen | OS CSPRNG (`getrandom`) |
 | Passwort-Policy | Mindestlänge, Blocklist, zxcvbn-Entropie (UX + Backend) |
 
@@ -126,8 +202,9 @@ Installer-Artefakte: `target/release/bundle/` (MSI, NSIS, portable EXE).
 
 1. OxidVault starten und **neuen Tresor** anlegen (lokal oder UNC-Pfad).
 2. **Master-Passwort** gemäß Policy wählen (Mindestlänge wird angezeigt).
-3. Optional: Admin-Policy unter `C:\ProgramData\OxidVault\policy.json` bereitstellen.
-4. Im Tab **Security** Compliance-Status und Passwort-Audit prüfen; bei Bedarf **Passwort rotieren**.
+3. Optional: **Zwei-Faktor-Authentifizierung** unter Einstellungen aktivieren (Authenticator-App).
+4. Optional: Admin-Policy unter `C:\ProgramData\OxidVault\policy.json` bereitstellen.
+5. Im Tab **Security** Compliance-Status und Passwort-Audit prüfen; bei Bedarf **Passwort rotieren**.
 
 ### Qualitätssicherung (CI)
 
@@ -151,7 +228,8 @@ Der Workflow [`.github/workflows/security-audit.yml`](.github/workflows/security
 │  Desktop      Tauri v2 (Rust)                  │
 ├──────────────────────────────────────────────┤
 │  Kern         vault-core (Rust)              │
-│               argon2 · aes-gcm · zeroize       │
+│               auth · mfa · argon2 · aes-gcm  │
+│               zeroize · totp-rs              │
 └──────────────────────────────────────────────┘
 ```
 
@@ -163,6 +241,24 @@ Der Workflow [`.github/workflows/security-audit.yml`](.github/workflows/security
 | **Build** | Vite, Cargo | Optimierte Release-Binaries (`LTO`, `strip`) |
 
 Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)** — Secrets und Schlüsselmaterial bleiben im speichersicheren Backend.
+
+---
+
+## Changelog
+
+### [Unreleased]
+
+#### Sicherheit & Authentifizierung
+
+- **TOTP-MFA (RFC 6238)** — Enrollment mit QR-Code, verschlüsselte Secret-Speicherung im Vault-Payload, Settings-UI (`MfaSetupModal`, `get_mfa_status`, `disable_mfa`).
+- **Atomare Entsperrung** — neues Modul `vault-core/src/auth.rs` mit `unlock_vault(password, mfa_code) → VaultHandle | AuthError`; kein teilentschlüsselter Vault-Zustand im RAM; Entfernung von `PendingUnlock` / zweistufigem Pending-Unlock.
+- **IPC** — `open_vault` / `unlock_vault` akzeptieren optionales `mfa_code`; einheitlicher `UnlockVaultResponse`-Flow.
+- **Entsperr-UX** — dynamisches MFA-Feld im `AuthForm`, Auto-Fokus, Auto-Submit bei 6 Ziffern.
+- **UI-Rate-Limiting** — `useMfaRateLimit`: nach 3 ungültigen MFA-Codes 30 s Lockout mit Countdown (`vault-danger`-Theme-Tokens).
+
+#### Dokumentation
+
+- `ARCHITECTURE.md` — Datenfluss atomare Entsperrung, `AuthError`, `UnlockVaultResponse`, Changelog-Einträge.
 
 ---
 

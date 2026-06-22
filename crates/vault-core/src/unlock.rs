@@ -3,7 +3,7 @@
 // GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
 // weitergeben und/oder modifizieren.
 
-//! Two-step vault unlock when TOTP MFA is enabled.
+//! Vault unlock outcomes and IPC response types.
 
 use serde::{Deserialize, Serialize};
 

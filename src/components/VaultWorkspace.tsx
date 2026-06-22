@@ -50,10 +50,13 @@ interface VaultWorkspaceProps {
   readonly error: string | null;
   readonly showAddForm: boolean;
   readonly editEntry: SecretEntryPublic | null;
+  readonly newSecretPrefillPassword?: string | null;
   readonly loading: boolean;
   readonly onCloseSecretForm: () => void;
   readonly onAddEntry: (input: SecretEntryInputFull) => void;
   readonly onUpdateEntry: (id: string, input: SecretEntryInputFull) => void;
+  readonly onDeleteEntry: (id: string) => void;
+  readonly deleteEntryLoading?: boolean;
   readonly onOpenGenerator: (apply?: (pwd: string) => void) => void;
   readonly showPasswordGenerator: boolean;
   readonly onClosePasswordGenerator: () => void;
@@ -90,10 +93,13 @@ export function VaultWorkspace({
   error,
   showAddForm,
   editEntry,
+  newSecretPrefillPassword,
   loading,
   onCloseSecretForm,
   onAddEntry,
   onUpdateEntry,
+  onDeleteEntry,
+  deleteEntryLoading,
   onOpenGenerator,
   showPasswordGenerator,
   onClosePasswordGenerator,
@@ -187,6 +193,8 @@ export function VaultWorkspace({
           onSelectEntry={onSelectEntry}
           onApplyDashboardFilter={onApplyDashboardFilter}
           onEditEntry={onEditEntry}
+          onDeleteEntry={onDeleteEntry}
+          deleteEntryLoading={deleteEntryLoading}
           onQuickConnect={onQuickConnect}
           sshConnecting={sshConnecting}
           reachability={reachability}
@@ -202,6 +210,7 @@ export function VaultWorkspace({
         open={showAddForm || editEntry !== null}
         mode={editEntry ? "edit" : "create"}
         editEntry={editEntry ?? undefined}
+        initialPassword={newSecretPrefillPassword ?? undefined}
         loading={loading}
         onClose={onCloseSecretForm}
         onSubmit={onAddEntry}
@@ -229,6 +238,8 @@ interface VaultMainPanelProps {
   readonly onSelectEntry: (id: string) => void;
   readonly onApplyDashboardFilter: (filter: DashboardFilter) => void;
   readonly onEditEntry: (entry: SecretEntryPublic) => void;
+  readonly onDeleteEntry: (id: string) => void;
+  readonly deleteEntryLoading?: boolean;
   readonly onQuickConnect: (id: string) => void;
   readonly sshConnecting: boolean;
   readonly reachability: Record<string, ReachabilityState>;
@@ -242,6 +253,8 @@ function VaultMainPanel({
   onSelectEntry,
   onApplyDashboardFilter,
   onEditEntry,
+  onDeleteEntry,
+  deleteEntryLoading,
   onQuickConnect,
   sshConnecting,
   reachability,
@@ -268,6 +281,8 @@ function VaultMainPanel({
       <EntryDetail
         entry={selectedEntry}
         onEdit={() => onEditEntry(selectedEntry)}
+        onDelete={() => onDeleteEntry(selectedEntry.id)}
+        deleteLoading={deleteEntryLoading}
         onQuickConnect={onQuickConnect}
         sshConnecting={sshConnecting}
         reachability={reachability[selectedEntry.id]}

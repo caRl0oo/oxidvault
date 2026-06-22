@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
+import { VaultButton } from "@/components/ui/VaultButton";
 import { useSecureCopy } from "@/hooks/useSecureCopy";
 import { formatVaultError } from "@/lib/errors";
 import { revealSecret } from "@/lib/ipc";
@@ -17,6 +19,8 @@ import { isProbeableEntryType } from "@/types/vault";
 interface EntryDetailProps {
   readonly entry: SecretEntryPublic;
   readonly onEdit: () => void;
+  readonly onDelete: () => void;
+  readonly deleteLoading?: boolean;
   readonly onQuickConnect?: (entryId: string) => void;
   readonly sshConnecting?: boolean;
   readonly reachability?: ReachabilityState;
@@ -37,6 +41,8 @@ function absorbDiscarded(_discarded: string): void {
 export function EntryDetail({
   entry,
   onEdit,
+  onDelete,
+  deleteLoading = false,
   onQuickConnect,
   sshConnecting,
   reachability,
@@ -46,6 +52,7 @@ export function EntryDetail({
   const prefix = entry.id;
   const [openingWebsite, setOpeningWebsite] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const canOpenWebsite =
     entry.type === "web_login" && validateHttpUrl(entry.url).ok;
 
@@ -85,7 +92,27 @@ export function EntryDetail({
           >
             {t("common.edit")}
           </button>
+          <VaultButton
+            variant="outline"
+            tone="danger"
+            size="sm"
+            onClick={() => setDeleteModalOpen(true)}
+            disabled={deleteLoading}
+          >
+            {t("entry.delete")}
+          </VaultButton>
         </header>
+
+        <DeleteConfirmationModal
+          open={deleteModalOpen}
+          entryTitle={entry.title}
+          loading={deleteLoading}
+          onClose={() => setDeleteModalOpen(false)}
+          onConfirm={() => {
+            setDeleteModalOpen(false);
+            onDelete();
+          }}
+        />
 
         {(entry.folder || (entry.tags && entry.tags.length > 0)) && (
           <div className="flex flex-wrap items-center gap-2">

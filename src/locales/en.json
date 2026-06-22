@@ -66,6 +66,7 @@
     "mfaCodePlaceholder": "6-digit code",
     "mfaSubmit": "Verify code",
     "mfaCancel": "Cancel",
+    "mfaLockout": "Too many attempts. Please wait: {{seconds}}s",
     "vaultNamePlaceholder": "Vault name",
     "masterPasswordPlaceholder": "Master password",
     "back": "Back",
@@ -109,7 +110,13 @@
     "connecting": "Connecting…",
     "quickConnect": "Quick Connect",
     "reveal": "Reveal",
-    "hide": "Hide"
+    "hide": "Hide",
+    "delete": "Delete",
+    "deleteConfirmTitle": "Permanently delete secret?",
+    "deleteConfirmBody": "“{{title}}” will be irrevocably removed from the vault.",
+    "deleteConfirmHardDeleteHint": "OxidVault uses hard delete: the entry is physically removed from the encrypted vault — no trash bin or deleted flag.",
+    "deleteConfirmAction": "Delete permanently",
+    "deleteInProgress": "Deleting…"
   },
   "secretForm": {
     "createTitle": "New secret",
@@ -195,6 +202,7 @@
       "VaultLocked": "Vault was locked",
       "EntryCreated": "Entry was created",
       "EntryUpdated": "Entry was updated",
+      "EntryDeleted": "Entry was deleted",
       "SecretCopied": "Secret was copied to clipboard",
       "SecretRevealed": "Secret was revealed",
       "VaultKeyRotated": "Master key was rotated"

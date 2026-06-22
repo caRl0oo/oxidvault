@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLogo } from "@/components/AppLogo";
 import { MasterPasswordInput, evaluateMasterPassword } from "@/components/MasterPasswordInput";
-import { INPUT_FIELD_CLASS } from "@/lib/uiClasses";
+import { INPUT_FIELD_CLASS, INPUT_FIELD_DISABLED_CLASS, MFA_LOCKOUT_BANNER_CLASS } from "@/lib/uiClasses";
 
 const MFA_CODE_LENGTH = 6;
 const MFA_DIGITS_ONLY = /\D/g;
@@ -34,6 +34,8 @@ interface AuthFormProps {
   readonly onBack?: () => void;
   readonly onSwitchVault?: () => void;
   readonly onCancelMfaChallenge?: () => void;
+  readonly mfaLockedOut?: boolean;
+  readonly mfaLockoutSeconds?: number;
   readonly passwordRef: React.RefObject<HTMLInputElement | null>;
 }
 
@@ -63,10 +65,11 @@ function isSubmitEnabled(
   loading: boolean,
   mfaChallenge: boolean,
   mfaCode: string,
+  mfaLockedOut: boolean,
   enforceMasterPolicy: boolean | undefined,
   password: string,
 ): boolean {
-  if (loading) {
+  if (loading || mfaLockedOut) {
     return false;
   }
   if (mfaChallenge) {
@@ -147,15 +150,30 @@ function PasswordField({
   );
 }
 
+function MfaLockoutBanner({ seconds }: Readonly<{ seconds: number }>) {
+  const { t } = useTranslation();
+  return (
+    <p
+      className={MFA_LOCKOUT_BANNER_CLASS}
+      role="status"
+      aria-live="polite"
+    >
+      {t("auth.mfaLockout", { seconds })}
+    </p>
+  );
+}
+
 function MfaCodeField({
   mfaCode,
   onMfaCodeChange,
   onAutoSubmit,
   loading = false,
+  lockedOut = false,
 }: Readonly<
   Required<Pick<AuthFormProps, "mfaCode" | "onMfaCodeChange">> & {
     readonly onAutoSubmit?: (code: string) => void;
     readonly loading?: boolean;
+    readonly lockedOut?: boolean;
   }
 >) {
   const { t } = useTranslation();
@@ -168,12 +186,15 @@ function MfaCodeField({
 
   useEffect(() => {
     previousLengthRef.current = mfaCode.length;
-    if (!loading && mfaCode.length === 0) {
+    if (!loading && !lockedOut && mfaCode.length === 0) {
       inputRef.current?.focus();
     }
-  }, [loading, mfaCode]);
+  }, [loading, lockedOut, mfaCode]);
 
   const handleChange = (value: string) => {
+    if (lockedOut) {
+      return;
+    }
     const digits = normalizeMfaCode(value);
     const previousLength = previousLengthRef.current;
     previousLengthRef.current = digits.length;
@@ -182,7 +203,8 @@ function MfaCodeField({
     if (
       digits.length === MFA_CODE_LENGTH &&
       previousLength < MFA_CODE_LENGTH &&
-      !loading
+      !loading &&
+      !lockedOut
     ) {
       onAutoSubmit?.(digits);
     }
@@ -199,9 +221,10 @@ function MfaCodeField({
       onChange={(e) => handleChange(e.target.value)}
       placeholder={t("auth.mfaCodePlaceholder")}
       maxLength={MFA_CODE_LENGTH}
-      disabled={loading}
-      className={INPUT_FIELD_CLASS}
+      disabled={loading || lockedOut}
+      className={`${INPUT_FIELD_CLASS} ${INPUT_FIELD_DISABLED_CLASS}`}
       aria-label={t("auth.mfaCodePlaceholder")}
+      aria-disabled={lockedOut}
     />
   );
 }
@@ -209,12 +232,18 @@ function MfaCodeField({
 function AuthFormFields(props: Readonly<AuthFormProps>) {
   if (props.mfaChallenge && props.onMfaCodeChange) {
     return (
-      <MfaCodeField
-        mfaCode={props.mfaCode ?? ""}
-        onMfaCodeChange={props.onMfaCodeChange}
-        onAutoSubmit={props.onMfaAutoSubmit}
-        loading={props.loading}
-      />
+      <>
+        {props.mfaLockedOut ? (
+          <MfaLockoutBanner seconds={props.mfaLockoutSeconds ?? 0} />
+        ) : null}
+        <MfaCodeField
+          mfaCode={props.mfaCode ?? ""}
+          onMfaCodeChange={props.onMfaCodeChange}
+          onAutoSubmit={props.onMfaAutoSubmit}
+          loading={props.loading}
+          lockedOut={props.mfaLockedOut ?? false}
+        />
+      </>
     );
   }
 
@@ -282,6 +311,7 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
   const { t } = useTranslation();
   const mfaChallenge = props.mfaChallenge ?? false;
   const mfaCode = props.mfaCode ?? "";
+  const mfaLockedOut = props.mfaLockedOut ?? false;
   const labels = resolveAuthLabels(
     mfaChallenge,
     props.titleKey,
@@ -292,6 +322,7 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
     props.loading,
     mfaChallenge,
     mfaCode,
+    mfaLockedOut,
     props.enforceMasterPolicy,
     props.password,
   );
@@ -308,13 +339,13 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
           }}
         >
           <AuthFormFields {...props} mfaChallenge={mfaChallenge} mfaCode={mfaCode} />
-          {props.error ? (
+          {props.error && !mfaLockedOut ? (
             <p className="font-mono text-xs text-vault-danger">{props.error}</p>
           ) : null}
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
+            className={`w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50 ${INPUT_FIELD_DISABLED_CLASS}`}
           >
             {props.loading ? t("common.pleaseWait") : t(labels.submitLabelKey)}
           </button>

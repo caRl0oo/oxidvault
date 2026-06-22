@@ -1603,8 +1603,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3961,6 +3963,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5342,8 +5355,28 @@ dependencies = [
  "totp-rs",
  "url",
  "uuid",
+ "vault-generator",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "vault-generator"
+version = "1.0.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "vault-wasm"
+version = "1.0.0"
+dependencies = [
+ "serde-wasm-bindgen",
+ "vault-generator",
+ "wasm-bindgen",
 ]
 
 [[package]]

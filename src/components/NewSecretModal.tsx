@@ -36,6 +36,7 @@ interface NewSecretModalProps {
   readonly loading: boolean;
   readonly mode?: "create" | "edit";
   readonly editEntry?: SecretEntryPublic;
+  readonly initialPassword?: string;
   readonly onClose: () => void;
   readonly onSubmit: (input: SecretEntryInputFull) => void;
   readonly onUpdate?: (id: string, input: SecretEntryInputFull) => void;
@@ -61,6 +62,7 @@ export function NewSecretModal({
   loading,
   mode = "create",
   editEntry,
+  initialPassword,
   onClose,
   onSubmit,
   onUpdate,
@@ -115,7 +117,7 @@ export function NewSecretModal({
       setFolder("");
       setTags([]);
       setExpiresAt("");
-      setWeb(emptyWeb);
+      setWeb(initialPassword ? { ...emptyWeb, password: initialPassword } : emptyWeb);
       setSsh(emptySsh);
       setApi(emptyApi);
       setDb(emptyDb);
@@ -123,7 +125,7 @@ export function NewSecretModal({
       setNote(emptyNote);
     }
     setTimeout(() => titleRef.current?.focus(), 50);
-  }, [open, isEdit, editEntry]);
+  }, [open, isEdit, editEntry, initialPassword]);
 
   useEffect(() => {
     if (!open) {

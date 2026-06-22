@@ -44,20 +44,23 @@ export async function createVault(
 export async function openVault(
   path: string,
   password: string,
+  mfaCode?: string,
 ): Promise<UnlockVaultResponse> {
-  return invoke<UnlockVaultResponse>("open_vault", { path, password });
+  return invoke<UnlockVaultResponse>("open_vault", {
+    path,
+    password,
+    mfaCode: mfaCode ?? null,
+  });
 }
 
-export async function unlockVault(password: string): Promise<UnlockVaultResponse> {
-  return invoke<UnlockVaultResponse>("unlock_vault", { password });
-}
-
-export async function completeUnlockVault(code: string): Promise<VaultInfo> {
-  return invoke<VaultInfo>("complete_unlock_vault", { code });
-}
-
-export async function cancelPendingUnlock(): Promise<void> {
-  return invoke<void>("cancel_pending_unlock");
+export async function unlockVault(
+  password: string,
+  mfaCode?: string,
+): Promise<UnlockVaultResponse> {
+  return invoke<UnlockVaultResponse>("unlock_vault", {
+    password,
+    mfaCode: mfaCode ?? null,
+  });
 }
 
 export async function lockVault(): Promise<VaultInfo> {
@@ -81,6 +84,10 @@ export async function updateEntry(
   return invoke<SecretEntrySummary>("update_entry", { id, input });
 }
 
+export async function deleteEntry(id: string): Promise<void> {
+  return invoke<void>("delete_entry", { id });
+}
+
 export async function getEntry(id: string): Promise<SecretEntryPublic> {
   return invoke<SecretEntryPublic>("get_entry", { id });
 }
@@ -101,6 +108,11 @@ export async function copyToClipboard(
 
 export async function generatePassword(options: PasswordGenOptions): Promise<string> {
   return invoke<string>("generate_password_cmd", { options });
+}
+
+/** One-shot password prefill from the browser extension (consumed on read). */
+export async function takeExtensionNewSecret(): Promise<string | null> {
+  return invoke<string | null>("take_extension_new_secret");
 }
 
 export async function checkEntriesReachability(

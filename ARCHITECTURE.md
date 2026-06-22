@@ -409,7 +409,7 @@ Backend: Vault::lock()
 
 ### Passwort-Generator (v0.1.0)
 
-> **Status:** ✅ `crates/vault-core/src/generator.rs` · Tauri `generate_password_cmd`
+> **Status:** ✅ `crates/vault-generator` (shared) · `vault-core` re-export · Tauri `generate_password_cmd` · WASM `vault-wasm`
 
 | Parameter | Wert |
 |---|---|
@@ -627,6 +627,24 @@ Bearbeiten → reveal_secret (Form) → update_entry → persist(&entries) → A
                     list_entries + get_entry (Public) → Sidebar + Detail refresh
 ```
 
+### Datenfluss: Secret löschen (Hard-Delete)
+
+> **Prinzip:** OxidVault führt **kein Soft-Delete** durch — gelöschte Secrets hinterlassen **keine** `deleted`-Flags oder Tombstones im verschlüsselten Payload.
+
+1. User öffnet `EntryDetail` → **Löschen** (danger) → `DeleteConfirmationModal` mit Hard-Delete-Hinweis.
+2. Frontend ruft `delete_entry({ id })` auf.
+3. `vault-core::Vault::delete_entry` / `delete_secret(Uuid)`:
+   - `zeroize_secrets()` auf dem Eintrag **vor** `Vec::remove`
+   - `persist()` — atomischer Rewrite (`.oxid.tmp` → rename) ohne den Eintrag
+   - Audit: `EntryDeleted` (Metadaten, kein Secret-Inhalt)
+4. Frontend leert Auswahl → Übersicht; bei aktivem Git-Sync: `sync_vault_git` pusht den geänderten `.oxid`-Snapshot.
+
+```
+Detail → delete_entry → zeroize → remove from Vec → persist (atomic) → .oxid ohne Eintrag
+                                              ↓
+                              optional: sync_vault_git → commit/push
+```
+
 ### Datenfluss: SSH Quick Connect
 
 > **Status:** ✅ `russh` · `src-tauri/src/ssh/` · `SshTerminalModal` (xterm.js)
@@ -734,14 +752,14 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### Datenfluss: Vault entsperren
 
-1. User gibt Master-Passwort im Frontend ein.
-2. Frontend ruft `open_vault` (Erstöffnung) oder `unlock_vault` (Re-Unlock nach Lock) auf.
-3. Tauri Command leitet an `vault-core::Vault` weiter.
-4. `vault-core` leitet via Argon2id den KEK ab, entschlüsselt den Vault-Payload und prüft `mfa.enabled`.
-5. **Ohne MFA:** Master-Key (DEK) und Einträge werden committet → `UnlockVaultResponse { unlocked: true, mfaRequired: false }`.
-6. **Mit MFA:** Entschlüsselte Secrets verbleiben in `PendingUnlock` (Zeroizing on Drop); Vault bleibt `locked: true`; Frontend zeigt 6-stelliges TOTP-Feld → `UnlockVaultResponse { unlocked: false, mfaRequired: true }`.
-7. Nach gültigem Code ruft das Frontend `complete_unlock_vault` auf; Backend validiert via `mfa::verify_totp_code` und committet Keys/Einträge erst dann.
-8. Abbruch: `cancel_pending_unlock` verwirft `PendingUnlock` ohne Master-Key-Freigabe (bei `open`-Flow zusätzlich Lock-Release).
+1. User gibt Master-Passwort (und ggf. TOTP-Code) im Frontend ein.
+2. Frontend ruft `open_vault` / `unlock_vault` mit `password` und optionalem `mfaCode` auf.
+3. Tauri Command leitet an `vault-core::auth::unlock_vault` weiter (`Zeroizing<String>` für beide Parameter).
+4. **Atomare Authentifizierung:** Entschlüsselung nur in ephemerem Stack-Speicher (`EphemeralDecrypt` mit `Drop`-Zeroizing). Passwort-Prüfung → ggf. MFA-Prüfung → erst dann `VaultHandle` committen.
+5. **Ohne MFA:** `UnlockVaultResponse { unlocked: true }` — Keys/Einträge werden auf `Vault` angewendet.
+6. **Mit MFA, kein Code:** `AuthError::MfaRequired` → `UnlockVaultResponse { mfaRequired: true }` — **kein** Key-Material auf `Vault`, kein `PendingUnlock`.
+7. **Mit MFA + Code:** erneuter Aufruf mit `password` + `mfaCode` — atomare Vollentsperrung in einem Schritt.
+8. Bei Fehler (`InvalidPassword`, `InvalidMfa`): sofortiger Abbruch, ephemerer Speicher wird zeroized.
 
 ---
 
@@ -756,18 +774,18 @@ ReachabilityDot — Sidebar + Detailansicht
 | `bootstrap_vault` | — | `VaultInfo` | App-Start: gespeicherten Vault-Pfad laden (falls Datei existiert) | ✅ |
 | `detach_vault` | — | `()` | In-Memory-Vault zurücksetzen (für „Anderen Tresor öffnen“) | ✅ |
 | `create_vault` | `path`, `name`, `password` | `VaultInfo` | Neue `.oxid`-Datei; Passwort → `Zeroizing<String>` | ✅ |
-| `open_vault` | `path`, `password` | `UnlockVaultResponse` | `.oxid` öffnen; Passwort → `Zeroizing<String>`; bei MFA nur Schritt 1 | ✅ |
-| `unlock_vault` | `password` | `UnlockVaultResponse` | Re-Unlock; Passwort → `Zeroizing<String>`; bei MFA nur Schritt 1 | ✅ |
-| `complete_unlock_vault` | `code: String` | `VaultInfo` | TOTP-Schritt 2 nach `mfaRequired`; Code → `Zeroizing<String>` | ✅ |
-| `cancel_pending_unlock` | — | `()` | Verwirft `PendingUnlock` ohne Key-Commit | ✅ |
+| `open_vault` | `path`, `password`, `mfa_code?` | `UnlockVaultResponse` | Atomarer Auth-Flow via `auth::unlock_vault`; Passwort/Code → `Zeroizing<String>` | ✅ |
+| `unlock_vault` | `password`, `mfa_code?` | `UnlockVaultResponse` | Re-Unlock; gleicher atomarer Flow | ✅ |
 | `lock_vault` | — | `VaultInfo` | RAM-Purge + Clipboard-Timer abbrechen | ✅ |
 | `list_entries` | — | `SecretEntrySummary[]` | Eintragsliste ohne Secrets | ✅ |
 | `add_entry` | `input: SecretEntryInput` | `SecretEntrySummary` | Secret hinzufügen und Vault persistieren | ✅ |
 | `update_entry` | `id`, `input: SecretEntryInput` | `SecretEntrySummary` | Secret aktualisieren und persistieren (Zero-Clone) | ✅ |
+| `delete_entry` | `id: String` | `()` | Secret **hard-delete** (physische Entfernung + Zeroizing + atomisches persist) | ✅ |
 | `get_entry` | `id: String` | `SecretEntryPublic` | Metadaten ohne Klartext-Secrets | ✅ |
 | `reveal_secret` | `entry_id`, `field?` | `RevealedSecret` | Kurzlebiger Klartext + Warnung | ✅ |
 | `copy_to_clipboard` | `entry_id`, `field?` | `()` | OS-Clipboard via `arboard`, 30s Rust-Clear | ✅ |
 | `generate_password_cmd` | `options: PasswordGenOptions` | `String` | CSPRNG-Passwort generieren (kein Vault nötig) | ✅ |
+| `take_extension_new_secret` | `()` | `Option<String>` | One-Shot-Passwort aus Extension-Prefill (Bridge) | ✅ |
 | `open_website_url` | `url: String` | `()` | Validierte http(s)-URL im Standard-Browser öffnen | ✅ |
 | `check_entries_reachability` | `entry_ids: String[]` | `EntryReachabilityStatus[]` | Async TCP-Reachability für Infrastruktur-Einträge | ✅ |
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
@@ -825,7 +843,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `unlocked` | `boolean` | `true` = Vault vollständig entsperrt |
-| `mfaRequired` | `boolean` | `true` = TOTP-Code erforderlich (`complete_unlock_vault`) |
+| `mfaRequired` | `boolean` | `true` = erneuter Aufruf mit `password` + `mfaCode` erforderlich |
 | `vault` | `VaultInfo` | Aktueller Vault-Status (bei MFA-Pending weiterhin `locked: true`) |
 
 #### Secret-Typen (`SecretPayload` — on-disk / Rust-RAM)
@@ -1092,14 +1110,13 @@ ReachabilityDot — Sidebar + Detailansicht
 | `bootstrapVault()` | `bootstrap_vault` |
 | `detachVault()` | `detach_vault` |
 | `createVault(path, name, password)` | `create_vault` |
-| `openVault(path, password)` | `open_vault` → `UnlockVaultResponse` |
-| `unlockVault(password)` | `unlock_vault` → `UnlockVaultResponse` |
-| `completeUnlockVault(code)` | `complete_unlock_vault` |
-| `cancelPendingUnlock()` | `cancel_pending_unlock` |
+| `openVault(path, password, mfaCode?)` | `open_vault` → `UnlockVaultResponse` |
+| `unlockVault(password, mfaCode?)` | `unlock_vault` → `UnlockVaultResponse` |
 | `lockVault()` | `lock_vault` |
 | `listEntries()` | `list_entries` |
 | `addEntry(input)` | `add_entry` |
 | `updateEntry(id, input)` | `update_entry` |
+| `deleteEntry(id)` | `delete_entry` |
 | `getEntry(id)` | `get_entry` → `SecretEntryPublic` |
 | `revealSecret(entryId, field?)` | `reveal_secret` |
 | `copyToClipboard(entryId, field?)` | `copy_to_clipboard` |
@@ -1474,8 +1491,9 @@ flowchart LR
 | **IPC-Brücke (GUI)** | `src-tauri/src/nm_bridge/` | localhost TCP, Session-Token, Vault-Zugriff |
 | **URL-Matching** | `crates/vault-core/src/url_match.rs` | Host/Substring-Score für Web-Logins |
 | **Extension (MV3)** | `browser-extension/manifest.json` | `nativeMessaging`, Service Worker, `content_scripts` |
-| **Background** | `browser-extension/background.js` | `connectNative`, `get_login`-Relay |
-| **Content Script** | `browser-extension/content.js` | Login-Formular-Erkennung, AutoFill |
+| `background.js` | `connectNative`, `get_login` / `vault_status` / `request_unlock` |
+| **Popup** | `browser-extension/popup.html` | Vault-Status, MFA-Hinweis (kein Secret-Input) |
+| **Content Script** | `browser-extension/content.js` | Login-Formular-Erkennung, AutoFill, MFA-Banner |
 | **Host-Manifest** | `browser-extension/host/com.oxidvault.app.json` | Browser-Registrierung (Pfad + `allowed_origins`) |
 | **Registry-Skript** | `scripts/register_native_host.ps1` | Schreibt Host-Manifest + HKCU Chrome/Edge |
 
@@ -1499,6 +1517,9 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 |---|---|
 | `{ "action": "ping" }` | `{ "status": "pong" }` |
 | `{ "action": "get_login", "url": "<hostname>" }` | siehe Phase 3 |
+| `{ "action": "vault_status" }` | siehe MFA (Phase 4) |
+| `{ "action": "request_unlock" }` | `{ "status": "ok", "success": true }` — fokussiert Desktop-App (kein Passwort/MFA über NM) |
+| `{ "action": "open_new_secret", "password": "…" }` | Öffnet Desktop **Neues Secret** mit vorbefülltem Passwort (One-Shot, `take_extension_new_secret`) |
 | Unbekannte `action` | `{ "status": "error", "error": "unknown action" }` |
 | Ungültiges JSON | `{ "status": "error", "error": "invalid json: …" }` |
 
@@ -1516,13 +1537,51 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 
 | Status | Bedeutung |
 |---|---|
-| `ok` | `{ "status": "ok", "username": "…", "password": "…" }` — genau ein passender Eintrag |
+| `ok` | `{ "status": "ok", "success": true, "username": "…", "password": "…" }` — genau ein passender Eintrag |
 | `not_found` | Kein Web-Login für diese Domain |
-| `locked` | Vault gesperrt — Desktop-App entsperren |
+| `locked` | Vault gesperrt — optional `"mfa_required": true` wenn MFA aktiv |
+| `mfa_failed` | Ungültiger MFA-Code in der Desktop-App (Extension zeigt Hinweis, **kein** MFA-Input in der Extension) |
 | `unavailable` | Desktop-App nicht gestartet / IPC nicht erreichbar |
 | `error` | Protokoll- oder Autorisierungsfehler |
 
-**Sicherheit:**
+### Phase 4 — MFA & Entsperr-Flow (Browser)
+
+> **Status:** ✅ Extension verarbeitet `mfa_required` / `mfa_failed`; Entsperrung ausschließlich in der Desktop-App
+
+**Prinzip:** Die Extension fordert **niemals** einen MFA-Code an und speichert keinen TOTP. Passwort und MFA werden nur in der Desktop-GUI eingegeben.
+
+**Ablauf bei gesperrtem Vault:**
+
+1. `get_login` liefert `{ "status": "locked", "mfa_required": true|false, "locked": true }`.
+2. `content.js` zeigt ein dezentes In-Page-Banner; bei MFA: Hinweis auf Desktop-Entsperrung (Passwort + MFA).
+3. `{ "action": "request_unlock" }` fokussiert das OxidVault-Hauptfenster (`nm_bridge/focus.rs`).
+4. Extension pollt `{ "action": "vault_status" }` bis `{ "success": true, "locked": false }` oder `{ "status": "mfa_failed" }`.
+5. Popup (`popup.html`) spiegelt denselben Status — ohne Eingabefelder für Secrets.
+
+**MFA-Hinweis bei kaltem Start:** `settings.json` enthält `vaultMfaConfigured` (Metadaten, kein Secret), gesetzt bei MFA-Aktivierung/-Deaktivierung und erfolgreicher Entsperrung. Zusammen mit in-memory `Vault::mfa` nach Lock in derselben Session.
+
+**Bridge-State:** `AppState.bridge` (`BridgeAuthState`) merkt sich `mfa_unlock_failed` nach `InvalidMfaCode` in `unlock_vault` / `open_vault` — wird von `vault_status` / `get_login` als `mfa_failed` zurückgegeben.
+
+### Phase 5 — WASM Passwort-Generator (Extension Popup)
+
+> **Status:** ✅ `vault-generator` + `vault-wasm` (wasm-pack) · Popup-Generator · Theme-Variablen · `open_new_secret`
+
+| Komponente | Pfad | Rolle |
+|---|---|---|
+| **Shared Generator** | `crates/vault-generator/` | Einzige Implementierung (CSPRNG, Fisher-Yates) — Desktop + WASM |
+| **WASM-Bindings** | `crates/vault-wasm/` | `generatePassword(options)` via wasm-bindgen |
+| **Build** | `scripts/build-wasm.ps1` | `wasm-pack build` → `browser-extension/pkg/` |
+| **Popup** | `browser-extension/popup.html` + `popup.js` | Generator-UI, async WASM-Init, Kopieren, Speichern & AutoFill |
+| **Themes** | `browser-extension/themes.css` | `--color-vault-*` für oxid / oxid-light / dracula / nord |
+| **Desktop Prefill** | `take_extension_new_secret` + Event `extension-new-secret-prefill` | Öffnet `NewSecretModal` mit `initialPassword` (Web-Login) |
+
+**Build (Extension):**
+
+```powershell
+.\scripts\build-wasm.ps1
+```
+
+**Sicherheit (unverändert + MFA):**
 
 - NM-Host-Prozess hat **keinen** eigenen Vault — Zugriff nur über GUI-Prozess mit entsperrtem `AppState`.
 - Session-Datei `%APPDATA%/com.oxidvault.app/native_messaging_session.json` enthält Port + Token (127.0.0.1 only).
@@ -1641,6 +1700,7 @@ Revisionssichere Protokollierung sicherheitsrelevanter Vault-Events für ISO-270
 | `VaultLocked` | `Vault::lock` |
 | `EntryCreated` | `Vault::add_entry` |
 | `EntryUpdated` | `Vault::update_entry` |
+| `EntryDeleted` | `Vault::delete_entry` |
 | `SecretRevealed` | `Vault::reveal_secret` |
 | `VaultKeyRotated` | `Vault::reencrypt_vault` |
 
@@ -1963,6 +2023,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **2FA (TOTP) — Vollimplementierung:** `totp-rs` + `qrcode`, CSPRNG-Secret, QR-PNG, AES-256-GCM-Persistenz im Vault-Payload, offline RFC-6238-Verifikation (`bool`) |
 | 2025-06-20 | 1.0.0 | **2FA Settings-UI:** `get_mfa_status` / `disable_mfa`, dynamischer Button in `SettingsMenu`, Status-Badge, Deaktivierungs-Bestätigung, Live-Update nach Verifikation |
 | 2025-06-20 | 1.0.0 | **2FA-gated Unlock:** `PendingUnlock` in `vault-core`, zweistufiges `open_vault`/`unlock_vault` → `UnlockVaultResponse`, `complete_unlock_vault` / `cancel_pending_unlock`, dynamisches MFA-Feld in `AuthForm` |
+| 2025-06-20 | 1.0.0 | **Atomarer Auth-Flow:** `vault-core/auth.rs` — `unlock_vault(password, mfa_code)` → `VaultHandle` / `AuthError`; kein `PendingUnlock`; IPC `mfa_code?` auf `open_vault`/`unlock_vault`; Frontend sendet Passwort+MFA atomar |
+| 2025-06-20 | 1.0.0 | **Browser-Extension MFA (Phase 4):** `mfa_required`/`mfa_failed`/`success` im NM-Protokoll, `vault_status` + `request_unlock`, Popup + In-Page-Banner, `settings.vaultMfaConfigured`, kein MFA-Input in der Extension |
+| 2025-06-20 | 1.0.0 | **Browser-Extension WASM-Generator (Phase 5):** `vault-generator`/`vault-wasm`, Popup-Generator mit Desktop-Themes, `open_new_secret` → `NewSecretModal` Prefill |
+| 2025-06-20 | 1.0.0 | **Secret Hard-Delete:** `Vault::delete_entry`/`delete_secret`, Zeroizing vor Entfernung, `delete_entry` IPC, `DeleteConfirmationModal`, Git-Sync nach Löschung, Audit `EntryDeleted` |
 
 ---
 

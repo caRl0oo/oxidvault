@@ -6,6 +6,7 @@
 pub mod audit;
 pub mod audit_export;
 mod audit_secure;
+pub mod auth;
 pub mod compliance;
 pub mod crypto;
 pub mod diagnostics;
@@ -29,6 +30,7 @@ pub use audit::{
     AuditLogEntry, AuditLogger,
 };
 pub use audit_export::{export_audit_report, ExportFormat};
+pub use auth::{unlock_vault as authenticate_unlock, AuthError, VaultHandle};
 pub use compliance::{compliance_status, ComplianceStatus, KEY_ROTATION_THRESHOLD_DAYS};
 pub use diagnostics::{
     collect_system_diagnostics, AuditLogDiagnostics, PolicyDiagnostics, SystemDiagnostics,

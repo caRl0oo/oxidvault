@@ -7,6 +7,7 @@ const AUDIT_ACTION_KEYS = [
   "VaultLocked",
   "EntryCreated",
   "EntryUpdated",
+  "EntryDeleted",
   "SecretCopied",
   "SecretRevealed",
   "VaultKeyRotated",

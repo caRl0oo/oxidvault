@@ -11,6 +11,7 @@ rust-version.workspace = true
 aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
+vault-generator = { path = "../vault-generator" }
 sha2 = "0.10"
 serde.workspace = true
 serde_json.workspace = true

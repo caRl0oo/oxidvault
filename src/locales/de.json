@@ -66,6 +66,7 @@
     "mfaCodePlaceholder": "6-stelliger Code",
     "mfaSubmit": "Code bestätigen",
     "mfaCancel": "Abbrechen",
+    "mfaLockout": "Zu viele Versuche. Bitte warten: {{seconds}}s",
     "vaultNamePlaceholder": "Vault-Name",
     "masterPasswordPlaceholder": "Master-Passwort",
     "back": "Zurück",
@@ -109,7 +110,13 @@
     "connecting": "Verbinde…",
     "quickConnect": "Quick Connect",
     "reveal": "Anzeigen",
-    "hide": "Verbergen"
+    "hide": "Verbergen",
+    "delete": "Löschen",
+    "deleteConfirmTitle": "Secret endgültig löschen?",
+    "deleteConfirmBody": "„{{title}}“ wird unwiderruflich aus dem Tresor entfernt.",
+    "deleteConfirmHardDeleteHint": "OxidVault führt ein Hard-Delete durch: Der Eintrag wird physisch aus dem verschlüsselten Tresor entfernt — ohne Papierkorb oder deleted-Flag.",
+    "deleteConfirmAction": "Endgültig löschen",
+    "deleteInProgress": "Lösche…"
   },
   "secretForm": {
     "createTitle": "Neues Secret",
@@ -195,6 +202,7 @@
       "VaultLocked": "Tresor wurde gesperrt",
       "EntryCreated": "Eintrag wurde erstellt",
       "EntryUpdated": "Eintrag wurde aktualisiert",
+      "EntryDeleted": "Eintrag wurde gelöscht",
       "SecretCopied": "Secret wurde in die Zwischenablage kopiert",
       "SecretRevealed": "Secret wurde angezeigt",
       "VaultKeyRotated": "Master-Schlüssel wurde rotiert"

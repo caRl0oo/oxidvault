@@ -1,0 +1,19 @@
+[package]
+name = "vault-wasm"
+description = "WebAssembly bindings for OxidVault password generator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[dependencies]
+vault-generator = { path = "../vault-generator" }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"

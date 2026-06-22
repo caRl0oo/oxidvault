@@ -30,5 +30,11 @@ export const STATUS_SUCCESS_CLASS =
 export const NOTE_PANEL_CLASS =
   "rounded border border-vault-border bg-vault-bg font-mono text-vault-muted";
 
+export const MFA_LOCKOUT_BANNER_CLASS =
+  "rounded border border-vault-danger/40 bg-vault-danger/10 px-3 py-2 font-mono text-xs text-vault-danger";
+
+export const INPUT_FIELD_DISABLED_CLASS =
+  "disabled:cursor-not-allowed disabled:opacity-50";
+
 export const CONFIRM_PANEL_CLASS =
   "rounded border border-vault-border bg-vault-bg";
