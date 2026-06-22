@@ -2,13 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GearIcon } from "@/components/ui/GearIcon";
 import { AboutModal } from "@/components/AboutModal";
+import { MfaSetupModal } from "@/components/MfaSetupModal";
+import { VaultButton } from "@/components/ui/VaultButton";
 import { ThemeSwatch } from "@/components/ui/ThemeSwatch";
 import { useTheme } from "@/hooks/useTheme";
 import { changeAppLocale } from "@/lib/i18n";
-import { getAppSettings, getResolvedConfig, updateGitSyncSettings } from "@/lib/ipc";
+import {
+  disableMFA,
+  getAppSettings,
+  getMfaStatus,
+  getResolvedConfig,
+  updateGitSyncSettings,
+} from "@/lib/ipc";
 import { LOCALE_OPTIONS, isLocaleId } from "@/lib/locale";
 import { runAsync } from "@/lib/runAsync";
 import { THEME_IDS, isThemeId } from "@/lib/theme";
+import { CONFIRM_PANEL_CLASS, NOTE_PANEL_CLASS, STATUS_SUCCESS_CLASS } from "@/lib/uiClasses";
 import type { GitSyncSettings } from "@/types/settings";
 import type { ResolvedConfig } from "@/types/policy";
 
@@ -21,6 +30,13 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [mfaModalOpen, setMfaModalOpen] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaVaultLocked, setMfaVaultLocked] = useState(false);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaDisableConfirm, setMfaDisableConfirm] = useState(false);
+  const [mfaDisabling, setMfaDisabling] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const [gitEnabled, setGitEnabled] = useState(false);
@@ -30,19 +46,53 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const [gitError, setGitError] = useState<string | null>(null);
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
 
+  const refreshMfaStatus = useCallback(async () => {
+    setMfaLoading(true);
+    setMfaError(null);
+    try {
+      const status = await getMfaStatus();
+      setMfaEnabled(status.mfaEnabled);
+      setMfaVaultLocked(status.vaultLocked);
+    } catch (e) {
+      setMfaError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMfaLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     runAsync(async () => {
-      const [settings, resolved] = await Promise.all([getAppSettings(), getResolvedConfig()]);
-      setResolvedConfig(resolved);
-      setGitEnabled(resolved.gitSyncEnabled.value);
-      setRemoteUrl(settings.gitSync.remoteUrl ?? "");
-      onGitSyncChange?.({
-        enabled: resolved.gitSyncEnabled.value,
-        remoteUrl: settings.gitSync.remoteUrl,
-      });
+      setMfaLoading(true);
+      setMfaError(null);
+      try {
+        const [settings, resolved, status] = await Promise.all([
+          getAppSettings(),
+          getResolvedConfig(),
+          getMfaStatus(),
+        ]);
+        setResolvedConfig(resolved);
+        setGitEnabled(resolved.gitSyncEnabled.value);
+        setRemoteUrl(settings.gitSync.remoteUrl ?? "");
+        setMfaEnabled(status.mfaEnabled);
+        setMfaVaultLocked(status.vaultLocked);
+        onGitSyncChange?.({
+          enabled: resolved.gitSyncEnabled.value,
+          remoteUrl: settings.gitSync.remoteUrl,
+        });
+      } catch (e) {
+        setMfaError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setMfaLoading(false);
+      }
     });
   }, [open, onGitSyncChange]);
+
+  useEffect(() => {
+    if (!open) {
+      setMfaDisableConfirm(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -78,13 +128,41 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
     }
   }, [gitEnabled, remoteUrl, onGitSyncChange]);
 
+  const handleDisableMfa = async () => {
+    setMfaDisabling(true);
+    setMfaError(null);
+    try {
+      await disableMFA();
+      setMfaEnabled(false);
+      setMfaDisableConfirm(false);
+    } catch (e) {
+      setMfaError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMfaDisabling(false);
+    }
+  };
+
   const currentThemeId = theme;
   const gitSaveLabel = gitSaveButtonLabel(t, gitSaving, gitSaved);
   const currentLocale = isLocaleId(i18n.language) ? i18n.language : i18n.language.split("-")[0];
+  const mfaControlsDisabled = mfaVaultLocked || mfaLoading || mfaDisabling;
 
   const openAboutDialog = () => {
     setOpen(false);
     setAboutOpen(true);
+  };
+
+  const openMfaDialog = () => {
+    setMfaDisableConfirm(false);
+    setMfaModalOpen(true);
+  };
+
+  const handleMfaPrimaryAction = () => {
+    if (mfaEnabled) {
+      setMfaDisableConfirm(true);
+      return;
+    }
+    openMfaDialog();
   };
 
   return (
@@ -224,6 +302,79 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
             </button>
           </div>
 
+          <div className="border-t border-vault-border px-3 py-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
+              {t("settings.mfa.title")}
+            </p>
+
+            {mfaEnabled && (
+              <p className={`${STATUS_SUCCESS_CLASS} mt-2 px-2 py-1 text-[10px]`}>
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-vault-success" />
+                {t("settings.mfa.statusEnabled")}
+              </p>
+            )}
+
+            {!mfaEnabled && (
+              <p
+                className={`${NOTE_PANEL_CLASS} mt-2 px-2.5 py-2 text-[10px] leading-relaxed`}
+                role="note"
+              >
+                {t("settings.mfa.recoveryHint")}
+              </p>
+            )}
+
+            {mfaVaultLocked && (
+              <p className="mt-2 font-mono text-[10px] text-vault-muted">
+                {t("settings.mfa.vaultLockedHint")}
+              </p>
+            )}
+
+            {mfaDisableConfirm ? (
+              <div className={`${CONFIRM_PANEL_CLASS} mt-3 p-2.5`}>
+                <p className="font-mono text-[10px] leading-relaxed text-vault-muted">
+                  {t("settings.mfa.disableConfirm")}
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <VaultButton
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    onClick={() => setMfaDisableConfirm(false)}
+                    disabled={mfaDisabling}
+                  >
+                    {t("common.cancel")}
+                  </VaultButton>
+                  <VaultButton
+                    variant="outline"
+                    tone="danger"
+                    size="sm"
+                    fullWidth
+                    onClick={() => runAsync(handleDisableMfa)}
+                    disabled={mfaDisabling}
+                  >
+                    {mfaDisabling ? t("settings.mfa.disabling") : t("settings.mfa.disableConfirmAction")}
+                  </VaultButton>
+                </div>
+              </div>
+            ) : (
+              <VaultButton
+                variant={mfaEnabled ? "outline" : "primary"}
+                fullWidth
+                className="mt-3"
+                onClick={handleMfaPrimaryAction}
+                disabled={mfaControlsDisabled}
+              >
+                {mfaButtonLabel(t, mfaLoading, mfaEnabled)}
+              </VaultButton>
+            )}
+
+            {mfaError && (
+              <p className="mt-2 font-mono text-[10px] text-vault-danger" role="alert">
+                {mfaError}
+              </p>
+            )}
+          </div>
+
           <div className="border-t border-vault-border px-3 py-2">
             <button
               type="button"
@@ -237,6 +388,15 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
       )}
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <MfaSetupModal
+        open={mfaModalOpen}
+        onClose={() => setMfaModalOpen(false)}
+        onVerified={() => {
+          setMfaEnabled(true);
+          setMfaDisableConfirm(false);
+          runAsync(refreshMfaStatus);
+        }}
+      />
     </div>
   );
 }
@@ -249,4 +409,14 @@ function gitSaveButtonLabel(
   if (saving) return t("settings.saving");
   if (saved) return t("settings.saved");
   return t("settings.saveGit");
+}
+
+function mfaButtonLabel(
+  t: (key: string) => string,
+  loading: boolean,
+  enabled: boolean,
+): string {
+  if (loading) return t("settings.mfa.loading");
+  if (enabled) return t("settings.mfa.disable");
+  return t("settings.mfa.enable");
 }

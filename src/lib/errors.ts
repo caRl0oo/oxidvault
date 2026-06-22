@@ -4,6 +4,7 @@ const ERROR_PATTERNS: ReadonlyArray<{ pattern: string; key: string }> = [
   { pattern: "title is required", key: "errors.titleRequired" },
   { pattern: "fields are incomplete", key: "errors.fieldsIncomplete" },
   { pattern: "invalid master password", key: "errors.invalidMasterPassword" },
+  { pattern: "invalid mfa code", key: "errors.invalidMfaCode" },
   { pattern: "vault is locked by", key: "errors.vaultLockedBy" },
   { pattern: "weak master password", key: "errors.weakMasterPassword" },
   { pattern: "too common", key: "errors.tooCommon" },

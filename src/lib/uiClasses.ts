@@ -10,7 +10,25 @@ export const MODAL_PANEL_CLASS =
 export const MODAL_FOOTER_CLASS = "flex gap-2 border-t border-vault-border px-5 py-4";
 
 export const BTN_PRIMARY_CLASS =
-  "rounded bg-vault-accent text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50";
+  "rounded bg-vault-accent font-mono text-vault-on-accent transition hover:bg-vault-accent-hover disabled:opacity-50";
+
+export const BTN_OUTLINE_CLASS =
+  "rounded border border-vault-border bg-transparent font-mono text-vault-muted transition hover:border-vault-accent hover:text-vault-accent disabled:opacity-50";
+
+export const BTN_OUTLINE_DANGER_CLASS =
+  "rounded border border-vault-danger/50 bg-transparent font-mono text-vault-danger transition hover:bg-vault-danger/10 disabled:opacity-50";
+
+export const BTN_GHOST_CLASS =
+  "rounded border border-transparent bg-transparent font-mono text-vault-muted transition hover:bg-vault-hover-overlay hover:text-vault-text disabled:opacity-50";
 
 export const BTN_SECONDARY_CLASS =
   "rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50";
+
+export const STATUS_SUCCESS_CLASS =
+  "inline-flex items-center gap-1.5 rounded border border-vault-success/40 bg-vault-success/10 font-mono text-vault-success";
+
+export const NOTE_PANEL_CLASS =
+  "rounded border border-vault-border bg-vault-bg font-mono text-vault-muted";
+
+export const CONFIRM_PANEL_CLASS =
+  "rounded border border-vault-border bg-vault-bg";

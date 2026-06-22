@@ -16,10 +16,12 @@ use crate::entry::{
 use crate::error::VaultError;
 use crate::format;
 use crate::lock::VaultLock;
+use crate::mfa::{self, MfaSetupInfo, MfaStatus, StoredMfaConfig};
 use crate::path_util::normalize_vault_path;
 use crate::policy::{admin_policy, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN};
 use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
+use crate::unlock::UnlockStep;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VaultInfo {
@@ -46,6 +48,42 @@ pub struct Vault {
     key_created_at: Option<u64>,
     key_rotated_at: Option<u64>,
     kek: Option<MasterKey>,
+    mfa: Option<StoredMfaConfig>,
+    pending_mfa_secret: Option<Zeroizing<Vec<u8>>>,
+    pending_unlock: Option<PendingUnlock>,
+}
+
+enum UnlockAuditAction {
+    Opened,
+    Unlocked { lock_id: String },
+}
+
+struct UnlockStagingMeta {
+    key_created_at: u64,
+    key_rotated_at: Option<u64>,
+    format_version: u16,
+    audit: UnlockAuditAction,
+    release_lock_on_cancel: bool,
+}
+
+struct PendingUnlock {
+    payload_key: MasterKey,
+    kek: MasterKey,
+    entries: Vec<SecretEntry>,
+    mfa: Option<StoredMfaConfig>,
+    key_created_at: u64,
+    key_rotated_at: Option<u64>,
+    format_version: u16,
+    audit: UnlockAuditAction,
+    release_lock_on_cancel: bool,
+}
+
+impl PendingUnlock {
+    fn zeroize_secrets(&mut self) {
+        for entry in &mut self.entries {
+            entry.zeroize_secrets();
+        }
+    }
 }
 
 impl Default for Vault {
@@ -71,6 +109,9 @@ impl Vault {
             key_created_at: None,
             key_rotated_at: None,
             kek: None,
+            mfa: None,
+            pending_mfa_secret: None,
+            pending_unlock: None,
         }
     }
 
@@ -159,6 +200,8 @@ impl Vault {
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = None;
         self.entries.clear();
+        self.mfa = None;
+        self.pending_mfa_secret = None;
         self.cached_entry_count = 0;
         self.locked = false;
         self.bind_audit_logger(&path)?;
@@ -166,34 +209,53 @@ impl Vault {
         Ok(())
     }
 
-    pub fn open(&mut self, path: impl AsRef<Path>, password: &str) -> Result<(), VaultError> {
+    pub fn open(
+        &mut self,
+        path: impl AsRef<Path>,
+        password: &str,
+    ) -> Result<UnlockStep, VaultError> {
         let path = normalize_vault_path(path)?;
+        self.cancel_pending_unlock()?;
         self.acquire_vault_lock(&path)?;
 
-        let open_result = (|| -> Result<(), VaultError> {
-            let meta = format::read_vault_meta(&path)?;
-            let kek = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
-            let payload_key = format::resolve_payload_key(&meta, &kek)?;
-            let (_, payload) = format::read_vault_file(&path, &kek)?;
-
+        let open_result = (|| -> Result<UnlockStep, VaultError> {
+            let (meta, kek, payload_key, payload) = Self::load_decrypted_vault(&path, password)?;
             let key_created_at = effective_key_created_at(&meta, &path);
             let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
+            let format_version = meta.format_version;
 
             self.path = Some(path.clone());
             self.name = meta.name;
             self.kdf = meta.kdf;
             self.salt = Some(meta.salt);
+            self.bind_audit_logger(&path)?;
+
+            if Self::mfa_enabled_in_payload(&payload) {
+                let pending = Self::build_pending_unlock(
+                    kek,
+                    payload_key,
+                    payload,
+                    UnlockStagingMeta {
+                        key_created_at,
+                        key_rotated_at,
+                        format_version,
+                        audit: UnlockAuditAction::Opened,
+                        release_lock_on_cancel: true,
+                    },
+                );
+                self.cached_entry_count = pending.entries.len();
+                return Ok(self.stage_mfa_pending_unlock(pending));
+            }
+
             self.master_key = Some(payload_key);
             self.kek = Some(kek);
-            self.format_version = meta.format_version;
+            self.format_version = format_version;
             self.key_created_at = Some(key_created_at);
             self.key_rotated_at = key_rotated_at;
-            self.entries = payload.entries;
-            self.cached_entry_count = self.entries.len();
+            self.apply_payload(payload);
             self.locked = false;
-            self.bind_audit_logger(&path)?;
             self.audit(AuditAction::VaultOpened, None)?;
-            Ok(())
+            Ok(UnlockStep::Complete)
         })();
 
         if open_result.is_err() {
@@ -203,12 +265,14 @@ impl Vault {
         open_result
     }
 
-    pub fn unlock(&mut self, password: &str) -> Result<(), VaultError> {
+    pub fn unlock(&mut self, password: &str) -> Result<UnlockStep, VaultError> {
         if !self.locked {
-            return Ok(());
+            return Ok(UnlockStep::Complete);
         }
 
         let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
+
+        self.cancel_pending_unlock()?;
 
         if self.vault_lock.is_none() {
             self.acquire_vault_lock(&path)?;
@@ -216,26 +280,93 @@ impl Vault {
 
         let lock_meta = self.assert_lock_valid()?;
 
-        let meta = format::read_vault_meta(&path)?;
-        let kek = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
-        let payload_key = format::resolve_payload_key(&meta, &kek)?;
-        let (_, payload) = format::read_vault_file(&path, &kek)?;
-
+        let (meta, kek, payload_key, payload) = Self::load_decrypted_vault(&path, password)?;
         let key_created_at = effective_key_created_at(&meta, &path);
         let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
+        let format_version = meta.format_version;
+
+        if Self::mfa_enabled_in_payload(&payload) {
+            let pending = Self::build_pending_unlock(
+                kek,
+                payload_key,
+                payload,
+                UnlockStagingMeta {
+                    key_created_at,
+                    key_rotated_at,
+                    format_version,
+                    audit: UnlockAuditAction::Unlocked {
+                        lock_id: lock_meta.lock_id(),
+                    },
+                    release_lock_on_cancel: false,
+                },
+            );
+            self.cached_entry_count = pending.entries.len();
+            return Ok(self.stage_mfa_pending_unlock(pending));
+        }
 
         self.master_key = Some(payload_key);
         self.kek = Some(kek);
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = key_rotated_at;
-        self.format_version = meta.format_version;
-        self.entries = payload.entries;
-        self.cached_entry_count = self.entries.len();
+        self.format_version = format_version;
+        self.apply_payload(payload);
         self.locked = false;
         if let Some(path) = self.path.clone() {
             self.bind_audit_logger(&path)?;
         }
         self.audit(AuditAction::VaultUnlocked, Some(&lock_meta.lock_id()))?;
+        Ok(UnlockStep::Complete)
+    }
+
+    /// Completes unlock after a successful TOTP check when MFA is enabled.
+    pub fn complete_unlock_with_mfa(&mut self, code: &str) -> Result<(), VaultError> {
+        if !self.locked {
+            return Ok(());
+        }
+
+        let pending = self
+            .pending_unlock
+            .take()
+            .ok_or(VaultError::Other("no pending MFA unlock".into()))?;
+
+        let stored = pending
+            .mfa
+            .as_ref()
+            .filter(|config| config.enabled)
+            .ok_or(VaultError::Other("MFA configuration missing".into()))?;
+
+        let secret = mfa::decrypt_mfa_secret(&pending.payload_key, stored)?;
+        let valid = mfa::verify_totp_code(secret.as_ref(), &self.name, code)?;
+        if !valid {
+            self.pending_unlock = Some(pending);
+            return Err(VaultError::InvalidMfaCode);
+        }
+
+        self.commit_unlock(pending)
+    }
+
+    /// Discards a pending MFA unlock and clears any staged secrets.
+    pub fn cancel_pending_unlock(&mut self) -> Result<(), VaultError> {
+        let Some(mut pending) = self.pending_unlock.take() else {
+            return Ok(());
+        };
+
+        pending.zeroize_secrets();
+
+        if pending.release_lock_on_cancel {
+            let _ = self.release_vault_lock();
+            self.path = None;
+            self.name = String::new();
+            self.salt = None;
+            self.kdf = KdfParams::default();
+            self.format_version = format::FORMAT_VERSION_V2;
+            self.key_created_at = None;
+            self.key_rotated_at = None;
+            self.cached_entry_count = 0;
+            self.audit_logger = AuditLogger::disabled();
+            self.vault_lock = None;
+        }
+
         Ok(())
     }
 
@@ -244,6 +375,7 @@ impl Vault {
         if !self.locked {
             let _ = self.audit(AuditAction::VaultLocked, None);
         }
+        let _ = self.cancel_pending_unlock();
         self.cached_entry_count = self.entries.len();
         for entry in &mut self.entries {
             entry.zeroize_secrets();
@@ -251,6 +383,7 @@ impl Vault {
         self.master_key = None;
         self.kek = None;
         self.entries.clear();
+        self.pending_mfa_secret = None;
         self.locked = true;
     }
 
@@ -275,6 +408,8 @@ impl Vault {
         self.key_rotated_at = key_rotated_at;
         self.master_key = None;
         self.entries.clear();
+        self.mfa = None;
+        self.pending_mfa_secret = None;
         self.cached_entry_count = 0;
         self.locked = true;
         self.bind_audit_logger(&path)?;
@@ -516,8 +651,149 @@ impl Vault {
         self.format_version = meta.format_version;
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = key_rotated_at;
-        self.entries = payload.entries;
+        self.apply_payload(payload);
         self.cached_entry_count = self.entries.len();
+        Ok(())
+    }
+
+    /// Starts TOTP enrollment — generates secret + QR (vault must be unlocked).
+    pub fn begin_mfa_enrollment(&mut self) -> Result<MfaSetupInfo, VaultError> {
+        self.ensure_unlocked()?;
+        if self.mfa.as_ref().is_some_and(|config| config.enabled) {
+            return Err(VaultError::Other("MFA is already enabled".into()));
+        }
+
+        let enrollment = mfa::create_enrollment(&self.name)?;
+        self.pending_mfa_secret = Some(enrollment.secret_bytes);
+        Ok(enrollment.info)
+    }
+
+    /// Verifies a TOTP code; finalizes enrollment when a pending secret exists.
+    pub fn verify_mfa_code(&mut self, code: &str) -> Result<bool, VaultError> {
+        self.ensure_unlocked()?;
+
+        let secret_bytes = if let Some(pending) = self.pending_mfa_secret.as_ref() {
+            Zeroizing::new(pending.to_vec())
+        } else if let Some(stored) = self.mfa.as_ref().filter(|config| config.enabled) {
+            let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+            mfa::decrypt_mfa_secret(payload_key, stored)?
+        } else {
+            return Err(VaultError::Other(
+                "MFA enrollment has not been started".into(),
+            ));
+        };
+
+        let valid = mfa::verify_totp_code(secret_bytes.as_ref(), &self.name, code)?;
+        if !valid {
+            return Ok(false);
+        }
+
+        if self.pending_mfa_secret.is_some() {
+            let pending = self
+                .pending_mfa_secret
+                .take()
+                .ok_or(VaultError::Other("MFA enrollment state lost".into()))?;
+            let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+            self.mfa = Some(mfa::encrypt_mfa_secret(payload_key, pending.as_ref())?);
+            self.persist()?;
+        }
+
+        Ok(true)
+    }
+
+    /// Returns whether TOTP MFA is active for the current vault session.
+    pub fn mfa_status(&self) -> MfaStatus {
+        MfaStatus {
+            mfa_enabled: self.mfa.as_ref().is_some_and(|config| config.enabled),
+            vault_locked: self.locked,
+        }
+    }
+
+    /// Disables MFA and removes the encrypted secret from the vault payload.
+    pub fn disable_mfa(&mut self) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        if !self.mfa.as_ref().is_some_and(|config| config.enabled) {
+            return Err(VaultError::Other("MFA is not enabled".into()));
+        }
+        self.mfa = None;
+        self.pending_mfa_secret = None;
+        self.persist()?;
+        Ok(())
+    }
+
+    fn apply_payload(&mut self, payload: format::VaultPayload) {
+        self.entries = payload.entries;
+        self.mfa = payload.mfa;
+        self.cached_entry_count = self.entries.len();
+    }
+
+    fn load_decrypted_vault(
+        path: &Path,
+        password: &str,
+    ) -> Result<
+        (
+            format::VaultFileMeta,
+            MasterKey,
+            MasterKey,
+            format::VaultPayload,
+        ),
+        VaultError,
+    > {
+        let meta = format::read_vault_meta(path)?;
+        let kek = MasterKey::derive_from_password(password, &meta.salt, meta.kdf)?;
+        let payload_key = format::resolve_payload_key(&meta, &kek)?;
+        let (_, payload) = format::read_vault_file(path, &kek)?;
+        Ok((meta, kek, payload_key, payload))
+    }
+
+    fn mfa_enabled_in_payload(payload: &format::VaultPayload) -> bool {
+        payload.mfa.as_ref().is_some_and(|config| config.enabled)
+    }
+
+    fn build_pending_unlock(
+        kek: MasterKey,
+        payload_key: MasterKey,
+        payload: format::VaultPayload,
+        staging: UnlockStagingMeta,
+    ) -> PendingUnlock {
+        PendingUnlock {
+            payload_key,
+            kek,
+            entries: payload.entries,
+            mfa: payload.mfa,
+            key_created_at: staging.key_created_at,
+            key_rotated_at: staging.key_rotated_at,
+            format_version: staging.format_version,
+            audit: staging.audit,
+            release_lock_on_cancel: staging.release_lock_on_cancel,
+        }
+    }
+
+    fn stage_mfa_pending_unlock(&mut self, pending: PendingUnlock) -> UnlockStep {
+        self.pending_unlock = Some(pending);
+        UnlockStep::MfaRequired
+    }
+
+    fn commit_unlock(&mut self, pending: PendingUnlock) -> Result<(), VaultError> {
+        self.master_key = Some(pending.payload_key);
+        self.kek = Some(pending.kek);
+        self.key_created_at = Some(pending.key_created_at);
+        self.key_rotated_at = pending.key_rotated_at;
+        self.format_version = pending.format_version;
+        self.apply_payload(format::VaultPayload {
+            entries: pending.entries,
+            mfa: pending.mfa,
+        });
+        self.locked = false;
+        if let Some(path) = self.path.clone() {
+            self.bind_audit_logger(&path)?;
+        }
+        match &pending.audit {
+            UnlockAuditAction::Opened => self.audit(AuditAction::VaultOpened, None)?,
+            UnlockAuditAction::Unlocked { lock_id } => {
+                self.audit(AuditAction::VaultUnlocked, Some(lock_id))?
+            }
+        }
         Ok(())
     }
 
@@ -548,7 +824,7 @@ impl Vault {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
         let salt = self.salt.ok_or(VaultError::NotInitialized)?;
-        format::update_vault_file(
+        format::update_vault_file_payload(
             path,
             &self.name,
             self.kdf,
@@ -558,7 +834,10 @@ impl Vault {
             self.format_version,
             self.key_created_at.unwrap_or(0),
             self.key_rotated_at.unwrap_or(0),
-            &self.entries,
+            format::VaultPersistPayload {
+                entries: &self.entries,
+                mfa: self.mfa.as_ref(),
+            },
         )
     }
 }
@@ -597,6 +876,45 @@ mod tests {
     use crate::entry::{SecretEntryInput, SecretPayload};
     use tempfile::tempdir;
 
+    fn finish_unlock(vault: &mut Vault, step: UnlockStep, mfa_code: Option<&str>) {
+        match step {
+            UnlockStep::Complete => {}
+            UnlockStep::MfaRequired => {
+                vault
+                    .complete_unlock_with_mfa(mfa_code.expect("MFA code required"))
+                    .expect("complete MFA unlock");
+            }
+        }
+    }
+
+    fn open_vault(vault: &mut Vault, path: &Path, password: &str, mfa_code: Option<&str>) {
+        let step = vault.open(path, password).expect("open vault");
+        finish_unlock(vault, step, mfa_code);
+    }
+
+    fn unlock_vault(vault: &mut Vault, password: &str, mfa_code: Option<&str>) {
+        let step = vault.unlock(password).expect("unlock vault");
+        finish_unlock(vault, step, mfa_code);
+    }
+
+    fn totp_token_for(vault: &Vault, account: &str) -> String {
+        let totp = totp_rs::TOTP::new(
+            totp_rs::Algorithm::SHA1,
+            6,
+            1,
+            30,
+            vault
+                .pending_mfa_secret
+                .as_ref()
+                .expect("pending secret")
+                .to_vec(),
+            Some("OxidVault".to_string()),
+            account.to_string(),
+        )
+        .expect("totp");
+        totp.generate_current().expect("token")
+    }
+
     #[test]
     fn reencrypt_vault_rotates_master_key_container() {
         let dir = tempdir().unwrap();
@@ -617,9 +935,7 @@ mod tests {
         vault.lock();
 
         let mut reopened = Vault::new();
-        reopened
-            .open(&path, "brand-new-horse-battery-staple")
-            .expect("open with new password");
+        open_vault(&mut reopened, &path, "brand-new-horse-battery-staple", None);
         assert_eq!(reopened.list_entries().unwrap().len(), 0);
 
         let log_path = crate::audit::audit_log_path(&path);
@@ -712,7 +1028,7 @@ mod tests {
         assert!(cold.info().initialized);
         assert_eq!(cold.info().name, "TestVault");
 
-        cold.unlock("correct-horse-battery-staple").unwrap();
+        unlock_vault(&mut cold, "correct-horse-battery-staple", None);
         assert!(!cold.info().locked);
     }
 
@@ -750,7 +1066,7 @@ mod tests {
         vault2.path = Some(path.clone());
         vault2.name = "TestVault".into();
         vault2.locked = true;
-        vault2.unlock("correct-horse-battery-staple").unwrap();
+        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
         assert_eq!(vault2.list_entries().unwrap().len(), 1);
     }
 
@@ -809,7 +1125,7 @@ mod tests {
         vault2.path = Some(path);
         vault2.name = "TestVault".into();
         vault2.locked = true;
-        vault2.unlock("correct-horse-battery-staple").unwrap();
+        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
         let reloaded = vault2.get_entry_public(&summary.id).unwrap();
         assert_eq!(reloaded.title, "GitHub Prod");
     }
@@ -876,7 +1192,7 @@ mod tests {
 
         let mut vault2 = Vault::new();
         vault2.attach_locked(&path).unwrap();
-        vault2.unlock("correct-horse-battery-staple").unwrap();
+        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
         let raw2 = std::fs::read_to_string(&log_path).unwrap();
         assert!(raw2.contains("[VaultUnlocked]"));
         let lock_id = format!(
@@ -904,7 +1220,8 @@ mod tests {
         owner
             .create(&path, "LockVault", "correct-horse-battery-staple")
             .unwrap();
-        owner.open(&path, "correct-horse-battery-staple").unwrap();
+        owner.lock();
+        open_vault(&mut owner, &path, "correct-horse-battery-staple", None);
         assert!(lock_path_for(&path).is_file());
 
         let mut blocked = Vault::new();
@@ -917,7 +1234,7 @@ mod tests {
         assert!(!lock_path_for(&path).is_file());
 
         let mut next = Vault::new();
-        next.open(&path, "correct-horse-battery-staple").unwrap();
+        open_vault(&mut next, &path, "correct-horse-battery-staple", None);
         next.close().unwrap();
         assert!(!lock_path_for(&path).is_file());
     }
@@ -946,5 +1263,123 @@ mod tests {
             .expect_err("unlock must refuse without valid lock");
         assert!(matches!(err, VaultError::LockLost));
         assert!(session.info().locked);
+    }
+
+    #[test]
+    fn mfa_enrollment_persists_after_verification() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+
+        let mut vault = Vault::new();
+        vault
+            .create(&path, "MfaVault", "correct-horse-battery-staple")
+            .unwrap();
+
+        let setup = vault.begin_mfa_enrollment().expect("enrollment");
+        let totp = totp_rs::TOTP::new(
+            totp_rs::Algorithm::SHA1,
+            6,
+            1,
+            30,
+            vault
+                .pending_mfa_secret
+                .as_ref()
+                .expect("pending secret")
+                .to_vec(),
+            Some("OxidVault".to_string()),
+            "MfaVault".to_string(),
+        )
+        .expect("totp");
+        let token = totp.generate_current().expect("token");
+
+        assert!(vault.verify_mfa_code(&token).expect("verify"));
+        assert!(vault.mfa.as_ref().is_some_and(|config| config.enabled));
+        assert!(vault.pending_mfa_secret.is_none());
+
+        vault.lock();
+        let mut reopened = Vault::new();
+        let step = reopened
+            .open(&path, "correct-horse-battery-staple")
+            .expect("reopen");
+        assert_eq!(step, UnlockStep::MfaRequired);
+        assert!(reopened.info().locked);
+        reopened
+            .complete_unlock_with_mfa(&token)
+            .expect("complete MFA unlock");
+        assert!(reopened.mfa.as_ref().is_some_and(|config| config.enabled));
+        assert!(reopened.verify_mfa_code(&token).expect("verify persisted"));
+        assert_eq!(setup.account_label, "OxidVault:MfaVault");
+    }
+
+    #[test]
+    fn mfa_blocks_unlock_until_valid_totp() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+        let password = "correct-horse-battery-staple";
+
+        let mut vault = Vault::new();
+        vault.create(&path, "MfaVault", password).unwrap();
+        let _setup = vault.begin_mfa_enrollment().expect("enrollment");
+        let token = totp_token_for(&vault, "MfaVault");
+        assert!(vault.verify_mfa_code(&token).expect("verify enrollment"));
+
+        vault.lock();
+        let mut session = Vault::new();
+        session.attach_locked(&path).unwrap();
+
+        let step = session.unlock(password).expect("password accepted");
+        assert_eq!(step, UnlockStep::MfaRequired);
+        assert!(session.info().locked);
+        assert!(session.list_entries().is_err());
+
+        let err = session
+            .complete_unlock_with_mfa("000000")
+            .expect_err("wrong code");
+        assert!(matches!(err, VaultError::InvalidMfaCode));
+        assert!(session.info().locked);
+
+        session
+            .complete_unlock_with_mfa(&token)
+            .expect("valid MFA code");
+        assert!(!session.info().locked);
+        assert_eq!(session.list_entries().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn disable_mfa_removes_stored_secret() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("vault.oxid");
+
+        let mut vault = Vault::new();
+        vault
+            .create(&path, "MfaVault", "correct-horse-battery-staple")
+            .unwrap();
+
+        let _setup = vault.begin_mfa_enrollment().expect("enrollment");
+        let totp = totp_rs::TOTP::new(
+            totp_rs::Algorithm::SHA1,
+            6,
+            1,
+            30,
+            vault
+                .pending_mfa_secret
+                .as_ref()
+                .expect("pending secret")
+                .to_vec(),
+            Some("OxidVault".to_string()),
+            "MfaVault".to_string(),
+        )
+        .expect("totp");
+        let token = totp.generate_current().expect("token");
+        assert!(vault.verify_mfa_code(&token).expect("verify"));
+        assert!(vault.mfa_status().mfa_enabled);
+
+        vault.disable_mfa().expect("disable");
+        assert!(!vault.mfa_status().mfa_enabled);
+
+        vault.lock();
+        let mut reopened = Vault::new();
+        open_vault(&mut reopened, &path, "correct-horse-battery-staple", None);
+        assert!(!reopened.mfa_status().mfa_enabled);
     }
 }

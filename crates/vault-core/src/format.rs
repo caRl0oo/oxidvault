@@ -16,6 +16,7 @@ use zeroize::Zeroizing;
 use crate::crypto::{self, KdfParams, MasterKey, NONCE_LEN, SALT_LEN};
 use crate::entry::SecretEntry;
 use crate::error::VaultError;
+use crate::mfa::StoredMfaConfig;
 
 pub const MAGIC: &[u8; 4] = b"OXID";
 pub const FORMAT_VERSION_V1: u16 = 1;
@@ -41,11 +42,27 @@ pub struct VaultFileMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultPayload {
     pub entries: Vec<SecretEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mfa: Option<StoredMfaConfig>,
 }
 
 #[derive(Serialize)]
 struct VaultPayloadRef<'a> {
     entries: &'a [SecretEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mfa: Option<&'a StoredMfaConfig>,
+}
+
+/// Entries and optional MFA config for atomic vault writes.
+pub struct VaultPersistPayload<'a> {
+    pub entries: &'a [SecretEntry],
+    pub mfa: Option<&'a StoredMfaConfig>,
+}
+
+impl<'a> VaultPersistPayload<'a> {
+    pub fn entries_only(entries: &'a [SecretEntry]) -> Self {
+        Self { entries, mfa: None }
+    }
 }
 
 struct VaultWriteContext<'a> {
@@ -59,9 +76,12 @@ struct VaultWriteContext<'a> {
     format_version: u16,
 }
 
-fn serialize_entries_zeroizing(entries: &[SecretEntry]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+fn serialize_payload_zeroizing(
+    entries: &[SecretEntry],
+    mfa: Option<&StoredMfaConfig>,
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     Ok(Zeroizing::new(
-        serde_json::to_vec(&VaultPayloadRef { entries })
+        serde_json::to_vec(&VaultPayloadRef { entries, mfa })
             .map_err(|e| VaultError::Other(e.to_string()))?,
     ))
 }
@@ -76,6 +96,30 @@ pub fn write_vault_file(
     key_created_at: u64,
     key_rotated_at: u64,
     entries: &[SecretEntry],
+) -> Result<(), VaultError> {
+    write_vault_file_payload(
+        path,
+        name,
+        kdf,
+        salt,
+        kek,
+        dek,
+        key_created_at,
+        key_rotated_at,
+        VaultPersistPayload::entries_only(entries),
+    )
+}
+
+pub fn write_vault_file_payload(
+    path: &Path,
+    name: &str,
+    kdf: KdfParams,
+    salt: &[u8; SALT_LEN],
+    kek: &MasterKey,
+    dek: &MasterKey,
+    key_created_at: u64,
+    key_rotated_at: u64,
+    payload: VaultPersistPayload<'_>,
 ) -> Result<(), VaultError> {
     if path.exists() {
         return Err(VaultError::FileExists);
@@ -92,7 +136,8 @@ pub fn write_vault_file(
             key_rotated_at,
             format_version: FORMAT_VERSION_V2,
         },
-        entries,
+        payload.entries,
+        payload.mfa,
     )
 }
 
@@ -104,6 +149,24 @@ pub fn write_vault_file_v1(
     salt: &[u8; SALT_LEN],
     key: &MasterKey,
     entries: &[SecretEntry],
+) -> Result<(), VaultError> {
+    write_vault_file_v1_payload(
+        path,
+        name,
+        kdf,
+        salt,
+        key,
+        VaultPersistPayload::entries_only(entries),
+    )
+}
+
+pub fn write_vault_file_v1_payload(
+    path: &Path,
+    name: &str,
+    kdf: KdfParams,
+    salt: &[u8; SALT_LEN],
+    key: &MasterKey,
+    payload: VaultPersistPayload<'_>,
 ) -> Result<(), VaultError> {
     if path.exists() {
         return Err(VaultError::FileExists);
@@ -120,7 +183,8 @@ pub fn write_vault_file_v1(
             key_rotated_at: 0,
             format_version: FORMAT_VERSION_V1,
         },
-        entries,
+        payload.entries,
+        payload.mfa,
     )
 }
 
@@ -136,6 +200,32 @@ pub fn update_vault_file(
     key_rotated_at: u64,
     entries: &[SecretEntry],
 ) -> Result<(), VaultError> {
+    update_vault_file_payload(
+        path,
+        name,
+        kdf,
+        salt,
+        payload_key,
+        kek,
+        format_version,
+        key_created_at,
+        key_rotated_at,
+        VaultPersistPayload::entries_only(entries),
+    )
+}
+
+pub fn update_vault_file_payload(
+    path: &Path,
+    name: &str,
+    kdf: KdfParams,
+    salt: &[u8; SALT_LEN],
+    payload_key: &MasterKey,
+    kek: Option<&MasterKey>,
+    format_version: u16,
+    key_created_at: u64,
+    key_rotated_at: u64,
+    payload: VaultPersistPayload<'_>,
+) -> Result<(), VaultError> {
     atomic_write_vault_with_context(
         path,
         VaultWriteContext {
@@ -148,7 +238,8 @@ pub fn update_vault_file(
             key_rotated_at,
             format_version,
         },
-        entries,
+        payload.entries,
+        payload.mfa,
     )
 }
 
@@ -203,10 +294,11 @@ fn atomic_write_vault_with_context(
     path: &Path,
     context: VaultWriteContext<'_>,
     entries: &[SecretEntry],
+    mfa: Option<&StoredMfaConfig>,
 ) -> Result<(), VaultError> {
     let tmp_path = temp_vault_path(path)?;
 
-    if let Err(error) = write_vault_bytes_with_context(&tmp_path, context, entries) {
+    if let Err(error) = write_vault_bytes_with_context(&tmp_path, context, entries, mfa) {
         let _ = fs::remove_file(&tmp_path);
         return Err(error);
     }
@@ -260,8 +352,9 @@ fn write_vault_bytes_with_context(
     path: &Path,
     context: VaultWriteContext<'_>,
     entries: &[SecretEntry],
+    mfa: Option<&StoredMfaConfig>,
 ) -> Result<(), VaultError> {
-    let plaintext = serialize_entries_zeroizing(entries)?;
+    let plaintext = serialize_payload_zeroizing(entries, mfa)?;
     let (nonce, ciphertext) = crypto::encrypt(context.payload_key, plaintext.as_ref())?;
     let mut payload_blob = Vec::with_capacity(NONCE_LEN + ciphertext.len());
     payload_blob.extend_from_slice(&nonce);
@@ -525,6 +618,7 @@ mod tests {
         .unwrap();
         VaultPayload {
             entries: vec![entry],
+            mfa: None,
         }
     }
 

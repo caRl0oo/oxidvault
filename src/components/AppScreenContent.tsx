@@ -33,6 +33,11 @@ interface AppScreenContentProps {
   readonly onCreate: () => void;
   readonly onOpen: () => void;
   readonly onUnlock: () => void;
+  readonly mfaChallengeActive: boolean;
+  readonly mfaCode: string;
+  readonly onMfaCodeChange: (value: string) => void;
+  readonly onMfaAutoSubmit: (code: string) => void;
+  readonly onCancelMfaChallenge: () => void;
   readonly onSwitchVault: () => void;
   readonly onBackToWelcome: () => void;
   readonly onBackFromOpen: () => void;
@@ -108,11 +113,16 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           subtitle={props.vaultPath ?? undefined}
           password={props.password}
           onPasswordChange={props.onPasswordChange}
+          mfaChallenge={props.mfaChallengeActive}
+          mfaCode={props.mfaCode}
+          onMfaCodeChange={props.onMfaCodeChange}
+          onMfaAutoSubmit={props.onMfaAutoSubmit}
           error={props.error}
           loading={props.loading}
           submitLabelKey="auth.openSubmit"
           onSubmit={props.onOpen}
           onBack={props.onBackFromOpen}
+          onCancelMfaChallenge={props.onCancelMfaChallenge}
           passwordRef={props.passwordRef}
         />
       );
@@ -123,11 +133,16 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           subtitle={props.vaultInfo?.path ?? undefined}
           password={props.password}
           onPasswordChange={props.onPasswordChange}
+          mfaChallenge={props.mfaChallengeActive}
+          mfaCode={props.mfaCode}
+          onMfaCodeChange={props.onMfaCodeChange}
+          onMfaAutoSubmit={props.onMfaAutoSubmit}
           error={props.error}
           loading={props.loading}
           submitLabelKey="auth.unlockSubmit"
           onSubmit={props.onUnlock}
           onSwitchVault={props.onSwitchVault}
+          onCancelMfaChallenge={props.onCancelMfaChallenge}
           passwordRef={props.passwordRef}
         />
       );

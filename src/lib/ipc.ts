@@ -5,6 +5,7 @@ import type { ComplianceStatus } from "@/types/compliance";
 import type { SystemDiagnostics } from "@/types/diagnostics";
 import type { ResolvedConfig } from "@/types/policy";
 import type { AppSettings, GitSyncResult } from "@/types/settings";
+import type { MfaSetupInfo, MfaStatus } from "@/types/mfa";
 import type {
   PasswordGenOptions,
   RevealedSecret,
@@ -12,6 +13,7 @@ import type {
   SecretEntryPublic,
   SecretEntrySummary,
   SecretField,
+  UnlockVaultResponse,
   VaultInfo,
 } from "@/types/vault";
 
@@ -42,12 +44,20 @@ export async function createVault(
 export async function openVault(
   path: string,
   password: string,
-): Promise<VaultInfo> {
-  return invoke<VaultInfo>("open_vault", { path, password });
+): Promise<UnlockVaultResponse> {
+  return invoke<UnlockVaultResponse>("open_vault", { path, password });
 }
 
-export async function unlockVault(password: string): Promise<VaultInfo> {
-  return invoke<VaultInfo>("unlock_vault", { password });
+export async function unlockVault(password: string): Promise<UnlockVaultResponse> {
+  return invoke<UnlockVaultResponse>("unlock_vault", { password });
+}
+
+export async function completeUnlockVault(code: string): Promise<VaultInfo> {
+  return invoke<VaultInfo>("complete_unlock_vault", { code });
+}
+
+export async function cancelPendingUnlock(): Promise<void> {
+  return invoke<void>("cancel_pending_unlock");
 }
 
 export async function lockVault(): Promise<VaultInfo> {
@@ -154,6 +164,22 @@ export async function updateGitSyncSettings(
 
 export async function syncVaultGit(): Promise<GitSyncResult> {
   return invoke<GitSyncResult>("sync_vault_git");
+}
+
+export async function enableMFA(): Promise<MfaSetupInfo> {
+  return invoke<MfaSetupInfo>("enable_mfa");
+}
+
+export async function getMfaStatus(): Promise<MfaStatus> {
+  return invoke<MfaStatus>("get_mfa_status");
+}
+
+export async function disableMFA(): Promise<void> {
+  return invoke<void>("disable_mfa");
+}
+
+export async function verifyMFACode(code: string): Promise<boolean> {
+  return invoke<boolean>("verify_mfa_code", { code });
 }
 
 export function isTauri(): boolean {

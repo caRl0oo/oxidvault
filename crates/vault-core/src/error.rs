@@ -17,6 +17,8 @@ pub enum VaultError {
     LockLost,
     #[error("invalid master password")]
     InvalidPassword,
+    #[error("invalid MFA code")]
+    InvalidMfaCode,
     #[error("vault not initialized")]
     NotInitialized,
     #[error("no vault file loaded")]

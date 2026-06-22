@@ -134,6 +134,12 @@ export interface VaultInfo {
   initialized: boolean;
 }
 
+export interface UnlockVaultResponse {
+  unlocked: boolean;
+  mfaRequired: boolean;
+  vault: VaultInfo;
+}
+
 export interface SecretEntrySummary {
   id: string;
   title: string;

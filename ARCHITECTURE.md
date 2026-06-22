@@ -737,8 +737,11 @@ ReachabilityDot — Sidebar + Detailansicht
 1. User gibt Master-Passwort im Frontend ein.
 2. Frontend ruft `open_vault` (Erstöffnung) oder `unlock_vault` (Re-Unlock nach Lock) auf.
 3. Tauri Command leitet an `vault-core::Vault` weiter.
-4. `vault-core` leitet via Argon2id den Master-Key ab und entschlüsselt die `.oxid`-Datei.
-5. `VaultInfo` kehrt ans Frontend zurück — Secret-Metadaten über `get_entry` (Public); Klartext nur via `reveal_secret` / Clipboard via `copy_to_clipboard`.
+4. `vault-core` leitet via Argon2id den KEK ab, entschlüsselt den Vault-Payload und prüft `mfa.enabled`.
+5. **Ohne MFA:** Master-Key (DEK) und Einträge werden committet → `UnlockVaultResponse { unlocked: true, mfaRequired: false }`.
+6. **Mit MFA:** Entschlüsselte Secrets verbleiben in `PendingUnlock` (Zeroizing on Drop); Vault bleibt `locked: true`; Frontend zeigt 6-stelliges TOTP-Feld → `UnlockVaultResponse { unlocked: false, mfaRequired: true }`.
+7. Nach gültigem Code ruft das Frontend `complete_unlock_vault` auf; Backend validiert via `mfa::verify_totp_code` und committet Keys/Einträge erst dann.
+8. Abbruch: `cancel_pending_unlock` verwirft `PendingUnlock` ohne Master-Key-Freigabe (bei `open`-Flow zusätzlich Lock-Release).
 
 ---
 
@@ -753,8 +756,10 @@ ReachabilityDot — Sidebar + Detailansicht
 | `bootstrap_vault` | — | `VaultInfo` | App-Start: gespeicherten Vault-Pfad laden (falls Datei existiert) | ✅ |
 | `detach_vault` | — | `()` | In-Memory-Vault zurücksetzen (für „Anderen Tresor öffnen“) | ✅ |
 | `create_vault` | `path`, `name`, `password` | `VaultInfo` | Neue `.oxid`-Datei; Passwort → `Zeroizing<String>` | ✅ |
-| `open_vault` | `path`, `password` | `VaultInfo` | `.oxid` öffnen; Passwort → `Zeroizing<String>` | ✅ |
-| `unlock_vault` | `password` | `VaultInfo` | Re-Unlock; Passwort → `Zeroizing<String>` | ✅ |
+| `open_vault` | `path`, `password` | `UnlockVaultResponse` | `.oxid` öffnen; Passwort → `Zeroizing<String>`; bei MFA nur Schritt 1 | ✅ |
+| `unlock_vault` | `password` | `UnlockVaultResponse` | Re-Unlock; Passwort → `Zeroizing<String>`; bei MFA nur Schritt 1 | ✅ |
+| `complete_unlock_vault` | `code: String` | `VaultInfo` | TOTP-Schritt 2 nach `mfaRequired`; Code → `Zeroizing<String>` | ✅ |
+| `cancel_pending_unlock` | — | `()` | Verwirft `PendingUnlock` ohne Key-Commit | ✅ |
 | `lock_vault` | — | `VaultInfo` | RAM-Purge + Clipboard-Timer abbrechen | ✅ |
 | `list_entries` | — | `SecretEntrySummary[]` | Eintragsliste ohne Secrets | ✅ |
 | `add_entry` | `input: SecretEntryInput` | `SecretEntrySummary` | Secret hinzufügen und Vault persistieren | ✅ |
@@ -770,6 +775,10 @@ ReachabilityDot — Sidebar + Detailansicht
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
 | `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
 | `get_system_diagnostics` | — | `SystemDiagnostics` | Admin-Support-Snapshot: Vault-Pfad (UNC), GPO-Policy, Audit-Log-Schreibbarkeit, Version — **keine Secrets** | ✅ |
+| `enable_mfa` | — | `MfaSetupInfo` | TOTP-Enrollment: CSPRNG-Secret, otpauth-URI, QR-PNG (base64) — Secret bleibt bis Verifikation im Vault-RAM (`Zeroizing`) | ✅ |
+| `get_mfa_status` | — | `MfaStatus` | `{ mfaEnabled, vaultLocked }` — kein Secret über IPC | ✅ |
+| `disable_mfa` | — | `()` | MFA deaktivieren, verschlüsseltes Secret aus Payload entfernen | ✅ |
+| `verify_mfa_code` | `code: String` | `bool` | TOTP-Validierung (RFC 6238, offline); bei Enrollment → verschlüsselte Persistenz im Vault-Payload | ✅ |
 | `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container (Header) unter neuem Passwort rotieren | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
@@ -802,6 +811,22 @@ ReachabilityDot — Sidebar + Detailansicht
 | `entry_count` | `number` | Anzahl gespeicherter Einträge |
 | `locked` | `boolean` | `true` = Vault gesperrt |
 | `initialized` | `boolean` | `true` = Vault-Datei geladen/angelegt |
+
+#### `UnlockVaultResponse` (Rust ↔ TypeScript)
+
+```json
+{
+  "unlocked": false,
+  "mfaRequired": true,
+  "vault": { "...": "VaultInfo" }
+}
+```
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `unlocked` | `boolean` | `true` = Vault vollständig entsperrt |
+| `mfaRequired` | `boolean` | `true` = TOTP-Code erforderlich (`complete_unlock_vault`) |
+| `vault` | `VaultInfo` | Aktueller Vault-Status (bei MFA-Pending weiterhin `locked: true`) |
 
 #### Secret-Typen (`SecretPayload` — on-disk / Rust-RAM)
 
@@ -836,6 +861,27 @@ ReachabilityDot — Sidebar + Detailansicht
 {
   "value": "…",
   "warning": "Dieser Wert wurde kurzzeitig entschlüsselt. …"
+}
+```
+
+#### `MfaSetupInfo` (2FA-Enrollment — Platzhalter)
+
+```json
+{
+  "accountLabel": "OxidVault:Mein Vault",
+  "otpauthUri": "otpauth://totp/OxidVault:Mein%20Vault?secret=…&issuer=OxidVault",
+  "qrCodePngBase64": "iVBOR…"
+}
+```
+
+> **Status:** ✅ Implementiert in `vault-core/mfa.rs` — TOTP-Secret AES-256-GCM im Vault-Payload (`StoredMfaConfig`), offline via `totp-rs` + `qrcode`.
+
+#### `MfaStatus`
+
+```json
+{
+  "mfaEnabled": true,
+  "vaultLocked": false
 }
 ```
 
@@ -1046,8 +1092,10 @@ ReachabilityDot — Sidebar + Detailansicht
 | `bootstrapVault()` | `bootstrap_vault` |
 | `detachVault()` | `detach_vault` |
 | `createVault(path, name, password)` | `create_vault` |
-| `openVault(path, password)` | `open_vault` |
-| `unlockVault(password)` | `unlock_vault` |
+| `openVault(path, password)` | `open_vault` → `UnlockVaultResponse` |
+| `unlockVault(password)` | `unlock_vault` → `UnlockVaultResponse` |
+| `completeUnlockVault(code)` | `complete_unlock_vault` |
+| `cancelPendingUnlock()` | `cancel_pending_unlock` |
 | `lockVault()` | `lock_vault` |
 | `listEntries()` | `list_entries` |
 | `addEntry(input)` | `add_entry` |
@@ -1911,6 +1959,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Full-Coverage i18n:** Alle UI-Komponenten, `auditLogLabels.ts`, `errors.ts`, `vaultLabels.ts`, `passwordPolicy.ts`; `fallbackLng: false` |
 | 2025-06-20 | 1.0.0 | **Admin System-Diagnose:** `vault-core/diagnostics.rs`, `get_system_diagnostics`, Security-Tab `SystemDiagnosticsPanel`, Markdown-Clipboard-Export, i18n-Statuscodes |
 | 2025-06-20 | 1.0.0 | **Theme-Refresh:** Matrix entfernt; neues **Oxid Light** (Enterprise-Hellmodus); semantische Tokens `vault-on-accent`, `vault-overlay`, `vault-elevated-shadow` |
+| 2025-06-20 | 1.0.0 | **2FA (TOTP) — UI + Platzhalter-API:** `vault-core/mfa.rs`, `enable_mfa` / `verify_mfa_code`, Settings-Untermenü „Zwei-Faktor-Authentifizierung“, `MfaSetupModal` mit QR-Platzhalter und Code-Eingabe |
+| 2025-06-20 | 1.0.0 | **2FA (TOTP) — Vollimplementierung:** `totp-rs` + `qrcode`, CSPRNG-Secret, QR-PNG, AES-256-GCM-Persistenz im Vault-Payload, offline RFC-6238-Verifikation (`bool`) |
+| 2025-06-20 | 1.0.0 | **2FA Settings-UI:** `get_mfa_status` / `disable_mfa`, dynamischer Button in `SettingsMenu`, Status-Badge, Deaktivierungs-Bestätigung, Live-Update nach Verifikation |
+| 2025-06-20 | 1.0.0 | **2FA-gated Unlock:** `PendingUnlock` in `vault-core`, zweistufiges `open_vault`/`unlock_vault` → `UnlockVaultResponse`, `complete_unlock_vault` / `cancel_pending_unlock`, dynamisches MFA-Feld in `AuthForm` |
 
 ---
 
