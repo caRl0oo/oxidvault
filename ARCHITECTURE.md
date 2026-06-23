@@ -675,11 +675,11 @@ SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
 
 | Aspekt | Detail |
 |---|---|
-| **SSH-Crate** | `russh` 0.61+ (`ring`, `rsa`, `flate2`) |
+| **SSH-Crate** | `russh` 0.61+ (`ring`, `flate2`; kein `rsa`-Feature — Marvin-Audit) |
 | **Credentials** | `Vault::extract_ssh_credentials` — Private Key **nie** ans Frontend; IPC nur `entry_id` |
 | **Key-Loader** | `src-tauri/src/ssh/key_loader.rs` — PEM/PPK-Validierung, format-spezifisches Parsing; **kein Key in Quelltext** |
 | **Logging** | Kein Debug-/Warn-Logging im SSH-Modul; Fehler nur als generische UI-Strings (keine Keys/Passphrasen) |
-| **Publickey-Auth** | Explizit `authenticate_publickey`; RSA via `best_supported_rsa_hash` (Fallback: sha2-512 → sha2-256 → legacy) |
+| **Publickey-Auth** | Explizit `authenticate_publickey`; Ed25519/ECDSA via `ring`; optionaler RSA-Hash-Fallback nur über `best_supported_rsa_hash` (sha2-512 → sha2-256 → legacy), ohne `rsa`-Crate |
 | **Handshake** | **Command-Await:** `ssh_connect` kehrt erst nach Auth + Shell-Open zurück; kein Fire-and-Forget |
 | **Timeout** | 15s (`SSH_HANDSHAKE_TIMEOUT`) für Connect/Auth/PTY/Shell — verhindert hängende UI |
 | **PTY/Shell** | `request_pty(true, cols, rows)` mit Frontend-Schätzung (`estimateInitialPtySize`) + `ssh_resize_pty` nach xterm-fit; `request_shell(true)` |
@@ -2055,6 +2055,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 0.1.0 | Dashboard-Kacheln als Sidebar-Filter: klickbare Metriken, `DashboardFilterBar` |
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
+| 2025-06-20 | 1.0.0 | **Dependency-Audit:** `rsa`-Feature aus `russh` entfernt (RUSTSEC-2023-0071); `.cargo/audit.toml` mit Allowlist für Linux-GTK-Bindings (Tauri/wry) |
 | 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 1:** CLI `--native-messaging` (Headless), `native_messaging.rs` (stdio LE-Framing), Dummy `ping`→`pong`, Manifest `browser-extension/host/com.oxidvault.app.json` |
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 2:** MV3-Extension (`manifest.json`, `background.js`), `register_native_host.ps1` (Chrome/Edge Registry), E2E-Anleitung in `browser-extension/README.md` |
