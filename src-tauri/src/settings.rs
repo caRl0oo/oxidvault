@@ -19,6 +19,14 @@ pub struct GitSyncSettings {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_url: Option<String>,
+    /// Path to a private SSH key for `git@` remotes (falls back to `~/.ssh/id_ed25519` / `id_rsa`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_key_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub https_username: Option<String>,
+    /// Stored locally for internal HTTPS remotes; never returned via `get_app_settings` IPC.
+    #[serde(default, skip_serializing)]
+    pub https_password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

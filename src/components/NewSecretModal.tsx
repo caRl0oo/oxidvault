@@ -409,13 +409,15 @@ export function NewSecretModal({
                     required
                   />
                 </Field>
-                <Field label={t("entry.passphrase")}>
+                <Field label={t("entry.sshKeyPassphrase")}>
                   <div className="flex gap-2">
                     <input
                       type="password"
                       value={ssh.passphrase}
                       onChange={(e) => setSsh({ ...ssh, passphrase: e.target.value })}
                       className={`${inputClass} flex-1`}
+                      title={t("entry.sshKeyPassphraseHint")}
+                      aria-describedby="ssh-key-passphrase-hint"
                     />
                     {onOpenGenerator && (
                       <PasswordGenerateButton
@@ -425,6 +427,12 @@ export function NewSecretModal({
                       />
                     )}
                   </div>
+                  <p
+                    id="ssh-key-passphrase-hint"
+                    className="mt-1 font-mono text-[10px] leading-relaxed text-vault-muted"
+                  >
+                    {t("entry.sshKeyPassphraseHint")}
+                  </p>
                 </Field>
               </>
             )}

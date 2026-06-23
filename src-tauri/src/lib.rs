@@ -5,7 +5,7 @@
 
 mod clipboard;
 mod commands;
-mod git_sync;
+mod git;
 mod idle_worker;
 mod native_messaging;
 mod nm_bridge;
@@ -57,7 +57,10 @@ pub fn run() {
             commands::audit::export_audit_log,
             commands::git_sync::get_app_settings,
             commands::git_sync::update_git_sync_settings,
+            commands::git_sync::trigger_git_sync,
             commands::git_sync::sync_vault_git,
+            commands::git_sync::save_ssh_passphrase,
+            commands::git_sync::remove_ssh_passphrase,
             commands::policy::get_resolved_config,
             commands::compliance::get_compliance_status,
             commands::compliance::reencrypt_vault,

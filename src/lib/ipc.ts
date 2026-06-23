@@ -174,12 +174,42 @@ export async function reencryptVault(
 export async function updateGitSyncSettings(
   enabled: boolean,
   remoteUrl: string | null,
+  sshKeyPath?: string | null,
 ): Promise<AppSettings> {
-  return invoke<AppSettings>("update_git_sync_settings", { enabled, remoteUrl });
+  return invoke<AppSettings>("update_git_sync_settings", {
+    enabled,
+    remoteUrl,
+    sshKeyPath: sshKeyPath?.trim() || null,
+  });
 }
 
+export async function triggerGitSync(): Promise<GitSyncResult> {
+  return invoke<GitSyncResult>("trigger_git_sync");
+}
+
+/** Stores the Git SSH key passphrase in the OS credential store (never in settings.json). */
+export async function saveSshPassphrase(passphrase: string): Promise<void> {
+  try {
+    await invoke<void>("save_ssh_passphrase", { passphrase });
+  } catch (error) {
+    console.error("[git-sync] save_ssh_passphrase failed:", error);
+    throw error;
+  }
+}
+
+/** Removes the Git SSH key passphrase from the OS credential store. */
+export async function removeSshPassphrase(): Promise<void> {
+  try {
+    await invoke<void>("remove_ssh_passphrase");
+  } catch (error) {
+    console.error("[git-sync] remove_ssh_passphrase failed:", error);
+    throw error;
+  }
+}
+
+/** @deprecated Use `triggerGitSync` — kept for existing call sites. */
 export async function syncVaultGit(): Promise<GitSyncResult> {
-  return invoke<GitSyncResult>("sync_vault_git");
+  return triggerGitSync();
 }
 
 export async function enableMFA(): Promise<MfaSetupInfo> {

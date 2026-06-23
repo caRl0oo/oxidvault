@@ -12,6 +12,7 @@ import {
   getAppSettings,
   getMfaStatus,
   getResolvedConfig,
+  saveSshPassphrase,
   updateGitSyncSettings,
 } from "@/lib/ipc";
 import { LOCALE_OPTIONS, isLocaleId } from "@/lib/locale";
@@ -23,12 +24,32 @@ import type { ResolvedConfig } from "@/types/policy";
 
 interface SettingsMenuProps {
   readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
+  readonly onTriggerGitSync?: () => void;
+  readonly gitSyncing?: boolean;
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 }
 
-export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
+export function SettingsMenu({
+  onGitSyncChange,
+  onTriggerGitSync,
+  gitSyncing = false,
+  open: controlledOpen,
+  onOpenChange,
+}: Readonly<SettingsMenuProps>) {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = useCallback(
+    (value: boolean) => {
+      if (controlledOpen === undefined) {
+        setUncontrolledOpen(value);
+      }
+      onOpenChange?.(value);
+    },
+    [controlledOpen, onOpenChange],
+  );
   const [aboutOpen, setAboutOpen] = useState(false);
   const [mfaModalOpen, setMfaModalOpen] = useState(false);
   const [mfaEnabled, setMfaEnabled] = useState(false);
@@ -39,11 +60,17 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
   const [mfaDisabling, setMfaDisabling] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const [gitAdvancedOpen, setGitAdvancedOpen] = useState(false);
   const [gitEnabled, setGitEnabled] = useState(false);
   const [remoteUrl, setRemoteUrl] = useState("");
+  const [sshKeyPath, setSshKeyPath] = useState("");
+  const [sshPassphrase, setSshPassphrase] = useState("");
   const [gitSaving, setGitSaving] = useState(false);
   const [gitSaved, setGitSaved] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
+  const [sshPassphraseSaving, setSshPassphraseSaving] = useState(false);
+  const [sshPassphraseSaved, setSshPassphraseSaved] = useState(false);
+  const [sshPassphraseError, setSshPassphraseError] = useState<string | null>(null);
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
 
   const refreshMfaStatus = useCallback(async () => {
@@ -74,6 +101,8 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
         setResolvedConfig(resolved);
         setGitEnabled(resolved.gitSyncEnabled.value);
         setRemoteUrl(settings.gitSync.remoteUrl ?? "");
+        setSshKeyPath(settings.gitSync.sshKeyPath ?? "");
+        setSshPassphrase("");
         setMfaEnabled(status.mfaEnabled);
         setMfaVaultLocked(status.vaultLocked);
         onGitSyncChange?.({
@@ -117,7 +146,11 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
     setGitError(null);
     setGitSaved(false);
     try {
-      const settings = await updateGitSyncSettings(gitEnabled, remoteUrl.trim() || null);
+      const settings = await updateGitSyncSettings(
+        gitEnabled,
+        remoteUrl.trim() || null,
+        sshKeyPath.trim() || null,
+      );
       onGitSyncChange?.(settings.gitSync);
       setGitSaved(true);
       globalThis.setTimeout(() => setGitSaved(false), 2000);
@@ -126,7 +159,23 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
     } finally {
       setGitSaving(false);
     }
-  }, [gitEnabled, remoteUrl, onGitSyncChange]);
+  }, [gitEnabled, remoteUrl, sshKeyPath, onGitSyncChange]);
+
+  const saveSshPassphraseToKeyring = useCallback(async () => {
+    setSshPassphraseSaving(true);
+    setSshPassphraseError(null);
+    setSshPassphraseSaved(false);
+    try {
+      await saveSshPassphrase(sshPassphrase);
+      setSshPassphrase("");
+      setSshPassphraseSaved(true);
+      globalThis.setTimeout(() => setSshPassphraseSaved(false), 3000);
+    } catch (e) {
+      setSshPassphraseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSshPassphraseSaving(false);
+    }
+  }, [sshPassphrase]);
 
   const handleDisableMfa = async () => {
     setMfaDisabling(true);
@@ -144,6 +193,11 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
 
   const currentThemeId = theme;
   const gitSaveLabel = gitSaveButtonLabel(t, gitSaving, gitSaved);
+  const sshPassphraseSaveLabel = sshPassphraseSaveButtonLabel(
+    t,
+    sshPassphraseSaving,
+    sshPassphraseSaved,
+  );
   const currentLocale = isLocaleId(i18n.language) ? i18n.language : i18n.language.split("-")[0];
   const mfaControlsDisabled = mfaVaultLocked || mfaLoading || mfaDisabling;
 
@@ -169,7 +223,7 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={t("settings.title")}
@@ -288,9 +342,90 @@ export function SettingsMenu({ onGitSyncChange }: Readonly<SettingsMenuProps>) {
               />
             </label>
 
+            <button
+              type="button"
+              onClick={() => setGitAdvancedOpen((value) => !value)}
+              aria-expanded={gitAdvancedOpen}
+              disabled={!gitEnabled}
+              className="mt-3 flex w-full items-center justify-between rounded border border-vault-border bg-vault-bg px-2 py-1.5 font-mono text-[10px] text-vault-muted transition hover:border-vault-accent hover:text-vault-accent disabled:opacity-50"
+            >
+              <span>{t("settings.gitAdvanced")}</span>
+              <span aria-hidden="true">{gitAdvancedOpen ? "▾" : "▸"}</span>
+            </button>
+
+            {gitAdvancedOpen && (
+              <div className="mt-2 space-y-2 rounded border border-vault-border/60 bg-vault-bg/40 p-2">
+                <p className="font-mono text-[10px] leading-relaxed text-vault-muted">
+                  {t("settings.gitAdvancedHint")}
+                </p>
+
+                <label htmlFor="git-ssh-key-path" className="block">
+                  <span className="font-mono text-[10px] text-vault-muted">
+                    {t("settings.sshKeyPath")}
+                  </span>
+                  <input
+                    id="git-ssh-key-path"
+                    type="text"
+                    value={sshKeyPath}
+                    onChange={(e) => setSshKeyPath(e.target.value)}
+                    placeholder={t("settings.sshKeyPathPlaceholder")}
+                    disabled={!gitEnabled}
+                    className="mt-1 w-full rounded border border-vault-border bg-vault-bg px-2 py-1.5 font-mono text-xs text-vault-text placeholder:text-vault-muted focus:border-vault-accent disabled:opacity-50"
+                  />
+                </label>
+
+                <div>
+                  <label htmlFor="git-ssh-passphrase" className="block">
+                    <span className="font-mono text-[10px] text-vault-muted">
+                      {t("settings.sshPassphrase")}
+                    </span>
+                    <input
+                      id="git-ssh-passphrase"
+                      type="password"
+                      value={sshPassphrase}
+                      onChange={(e) => setSshPassphrase(e.target.value)}
+                      autoComplete="new-password"
+                      disabled={!gitEnabled}
+                      className="mt-1 w-full rounded border border-vault-border bg-vault-bg px-2 py-1.5 font-mono text-xs text-vault-text placeholder:text-vault-muted focus:border-vault-accent disabled:opacity-50"
+                    />
+                  </label>
+                  <p className="mt-1 font-mono text-[10px] leading-relaxed text-vault-muted">
+                    {t("settings.sshPassphraseHint")}
+                  </p>
+                  {sshPassphraseSaved && (
+                    <p className={`${STATUS_SUCCESS_CLASS} mt-2 px-2 py-1 text-[10px]`}>
+                      {t("settings.sshPassphraseSaved")}
+                    </p>
+                  )}
+                  {sshPassphraseError && (
+                    <p className="mt-2 font-mono text-[10px] text-vault-danger" role="alert">
+                      {sshPassphraseError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => runAsync(saveSshPassphraseToKeyring)}
+                    disabled={!gitEnabled || sshPassphraseSaving}
+                    className="mt-2 w-full rounded border border-vault-border bg-vault-bg py-1.5 font-mono text-xs text-vault-text hover:border-vault-accent hover:text-vault-accent disabled:opacity-50"
+                  >
+                    {sshPassphraseSaveLabel}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {gitError && (
               <p className="mt-2 font-mono text-[10px] text-vault-danger">{gitError}</p>
             )}
+
+            <button
+              type="button"
+              onClick={() => onTriggerGitSync?.()}
+              disabled={!gitEnabled || gitSyncing || !onTriggerGitSync}
+              className="mt-3 w-full rounded border border-vault-border bg-vault-bg py-1.5 font-mono text-xs text-vault-text hover:border-vault-accent hover:text-vault-accent disabled:opacity-50"
+            >
+              {gitSyncing ? t("sync.syncing") : t("sync.syncGit")}
+            </button>
 
             <button
               type="button"
@@ -409,6 +544,16 @@ function gitSaveButtonLabel(
   if (saving) return t("settings.saving");
   if (saved) return t("settings.saved");
   return t("settings.saveGit");
+}
+
+function sshPassphraseSaveButtonLabel(
+  t: (key: string) => string,
+  saving: boolean,
+  saved: boolean,
+): string {
+  if (saving) return t("settings.saving");
+  if (saved) return t("settings.sshPassphraseSaved");
+  return t("settings.saveSshPassphrase");
 }
 
 function mfaButtonLabel(

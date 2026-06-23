@@ -34,3 +34,7 @@ base64 = "0.22"
 zeroize.workspace = true
 arboard = "3"
 data-encoding = "2.6"
+git2 = { version = "0.19", features = ["vendored-libgit2", "vendored-openssl", "ssh"] }
+keyring = "3"
+log = "0.4"
+env_logger = "0.11"

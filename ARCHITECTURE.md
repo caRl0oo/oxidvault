@@ -534,7 +534,12 @@ OxidVault/
 │       │   └── mod.rs
 │       ├── window_events.rs ← Lock-on-Minimize (Tauri Window Events)
 │       ├── settings.rs      ← App-Einstellungen (Vault-Pfad, Git-Sync, kein Secret)
-│       ├── git_sync.rs      ← Git pull/commit/push via std::process::Command
+│       ├── git/                 ← In-process Git-Sync via `git2` (kein externes `git`-Binary)
+│       │   ├── mod.rs
+│       │   ├── git_sync.rs      ← `sync_vault`, pull/commit/push
+│       │   ├── remote_auth.rs   ← `RemoteCallbacks`, SSH-Agent → Key-Datei + Keyring, HTTPS-Basic-Auth
+│       │   ├── ssh_keyring.rs   ← OS keyring (`oxidvault-git` / `git-ssh-passphrase`)
+│       │   └── errors.rs        ← `GitSyncError` (code + message)
 │       ├── ssh/             ← SSH Quick Connect (russh; Provider-Abstraktion in Arbeit)
 │       │   ├── mod.rs       ← SshManager, Session-Loop, Tauri-Events
 │       │   ├── auth.rs      ← Publickey-Auth (ring)
@@ -822,8 +827,11 @@ ReachabilityDot — Sidebar + Detailansicht
 | `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container (Header) unter neuem Passwort rotieren | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
-| `update_git_sync_settings` | `enabled`, `remote_url?` | `AppSettings` | Git-Sync-Konfiguration speichern | ✅ |
-| `sync_vault_git` | — | `GitSyncResult` | Git pull → commit/push der verschlüsselten `.oxid` | ✅ async |
+| `update_git_sync_settings` | `enabled`, `remote_url?`, `ssh_key_path?`, `https_username?`, `https_password?` | `AppSettings` | Git-Sync-Konfiguration speichern (`https_password` nicht per IPC zurück) | ✅ |
+| `trigger_git_sync` | — | `GitSyncResult` | `git2` pull → commit/push (`spawn_blocking`, `RemoteCallbacks`) | ✅ async |
+| `save_ssh_passphrase` | `passphrase: String` | `()` | SSH-Key-Passphrase im OS-Keyring speichern (`Zeroizing`, Service `oxidvault-git`) | ✅ |
+| `remove_ssh_passphrase` | — | `()` | SSH-Key-Passphrase aus OS-Keyring entfernen | ✅ |
+| `sync_vault_git` | — | `GitSyncResult` | Alias von `trigger_git_sync` (Abwärtskompatibilität) | ✅ async |
 | `ssh_connect` | `entry_id: String`, `cols: u32`, `rows: u32` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM); **async**, blockiert bis Auth + Shell; initiale PTY-Größe vom Frontend | ✅ async |
 | `ssh_write` | `session_id`, `data: String` | `()` | Terminal-Stdin an SSH-Kanal senden | ✅ |
 | `ssh_disconnect` | `session_id: String` | `()`` | SSH-Session beenden | ✅ |
@@ -1154,7 +1162,10 @@ ReachabilityDot — Sidebar + Detailansicht
 | `getAppSettings()` | `get_app_settings` |
 | `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
-| `syncVaultGit()` | `sync_vault_git` |
+| `triggerGitSync()` | `trigger_git_sync` |
+| `saveSshPassphrase(passphrase)` | `save_ssh_passphrase` |
+| `removeSshPassphrase()` | `remove_ssh_passphrase` |
+| `syncVaultGit()` | `trigger_git_sync` (Alias) |
 | `sshConnect(entryId)` | `ssh_connect` |
 | `sshWrite(sessionId, data)` | `ssh_write` |
 | `sshDisconnect(sessionId)` | `ssh_disconnect` |
@@ -1331,7 +1342,7 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 
 ### Git-Synchronisation (v0.1.0 — Runde 4)
 
-> **Status:** ✅ `sync_vault_git` · `git_sync.rs` · `SettingsMenu` · `SyncButton`
+> **Status:** ✅ `trigger_git_sync` · `git2` 0.19 (`vendored-libgit2`, `ssh`) · `SettingsMenu` · `GitSyncStatusIndicator`
 
 | Aspekt | Detail |
 |---|---|
@@ -1341,12 +1352,13 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | **Repo-Wurzel** | Verzeichnis der `.oxid`-Datei (oder `git rev-parse --show-toplevel`) |
 | **Erst-Setup** | `git init -b main` + `remote add origin` falls noch kein Repository |
 | **Nach Pull** | `Vault::reload_from_disk()` — entsperrter Tresor wird neu eingelesen |
-| **Implementierung** | `std::process::Command("git")` — keine externe Git-Library |
+| **Implementierung** | In-Process via `git2` 0.19 (`vendored-libgit2`, `ssh`) — kein externes `git`-Binary |
+| **SSH-Auth** | 1. `ssh-agent` (`Cred::ssh_key_from_agent`) · 2. Schlüsseldatei + optional Keyring-Passphrase (`save_ssh_passphrase`) · expliziter `.pub`-Pfad |
 | **Sicherheit** | Nur die **verschlüsselte** `.oxid`-Datei wird übertragen; Klartext-Secrets verlassen nie den Prozess |
 
 **Warum Git sicher ist:** Die `.oxid`-Datei ist vollständig mit AES-256-GCM verschlüsselt. Selbst auf öffentlichen Git-Servern (GitHub, GitLab) sind ohne Master-Passwort keine Secrets lesbar.
 
-**Voraussetzung:** Git muss im System-PATH installiert sein. Authentifizierung erfolgt über die native Git-Konfiguration des Betriebssystems (SSH-Key, Credential Manager).
+**Voraussetzung:** SSH-Remote (z. B. `git@github.com:…`) oder HTTPS mit gespeicherten Credentials. Für SSH: laufender `ssh-agent` mit geladenem Key **oder** Passphrase im OS-Keyring (Einstellungen → Git Sync).
 
 ### Secret-UI
 
@@ -1371,8 +1383,8 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | `SshTerminalModal` | `src/components/SshTerminalModal.tsx` | Integriertes xterm.js-Terminal, Theme-aware |
 | `AppLogo` | `src/components/AppLogo.tsx` | Quadratisches App-Logo (`/logo.png`) in Header & Auth-Screens |
 | `ThemeSelector` | `src/components/ThemeSelector.tsx` | *(ersetzt durch SettingsMenu)* |
-| `SettingsMenu` | `src/components/SettingsMenu.tsx` | Zahnrad-Dropdown: Theme + Git-Sync-Einstellungen |
-| `SyncButton` | `src/components/SyncButton.tsx` | Header-Sync-Trigger mit Spinner und Status-Toast |
+| `GitSyncStatusIndicator` | `src/components/GitSyncStatusIndicator.tsx` | Header-Icon: Git-Sync-Status (klickbar → Einstellungen) |
+| `SettingsMenu` | `src/components/SettingsMenu.tsx` | Zahnrad-Dropdown: Theme + Git-Sync-Einstellungen + manueller Sync |
 | `ClipboardToast` | `src/components/ClipboardToast.tsx` | Toast-Hinweis für 30s Clipboard Auto-Clear |
 | `SecretTypeIcon` | `src/components/SecretTypeIcon.tsx` | SVG-Icons für alle 6 Secret-Typen in Sidebar |
 | `openWebsite.ts` | `src/lib/openWebsite.ts` | URL-Validierung + IPC zu `open_website_url` |
@@ -2064,7 +2076,16 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 0.1.0 | Dashboard-Kacheln als Sidebar-Filter: klickbare Metriken, `DashboardFilterBar` |
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
-| 2025-06-20 | 1.0.0 | **SSH-Provider Phase 1:** `RusshProvider` implementiert `SshConnection`; `SshManager` delegiert russh-Logik |
+| 2025-06-20 | 1.0.0 | **Git SSH-Passphrase UI:** Settings-Feld + `saveSshPassphrase` IPC; Keyring-INFO-Log bei `set_password` |
+| 2025-06-20 | 1.0.0 | **Git SSH-Keyring:** `ssh_keyring.rs` + `keyring` 3; `save_ssh_passphrase` / `remove_ssh_passphrase`; Passphrase nur im OS-Store |
+| 2025-06-23 | 1.0.0 | **Git-Sync Header:** `GitSyncStatusIndicator` im Status-Cluster oben rechts; untere Statusleiste entfernt |
+| 2025-06-23 | 1.0.0 | **Git-Sync StatusBar:** `GitSyncStatusBar` am Fensterfuß (volle Breite); Header-Sync-Icon entfernt; Klick öffnet Git-Einstellungen |
+| 2025-06-23 | 1.0.0 | **Git-Sync UI:** SSH-Key/Passphrase in eingeklappter „Erweitert“-Sektion; SSH-Secret-Passphrase klar benannt; Keyring-Service `oxidvault-git` (Migration von `oxidvault`) |
+| 2025-06-23 | 1.0.0 | **Git Push:** Branch `main` erzwingen (nicht `master`/HEAD), FF-Check vor Push, Transfer-Progress-Logs, 120s-Timeout |
+| 2025-06-23 | 1.0.0 | **Git-Sync Scope:** Status/Commit nur für die `.oxid`-Datei (kein `add_all("*")`); Default-`.gitignore` bei Erst-Init |
+| 2025-06-23 | 1.0.0 | **Git SSH-Auth:** `remote_auth` versucht zuerst `ssh-agent`, dann Schlüsseldatei mit Keyring-Passphrase und explizitem `.pub`-Pfad |
+| 2025-06-20 | 1.0.0 | **Git-Sync git2:** In-Process-Sync via `git2` 0.19; `RemoteCallbacks` (SSH-Key-Pfad, HTTPS Basic); strukturiertes `GitSyncError` |
+| 2025-06-20 | 1.0.0 | **Git-Sync-Modul:** `src-tauri/src/git/git_sync.rs`; Tauri-Command `trigger_git_sync` (`spawn_blocking`, `GitSyncResult`) |
 | 2025-06-20 | 1.0.0 | **SSH-Provider-Scaffold:** `ssh/provider/mod.rs` mit Trait `SshConnection`; `DEVELOPMENT_LOG.md` für Refactoring-Backlog |
 | 2025-06-20 | 1.0.0 | **Dependency-Audit:** `rsa`-Feature aus `russh` entfernt (RUSTSEC-2023-0071); `.cargo/audit.toml` mit Allowlist für Linux-GTK-Bindings (Tauri/wry) |
 | 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |

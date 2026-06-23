@@ -99,6 +99,8 @@
     "hostIp": "Host / IP",
     "privateKey": "Private key",
     "passphrase": "Passphrase",
+    "sshKeyPassphrase": "Passphrase for this key (optional)",
+    "sshKeyPassphraseHint": "This passphrase is stored encrypted locally and is only used when you connect to this server manually.",
     "service": "Service",
     "apiToken": "API key / token",
     "port": "Port",
@@ -317,7 +319,10 @@
   },
   "sync": {
     "syncing": "Syncing…",
-    "syncGit": "Sync Git"
+    "syncGit": "Sync Git",
+    "connected": "Git sync connected",
+    "error": "Git synchronization failed",
+    "openSettings": "Open Git synchronization"
   },
   "ssh": {
     "terminalAria": "SSH terminal",
@@ -383,6 +388,14 @@
     "syncEnabled": "Sync enabled",
     "remoteRepository": "Remote repository",
     "remotePlaceholder": "https://github.com/user/vault.git",
+    "gitAdvanced": "Advanced",
+    "gitAdvancedHint": "Only if needed: these fields are used for automated Git sync when no ssh-agent is available.",
+    "sshKeyPath": "SSH key (path)",
+    "sshKeyPathPlaceholder": "C:\\Users\\…\\.ssh\\id_ed25519",
+    "sshPassphrase": "SSH passphrase (keyring)",
+    "sshPassphraseHint": "Stored in the OS credential store (service: oxidvault-git), not in settings.json.",
+    "saveSshPassphrase": "Save SSH passphrase",
+    "sshPassphraseSaved": "Passphrase saved to keyring ✓",
     "saveGit": "Save Git settings",
     "saving": "Saving…",
     "saved": "Saved ✓",

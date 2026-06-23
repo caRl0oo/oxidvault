@@ -7,6 +7,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    init_dev_logging();
+
     if std::env::args().any(|arg| arg == "--native-messaging") {
         if let Err(err) = oxidvault_lib::run_native_messaging() {
             eprintln!("native messaging host failed: {err}");
@@ -26,4 +28,16 @@ fn main() {
     }
 
     oxidvault_lib::run();
+}
+
+/// Enables `log` output in the dev console (`npm run tauri:dev`).
+/// Set `RUST_LOG=oxidvault_lib::git=debug` for verbose git/keyring traces.
+fn init_dev_logging() {
+    #[cfg(debug_assertions)]
+    {
+        let _ = env_logger::Builder::from_env(
+            env_logger::Env::default().default_filter_or("info,oxidvault_lib::git=debug"),
+        )
+        .try_init();
+    }
 }

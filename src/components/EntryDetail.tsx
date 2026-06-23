@@ -234,7 +234,7 @@ export function EntryDetail({
               <SecureField
                 entryId={entry.id}
                 field="passphrase"
-                label={t("entry.passphrase")}
+                label={t("entry.sshKeyPassphrase")}
                 copyFieldId={`${prefix}-passphrase`}
                 copyLabel={getLabel(`${prefix}-passphrase`)}
                 copied={isCopied(`${prefix}-passphrase`)}

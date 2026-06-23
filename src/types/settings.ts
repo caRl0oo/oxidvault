@@ -1,6 +1,8 @@
 export interface GitSyncSettings {
   enabled: boolean;
   remoteUrl?: string | null;
+  sshKeyPath?: string | null;
+  httpsUsername?: string | null;
 }
 
 export interface AppSettings {

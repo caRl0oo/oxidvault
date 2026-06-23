@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
-import { SyncButton } from "@/components/SyncButton";
+import { GitSyncStatusIndicator } from "@/components/GitSyncStatusIndicator";
 import { VaultLockButton } from "@/components/ui/VaultLockButton";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
@@ -10,7 +10,8 @@ import { useExtensionPrefillListener } from "@/hooks/useExtensionPrefillListener
 import { useMfaRateLimit } from "@/hooks/useMfaRateLimit";
 import { useReachabilityPolling } from "@/hooks/useReachabilityPolling";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useVaultLockedListener } from "@/hooks/useVaultLockedListener";import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
+import { useVaultLockedListener } from "@/hooks/useVaultLockedListener";
+import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
 import { formatVaultError, isInvalidMfaError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
 import { cancelSecureClipboardClear, notifyBackendSecureCopy } from "@/lib/secureClipboard";
@@ -34,7 +35,7 @@ import {
   listEntries,
   lockVault,
   openVault,
-  syncVaultGit,
+  triggerGitSync,
   unlockVault,
   updateEntry,
   deleteEntry,
@@ -86,8 +87,8 @@ export default function App() {
   const [gitSyncSettings, setGitSyncSettings] = useState<GitSyncSettings>({ enabled: false });
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
   const [gitSyncing, setGitSyncing] = useState(false);
-  const [gitSyncMessage, setGitSyncMessage] = useState<string | null>(null);
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
@@ -144,10 +145,8 @@ export default function App() {
   const handleGitSync = useCallback(async () => {
     setGitSyncing(true);
     setGitSyncError(null);
-    setGitSyncMessage(null);
     try {
-      const result = await syncVaultGit();
-      setGitSyncMessage(result.message);
+      const result = await triggerGitSync();
       if (result.vaultReloaded) {
         const info = await getVaultInfo();
         setVaultInfo(info);
@@ -159,7 +158,6 @@ export default function App() {
           }
         }
       }
-      globalThis.setTimeout(() => setGitSyncMessage(null), 4000);
     } catch (e) {
       setGitSyncError(formatVaultError(e));
       globalThis.setTimeout(() => setGitSyncError(null), 5000);
@@ -167,6 +165,10 @@ export default function App() {
       setGitSyncing(false);
     }
   }, [refreshEntries, selectedId]);
+
+  const openGitSettings = useCallback(() => {
+    setSettingsMenuOpen(true);
+  }, []);
 
   const handleGitSyncChange = useCallback((settings: GitSyncSettings) => {
     setGitSyncSettings(settings);
@@ -514,13 +516,11 @@ export default function App() {
 
   const syncGitAfterDelete = useCallback(async () => {
     try {
-      const result = await syncVaultGit();
-      setGitSyncMessage(result.message);
+      const result = await triggerGitSync();
       if (result.vaultReloaded) {
         const info = await getVaultInfo();
         setVaultInfo(info);
       }
-      globalThis.setTimeout(() => setGitSyncMessage(null), 4000);
     } catch (syncErr) {
       setGitSyncError(formatVaultError(syncErr));
       globalThis.setTimeout(() => setGitSyncError(null), 5000);
@@ -695,28 +695,32 @@ export default function App() {
 
   const reachability = useReachabilityPolling(entries, vaultUnlocked);
 
-  const connectionStatus =
-    vaultInfo?.initialized && gitSyncSettings.enabled ? (
-      <SyncButton
-        visible
-        syncing={gitSyncing}
-        syncMessage={gitSyncMessage}
-        syncError={gitSyncError}
-        onSync={handleGitSync}
-      />
-    ) : undefined;
-
   const vaultStatus = vaultInfo ? (
     <div className="flex items-center gap-2 font-mono text-[11px]">
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${vaultInfo.locked ? "bg-vault-danger" : "bg-vault-success"}`}
-        aria-hidden
-      />
-      <span className="text-vault-muted">
-        {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · v
-        {vaultInfo.version}
-      </span>
-      <VaultLockButton locked={vaultInfo.locked} onLock={handleVaultLockClick} />
+      {vaultInfo.initialized && gitSyncSettings.enabled ? (
+        <GitSyncStatusIndicator
+          syncing={gitSyncing}
+          syncError={gitSyncError}
+          onOpenSettings={openGitSettings}
+        />
+      ) : null}
+      <div
+        className={`flex items-center gap-2 ${
+          vaultInfo.initialized && gitSyncSettings.enabled
+            ? "border-l border-vault-border/40 pl-2"
+            : ""
+        }`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${vaultInfo.locked ? "bg-vault-danger" : "bg-vault-success"}`}
+          aria-hidden
+        />
+        <span className="text-vault-muted">
+          {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · v
+          {vaultInfo.version}
+        </span>
+        <VaultLockButton locked={vaultInfo.locked} onLock={handleVaultLockClick} />
+      </div>
     </div>
   ) : null;
 
@@ -730,9 +734,12 @@ export default function App() {
 
   return (
     <Layout
-      connectionStatus={connectionStatus}
       vaultStatus={vaultStatus}
       onGitSyncChange={handleGitSyncChange}
+      onTriggerGitSync={() => runAsync(handleGitSync)}
+      gitSyncing={gitSyncing}
+      settingsMenuOpen={settingsMenuOpen}
+      onSettingsMenuOpenChange={setSettingsMenuOpen}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {idleWarningSeconds !== null && vaultUnlocked ? (
