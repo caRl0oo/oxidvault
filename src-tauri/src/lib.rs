@@ -69,7 +69,9 @@ pub fn run() {
             commands::take_extension_new_secret,
             commands::touch_activity,
             commands::ssh_connect,
+            commands::ssh::ssh_begin_streaming,
             commands::ssh::ssh_write,
+            commands::ssh::ssh_resize_pty,
             commands::ssh::ssh_disconnect,
         ])
         .on_window_event(|window, event| {

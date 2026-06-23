@@ -14,7 +14,10 @@ export interface SshClosedEvent {
   error?: string;
 }
 
+export type SshSessionStatus = "connecting" | "active" | "disconnected";
+
 export interface SshTerminalState {
   session: SshSessionInfo;
+  entryId: string;
   entryTitle: string;
 }

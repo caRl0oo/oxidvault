@@ -17,7 +17,8 @@ import { cancelSecureClipboardClear, notifyBackendSecureCopy } from "@/lib/secur
 import { vaultLockMessage, resolveIdleLockSeconds } from "@/lib/vaultLockMessages";
 import { filterEntries } from "@/lib/search";
 import { openWebsiteUrl } from "@/lib/openWebsite";
-import { sshConnect } from "@/lib/ssh";
+import { estimateInitialPtySize } from "@/lib/sshTerminalLayout";
+import { sshConnect, sshDisconnect } from "@/lib/ssh";
 import {
   addEntry,
   bootstrapVault,
@@ -48,7 +49,7 @@ import type {
   SecretEntrySummary,
   VaultInfo,
 } from "@/types/vault";
-import type { SshTerminalState } from "@/types/ssh";
+import type { SshSessionStatus, SshTerminalState } from "@/types/ssh";
 
 type Screen = "welcome" | "create" | "open" | "unlock" | "vault";
 type VaultMainView = "secrets" | "security" | "activity";
@@ -79,6 +80,8 @@ export default function App() {
   const [vaultMainView, setVaultMainView] = useState<VaultMainView>("secrets");
   const [sshTerminal, setSshTerminal] = useState<SshTerminalState | null>(null);
   const [sshConnecting, setSshConnecting] = useState(false);
+  const [sshSessionStatus, setSshSessionStatus] = useState<SshSessionStatus | null>(null);
+  const [sshFocusMode, setSshFocusMode] = useState(false);
   const [sidebarCopyingId, setSidebarCopyingId] = useState<string | null>(null);
   const [gitSyncSettings, setGitSyncSettings] = useState<GitSyncSettings>({ enabled: false });
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
@@ -344,6 +347,8 @@ export default function App() {
     setGeneratorApply(null);
     setSshTerminal(null);
     setSshConnecting(false);
+    setSshSessionStatus(null);
+    setSshFocusMode(false);
     setDashboardFilter(null);
     setActiveTag(null);
     setScreen("unlock");
@@ -422,12 +427,16 @@ export default function App() {
       const title =
         entry?.title ?? entries.find((e) => e.id === entryId)?.title ?? t("entry.quickConnect");
       setSshConnecting(true);
+      setSshSessionStatus("connecting");
+      setSshFocusMode(false);
       setError(null);
       try {
-        const session = await sshConnect(entryId);
-        setSshTerminal({ session, entryTitle: title });
+        const { cols, rows } = estimateInitialPtySize();
+        const session = await sshConnect(entryId, cols, rows);
+        setSshTerminal({ session, entryTitle: title, entryId });
       } catch (e) {
         setError(formatVaultError(e));
+        setSshSessionStatus(null);
       } finally {
         setSshConnecting(false);
       }
@@ -605,7 +614,28 @@ export default function App() {
   }, []);
 
   const handleCloseSshTerminal = useCallback(() => {
+    setSshTerminal((prev) => {
+      if (prev?.session.sessionId) {
+        void sshDisconnect(prev.session.sessionId);
+      }
+      return null;
+    });
+    setSshFocusMode(false);
+    setSshSessionStatus(null);
+  }, []);
+
+  const handleSshSessionActive = useCallback(() => {
+    setSshSessionStatus("active");
+  }, []);
+
+  const handleSshSessionEnded = useCallback(() => {
     setSshTerminal(null);
+    setSshFocusMode(false);
+    setSshSessionStatus("disconnected");
+  }, []);
+
+  const handleToggleSshFocusMode = useCallback(() => {
+    setSshFocusMode((prev) => !prev);
   }, []);
 
   const handleVaultLockClick = useCallback(() => {
@@ -712,7 +742,8 @@ export default function App() {
             {t("app.idleLockWarning", { seconds: idleWarningSeconds })}
           </output>
         ) : null}
-        <AppScreenContent
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <AppScreenContent
         screen={screen}
         backendStatus={backendStatus}
         vaultInfo={vaultInfo}
@@ -776,8 +807,14 @@ export default function App() {
         onClosePasswordGenerator={closePasswordGenerator}
         generatorApply={generatorApply ?? undefined}
         sshTerminal={sshTerminal}
+        sshSessionStatus={sshSessionStatus}
+        sshFocusMode={sshFocusMode}
+        onToggleSshFocusMode={handleToggleSshFocusMode}
         onCloseSshTerminal={handleCloseSshTerminal}
+        onSshSessionActive={handleSshSessionActive}
+        onSshSessionEnded={handleSshSessionEnded}
       />
+        </div>
       </div>
     </Layout>
   );

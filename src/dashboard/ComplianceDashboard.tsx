@@ -173,7 +173,7 @@ export function ComplianceDashboard() {
   };
 
   return (
-    <section className="relative border-b border-vault-border bg-vault-surface/30 px-6 py-4">
+    <section className="relative shrink-0 border-b border-vault-border bg-vault-surface/30 px-6 py-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-text">

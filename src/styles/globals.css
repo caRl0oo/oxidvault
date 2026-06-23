@@ -114,3 +114,15 @@
     box-shadow: var(--color-vault-elevated-shadow);
   }
 }
+
+@layer components {
+  /** Main content column: bounded height so nested panes can scroll. */
+  .vault-main-panel {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
+  }
+
+  /** Scrollable main content region (matches EntryDetail behaviour). */
+  .vault-main-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto;
+  }
+}

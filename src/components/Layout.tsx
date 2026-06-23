@@ -40,7 +40,7 @@ export function Layout({
           <SettingsMenu onGitSyncChange={onGitSyncChange} />
         </div>
       </header>
-      <main className="flex flex-1 overflow-hidden">{children}</main>
+      <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
       <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-vault-border bg-vault-surface px-4 font-mono text-[11px] text-vault-muted">
         <span>
           <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>

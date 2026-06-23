@@ -2912,6 +2912,7 @@ version = "1.0.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",
+ "data-encoding",
  "open",
  "russh",
  "serde",

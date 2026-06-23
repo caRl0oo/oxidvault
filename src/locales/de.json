@@ -325,7 +325,18 @@
     "banner": "── OxidVault SSH Quick Connect ──",
     "connectionLost": "Verbindung unterbrochen.",
     "sessionEnded": "Sitzung beendet.",
-    "footerHint": "Private Key verbleibt im Rust-Speicher — wird nicht in die Zwischenablage kopiert."
+    "footerHint": "Private Key verbleibt im Rust-Speicher — wird nicht in die Zwischenablage kopiert.",
+    "disconnectConfirmTitle": "SSH-Verbindung trennen?",
+    "disconnectConfirmBody": "Verbindung zu {{host}} wirklich trennen?",
+    "disconnectConfirmAction": "Trennen",
+    "focusModeEnter": "Fokus-Modus — Eintragsbereich überdecken",
+    "focusModeExit": "Fokus-Modus beenden",
+    "resizeDivider": "Tresor- und Terminal-Bereich skalieren",
+    "status": {
+      "connecting": "Verbinden…",
+      "active": "SSH-Sitzung aktiv",
+      "disconnected": "SSH-Sitzung getrennt"
+    }
   },
   "reachability": {
     "checking": "Prüfe Status…",

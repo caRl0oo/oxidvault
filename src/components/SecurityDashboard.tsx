@@ -115,7 +115,7 @@ export function SecurityDashboard({
 
   if (loading && !report) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex items-center justify-center p-8">
         <p className="font-mono text-sm text-vault-muted">{t("security.analyzing")}</p>
       </div>
     );
@@ -123,7 +123,7 @@ export function SecurityDashboard({
 
   if (error && !report) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
+      <div className="flex flex-col items-center justify-center gap-3 p-8">
         <p className="font-mono text-sm text-vault-danger">{error}</p>
         <button
           type="button"
@@ -196,7 +196,7 @@ function SecurityAuditReportView({
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-6">
+    <div className="flex flex-col p-6">
       <div className="mx-auto w-full max-w-2xl space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div>

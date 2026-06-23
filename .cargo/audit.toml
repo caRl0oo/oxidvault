@@ -1,0 +1,24 @@
+# cargo-audit configuration for OxidVault
+#
+# GTK3/gtk-rs bindings are transitive Linux-only dependencies of the Tauri/wry
+# stack (webkit2gtk, tao, muda). They are unmaintained upstream but required for
+# Linux desktop builds until Tauri migrates to GTK4 bindings.
+
+[advisories]
+ignore = [
+    # gtk-rs GTK3 bindings (unmaintained) — Tauri/wry Linux WebView stack
+    "RUSTSEC-2024-0411", # gdkwayland-sys
+    "RUSTSEC-2024-0412", # gdk
+    "RUSTSEC-2024-0413", # atk
+    "RUSTSEC-2024-0414", # gdkx11-sys
+    "RUSTSEC-2024-0416", # atk-sys
+    "RUSTSEC-2024-0417", # gdkx11
+    "RUSTSEC-2024-0418", # gdk-sys
+    "RUSTSEC-2024-0415", # gtk
+    "RUSTSEC-2024-0419", # gtk3-macros
+    "RUSTSEC-2024-0420", # gtk-sys
+    # glib gtk-rs binding (unsound advisory) — same Linux-only Tauri stack
+    "RUSTSEC-2024-0429", # glib
+    # Transitive via gtk3-macros — no fix without upstream gtk-rs migration
+    "RUSTSEC-2024-0370", # proc-macro-error
+]

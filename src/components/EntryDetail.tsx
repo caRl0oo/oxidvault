@@ -11,8 +11,10 @@ import { revealToggleLabel } from "@/lib/revealLabels";
 import { runAsync } from "@/lib/runAsync";
 import { getDbTypeLabel, getWifiEncryptionLabel } from "@/lib/vaultLabels";
 import { ReachabilityDot } from "@/components/ReachabilityDot";
+import { SshSessionStatusDot } from "@/components/SshSessionStatusDot";
 import { ExpiryBadge } from "@/components/ExpiryBadge";
 import type { ReachabilityState } from "@/types/reachability";
+import type { SshSessionStatus } from "@/types/ssh";
 import type { SecretEntryPublic, SecretField } from "@/types/vault";
 import { isProbeableEntryType } from "@/types/vault";
 
@@ -24,6 +26,7 @@ interface EntryDetailProps {
   readonly onQuickConnect?: (entryId: string) => void;
   readonly sshConnecting?: boolean;
   readonly reachability?: ReachabilityState;
+  readonly sshSessionStatus?: SshSessionStatus | null;
 }
 
 /** Best-effort overwrite of a short-lived secret string in JS memory. */
@@ -46,6 +49,7 @@ export function EntryDetail({
   onQuickConnect,
   sshConnecting,
   reachability,
+  sshSessionStatus,
 }: Readonly<EntryDetailProps>) {
   const { t } = useTranslation();
   const { copy, copySecret, getLabel, isCopied } = useSecureCopy();
@@ -70,7 +74,8 @@ export function EntryDetail({
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-6">
+    <div className="vault-main-panel">
+      <div className="vault-main-scroll p-6">
       <div className="mx-auto w-full max-w-lg space-y-5">
         <header className="flex items-start gap-3">
           <div className="mt-0.5 rounded bg-vault-border/60 p-2 text-vault-accent">
@@ -199,8 +204,11 @@ export function EntryDetail({
                 type="button"
                 disabled={sshConnecting || !onQuickConnect}
                 onClick={() => onQuickConnect?.(entry.id)}
-                className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-2 rounded bg-vault-accent py-2 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
               >
+                {sshSessionStatus ? (
+                  <SshSessionStatusDot status={sshSessionStatus} size="md" />
+                ) : null}
                 {sshConnecting ? t("entry.connecting") : t("entry.quickConnect")}
               </button>
             </div>
@@ -324,6 +332,7 @@ export function EntryDetail({
         )}
 
       </div>
+    </div>
     </div>
   );
 }

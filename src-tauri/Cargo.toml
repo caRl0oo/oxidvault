@@ -33,3 +33,4 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 zeroize.workspace = true
 arboard = "3"
+data-encoding = "2.6"

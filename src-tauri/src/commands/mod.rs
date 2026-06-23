@@ -290,10 +290,12 @@ pub use lock::perform_lock;
 use lock::lock_vault_state;
 
 #[tauri::command]
-pub fn ssh_connect(
+pub async fn ssh_connect(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     entry_id: String,
+    cols: u32,
+    rows: u32,
 ) -> Result<crate::ssh::SshSessionInfo, String> {
-    ssh::ssh_connect(app, state, entry_id)
+    ssh::ssh_connect(app, state, entry_id, cols, rows).await
 }

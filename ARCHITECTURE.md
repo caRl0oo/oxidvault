@@ -643,37 +643,53 @@ Detail → delete_entry → zeroize → remove from Vec → persist (atomic) →
 
 ### Datenfluss: SSH Quick Connect
 
-> **Status:** ✅ `russh` · `src-tauri/src/ssh/` · `SshTerminalModal` (xterm.js)
+> **Status:** ✅ `russh` · `src-tauri/src/ssh/` · `SshTerminalPanel` (xterm.js, Split-View) · Command-Await (Option B)
 
 ```
 Quick Connect (entry_id)
         │
         ▼
-ssh_connect ──► Vault::extract_ssh_credentials(id)  [Key bleibt im Rust-RAM]
-        │              │
-        │              ▼
-        │         russh: TCP → Handshake → Pubkey-Auth → PTY Shell
-        │              │
-        │              ├──► Tauri Event `ssh-data` (stdout/stderr, base64)
-        │              └──► Tauri Event `ssh-closed` (EOF / exit / Fehler)
-        ▼
-SshTerminalModal (xterm.js)
+ssh_connect (async) ──► Vault::extract_ssh_credentials(id)  [Key bleibt im Rust-RAM, Zeroizing]
+        │                        │
+        │                        ▼
+        │              open_interactive_shell()  [blockiert bis Handshake fertig]
+        │                        │
+        │                        ├── TCP → Pubkey-Auth → PTY (want_reply) → Shell (want_reply)
+        │                        ├── tokio::time::timeout(15s) — Auth/Shell-Schritte
+        │                        └── Fehler → generische Err(String) ans Frontend (setError)
         │
+        │  bei Ok(SshSessionInfo):
+        │                        ▼
+        │              async_runtime::spawn → run_session_loop (I/O-Loop)
+        │                        │
+        │                        ├──► Tauri Event `ssh-data` (stdout/stderr, base64)
+        │                        └──► Tauri Event `ssh-closed` (EOF / exit / Laufzeitfehler)
+        ▼
+SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
+        │
+        ├── ssh_begin_streaming → Backlog + Live-Events
         ├── listen(`ssh-data`) → term.write()
-        └── onData → ssh_write(session_id, stdin) → Rust Channel
+        ├── onData → ssh_write(session_id, stdin)
+        └── Schließen → Bestätigungsdialog → ssh_disconnect (graceful channel.close)
 ```
 
 | Aspekt | Detail |
 |---|---|
-| **SSH-Crate** | `russh` 0.61+ (`ring`-Feature, kein `rsa` in Dependency-Tree) |
-| **Credentials** | `Vault::extract_ssh_credentials` — Private Key **nie** ans Frontend |
-| **Streaming** | Bidirektional: Events (Out) + `ssh_write` Command (In) |
-| **Terminal-UI** | `@xterm/xterm` + `@xterm/addon-fit`, Theme aus CSS-Variablen |
-| **Session-Ende** | Server `exit` → `ssh-closed` → Modal schließt automatisch |
-| **Vault-Lock** | `lock_vault` → `disconnect_all_ssh()` — Sessions werden beendet |
-| **Key-Sicherheit** | Kein Kopieren des Private Keys; `zeroize` nach Session-Thread |
+| **SSH-Crate** | `russh` 0.61+ (`ring`, `flate2`; kein `rsa`-Feature — Marvin-Audit) |
+| **Credentials** | `Vault::extract_ssh_credentials` — Private Key **nie** ans Frontend; IPC nur `entry_id` |
+| **Key-Loader** | `src-tauri/src/ssh/key_loader.rs` — PEM/PPK-Validierung, format-spezifisches Parsing; **kein Key in Quelltext** |
+| **Logging** | Kein Debug-/Warn-Logging im SSH-Modul; Fehler nur als generische UI-Strings (keine Keys/Passphrasen) |
+| **Publickey-Auth** | Explizit `authenticate_publickey`; Ed25519/ECDSA via `ring`; optionaler RSA-Hash-Fallback nur über `best_supported_rsa_hash` (sha2-512 → sha2-256 → legacy), ohne `rsa`-Crate |
+| **Handshake** | **Command-Await:** `ssh_connect` kehrt erst nach Auth + Shell-Open zurück; kein Fire-and-Forget |
+| **Timeout** | 15s (`SSH_HANDSHAKE_TIMEOUT`) für Connect/Auth/PTY/Shell — verhindert hängende UI |
+| **PTY/Shell** | `request_pty(true, cols, rows)` mit Frontend-Schätzung (`estimateInitialPtySize`) + `ssh_resize_pty` nach xterm-fit; `request_shell(true)` |
+| **Terminal-UI** | `@xterm/xterm` + `@xterm/addon-fit`; pixelbasierter Split + ResizeObserver; Fokus-Modus (Overlay); Schließen mit Bestätigung |
+| **Session-Status** | UI: `connecting` \| `active` \| `disconnected` — grüner Status-Punkt bei aktiver Sitzung |
+| **Session-Ende** | Server `exit` → `ssh-closed` → Panel schließt; manuell → `SessionInput::Close` + `channel.close()` |
+| **Vault-Lock** | `lock_vault` → `disconnect_all_ssh()` — graceful Close für alle Sessions |
+| **Key-Sicherheit** | Kein Key in Source; `Zeroizing` für Key + Passphrase in `ssh_connect` und `SshManager::connect` |
 
-**Tauri Commands:** `ssh_connect`, `ssh_write`, `ssh_disconnect`  
+**Tauri Commands:** `ssh_connect`, `ssh_begin_streaming`, `ssh_write`, `ssh_resize_pty`, `ssh_disconnect`  
 **Tauri Events:** `ssh-data`, `ssh-closed`
 
 **Hinweis Host-Keys:** v0.1 akzeptiert Server-Keys für Admin-Quick-Connect (TOFU-Whitelist folgt optional).
@@ -799,7 +815,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?` | `AppSettings` | Git-Sync-Konfiguration speichern | ✅ |
 | `sync_vault_git` | — | `GitSyncResult` | Git pull → commit/push der verschlüsselten `.oxid` | ✅ async |
-| `ssh_connect` | `entry_id: String` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM) | ✅ |
+| `ssh_connect` | `entry_id: String`, `cols: u32`, `rows: u32` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM); **async**, blockiert bis Auth + Shell; initiale PTY-Größe vom Frontend | ✅ async |
 | `ssh_write` | `session_id`, `data: String` | `()` | Terminal-Stdin an SSH-Kanal senden | ✅ |
 | `ssh_disconnect` | `session_id: String` | `()`` | SSH-Session beenden | ✅ |
 
@@ -2039,6 +2055,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 0.1.0 | Dashboard-Kacheln als Sidebar-Filter: klickbare Metriken, `DashboardFilterBar` |
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
+| 2025-06-20 | 1.0.0 | **Dependency-Audit:** `rsa`-Feature aus `russh` entfernt (RUSTSEC-2023-0071); `.cargo/audit.toml` mit Allowlist für Linux-GTK-Bindings (Tauri/wry) |
 | 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 1:** CLI `--native-messaging` (Headless), `native_messaging.rs` (stdio LE-Framing), Dummy `ping`→`pong`, Manifest `browser-extension/host/com.oxidvault.app.json` |
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 2:** MV3-Extension (`manifest.json`, `background.js`), `register_native_host.ps1` (Chrome/Edge Registry), E2E-Anleitung in `browser-extension/README.md` |
@@ -2072,6 +2089,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-20 | 1.0.0 | **Enterprise MSI Browser-Extension:** Feste Extension-ID (RSA/CRX), Force-Install Policy (Chrome/Edge), WiX Custom Action, `installer/README.md` |
 | 2026-06-22 | 1.0.0 | **Admin-Deployment Guide:** Abschnitt 16, `docs/policy.json.example`, README Enterprise & Compliance |
 | 2026-06-22 | 1.0.0 | **Backend Idle-Lock:** `state.rs`, `idle_worker.rs`, `touch_activity` IPC, `vault-idle-warning`, Frontend-Warnbanner |
+| 2026-06-20 | 1.0.0 | **SSH Command-Await:** `ssh_connect` async mit 15s-Timeout, PTY/Shell `want_reply`, Fehler via `Result` ans Frontend; I/O-Loop weiter per Event |
+| 2026-06-20 | 1.0.0 | **SSH Key-Loader:** `key_loader.rs`, Vault-only Keys, PEM-Validierung, format-spezifisches russh-Parsing, Backend-Logging; Test-Keys entfernt |
+| 2026-06-20 | 1.0.0 | **SSH Terminal-Streaming:** Output-Backlog + `ssh_begin_streaming`, `ssh_resize_pty`, Listener-Race behoben |
+| 2026-06-20 | 1.0.0 | **SSH Terminal-Layout:** Pixel-Split + ResizeObserver-Init, Fokus-Modus, `ssh_connect(cols, rows)` für initiale PTY-Größe |
 
 ---
 
