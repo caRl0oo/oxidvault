@@ -325,7 +325,18 @@
     "banner": "── OxidVault SSH Quick Connect ──",
     "connectionLost": "Connection interrupted.",
     "sessionEnded": "Session ended.",
-    "footerHint": "Private key stays in Rust memory — never copied to clipboard."
+    "footerHint": "Private key stays in Rust memory — never copied to clipboard.",
+    "disconnectConfirmTitle": "Disconnect SSH session?",
+    "disconnectConfirmBody": "Really disconnect from {{host}}?",
+    "disconnectConfirmAction": "Disconnect",
+    "focusModeEnter": "Focus mode — cover entry area",
+    "focusModeExit": "Exit focus mode",
+    "resizeDivider": "Resize vault and terminal panels",
+    "status": {
+      "connecting": "Connecting…",
+      "active": "SSH session active",
+      "disconnected": "SSH session disconnected"
+    }
   },
   "reachability": {
     "checking": "Checking status…",

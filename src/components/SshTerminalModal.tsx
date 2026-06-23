@@ -3,12 +3,12 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/lib/i18n";
-import { runAsync } from "@/lib/runAsync";
 import {
   getTerminalThemeFromCss,
   listenSshClosed,
   listenSshData,
-  sshDisconnect,
+  sshBeginStreaming,
+  sshResizePty,
   sshWrite,
 } from "@/lib/ssh";
 import type { SshTerminalState } from "@/types/ssh";
@@ -20,7 +20,12 @@ interface SshTerminalModalProps {
 }
 
 function decodeSshPayload(data: string): Uint8Array {
-  return Uint8Array.from(atob(data), (char) => char.codePointAt(0) ?? 0);
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.codePointAt(i) ?? 0;
+  }
+  return bytes;
 }
 
 function writeSshPayload(term: Terminal, data: string): void {
@@ -40,6 +45,19 @@ export function SshTerminalModal({ state, onClose }: Readonly<SshTerminalModalPr
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    let cancelled = false;
+    let closed = false;
+    const unlisteners: Array<() => void> = [];
+
+    const closeSession = (message?: string) => {
+      if (closed) return;
+      closed = true;
+      if (message) {
+        term.writeln(`\r\n\x1b[33m${message}\x1b[0m`);
+      }
+      setTimeout(() => onCloseRef.current(), message ? 600 : 0);
+    };
 
     const theme = getTerminalThemeFromCss();
     const term = new Terminal({
@@ -67,64 +85,72 @@ export function SshTerminalModal({ state, onClose }: Readonly<SshTerminalModalPr
     );
 
     const sessionId = state.session.sessionId;
-    let closed = false;
 
-    const closeSession = (message?: string) => {
-      if (closed) return;
-      closed = true;
-      if (message) {
-        term.writeln(`\r\n\x1b[33m${message}\x1b[0m`);
+    const syncTerminalSize = () => {
+      fitAddon.fit();
+      const cols = term.cols;
+      const rows = term.rows;
+      if (cols > 0 && rows > 0) {
+        void sshResizePty(sessionId, cols, rows).catch(() => {
+          closeSession(i18n.t("ssh.connectionLost"));
+        });
       }
-      setTimeout(() => onCloseRef.current(), message ? 600 : 0);
     };
 
-    const isSessionClosed = () => closed;
+    const setup = async () => {
+      const unlistenData = await listenSshData((event) => {
+        if (event.sessionId !== sessionId || closed) return;
+        writeSshPayload(term, event.data);
+      });
+      const unlistenClosed = await listenSshClosed((event) => {
+        if (event.sessionId !== sessionId || closed) return;
+        closeSession(event.error ?? i18n.t("ssh.sessionEnded"));
+      });
+
+      if (cancelled) {
+        unlistenData();
+        unlistenClosed();
+        term.dispose();
+        return;
+      }
+
+      unlisteners.push(unlistenData, unlistenClosed);
+
+      try {
+        const backlog = await sshBeginStreaming(sessionId);
+        if (cancelled) return;
+        for (const chunk of backlog) {
+          writeSshPayload(term, chunk);
+        }
+        syncTerminalSize();
+        term.focus();
+      } catch {
+        closeSession(i18n.t("ssh.connectionLost"));
+      }
+    };
 
     const onDataDisposable = term.onData((data) => {
-      runAsync(
-        () => sshWrite(sessionId, data),
-        () => closeSession(i18n.t("ssh.connectionLost")),
-      );
+      void sshWrite(sessionId, data).catch(() => {
+        closeSession(i18n.t("ssh.connectionLost"));
+      });
     });
 
-    const unlisteners: Array<() => void> = [];
-    const registerListener = (register: () => Promise<() => void>) => {
-      runAsync(async () => {
-        const unlisten = await register();
-        unlisteners.push(unlisten);
-      });
-    };
-
-    registerListener(() =>
-      listenSshData((event) => {
-        if (event.sessionId !== sessionId || isSessionClosed()) return;
-        writeSshPayload(term, event.data);
-      }),
-    );
-
-    registerListener(() =>
-      listenSshClosed((event) => {
-        if (event.sessionId !== sessionId || isSessionClosed()) return;
-        closeSession(event.error ?? i18n.t("ssh.sessionEnded"));
-      }),
-    );
+    void setup();
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
+      syncTerminalSize();
     });
     resizeObserver.observe(container);
 
-    const onWindowResize = () => fitAddon.fit();
+    const onWindowResize = () => syncTerminalSize();
     globalThis.addEventListener("resize", onWindowResize);
 
-    term.focus();
-
     return () => {
+      cancelled = true;
       onDataDisposable.dispose();
       unlisteners.forEach((fn) => fn());
       resizeObserver.disconnect();
       globalThis.removeEventListener("resize", onWindowResize);
-      runAsync(() => sshDisconnect(sessionId));
       term.dispose();
     };
   }, [state]);

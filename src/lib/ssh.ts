@@ -2,12 +2,29 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SshClosedEvent, SshDataEvent, SshSessionInfo } from "@/types/ssh";
 
-export async function sshConnect(entryId: string): Promise<SshSessionInfo> {
-  return invoke<SshSessionInfo>("ssh_connect", { entryId });
+export async function sshConnect(
+  entryId: string,
+  cols: number,
+  rows: number,
+): Promise<SshSessionInfo> {
+  return invoke<SshSessionInfo>("ssh_connect", { entryId, cols, rows });
+}
+
+/** Enables live ssh-data events and returns output emitted before the UI attached. */
+export async function sshBeginStreaming(sessionId: string): Promise<string[]> {
+  return invoke<string[]>("ssh_begin_streaming", { sessionId });
 }
 
 export async function sshWrite(sessionId: string, data: string): Promise<void> {
   return invoke("ssh_write", { sessionId, data });
+}
+
+export async function sshResizePty(
+  sessionId: string,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  return invoke("ssh_resize_pty", { sessionId, cols, rows });
 }
 
 export async function sshDisconnect(sessionId: string): Promise<void> {

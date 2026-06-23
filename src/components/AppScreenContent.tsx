@@ -10,7 +10,7 @@ import type {
   SecretEntrySummary,
   VaultInfo,
 } from "@/types/vault";
-import type { SshTerminalState } from "@/types/ssh";
+import type { SshSessionStatus, SshTerminalState } from "@/types/ssh";
 
 type Screen = "welcome" | "create" | "open" | "unlock" | "vault";
 type VaultMainView = "secrets" | "security" | "activity";
@@ -79,7 +79,12 @@ interface AppScreenContentProps {
   readonly onClosePasswordGenerator: () => void;
   readonly generatorApply?: (pwd: string) => void;
   readonly sshTerminal: SshTerminalState | null;
+  readonly sshSessionStatus: SshSessionStatus | null;
+  readonly sshFocusMode: boolean;
+  readonly onToggleSshFocusMode: () => void;
   readonly onCloseSshTerminal: () => void;
+  readonly onSshSessionActive: () => void;
+  readonly onSshSessionEnded: () => void;
 }
 
 export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
@@ -200,7 +205,12 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onClosePasswordGenerator={props.onClosePasswordGenerator}
           generatorApply={props.generatorApply}
           sshTerminal={props.sshTerminal}
+          sshSessionStatus={props.sshSessionStatus}
+          sshFocusMode={props.sshFocusMode}
+          onToggleSshFocusMode={props.onToggleSshFocusMode}
           onCloseSshTerminal={props.onCloseSshTerminal}
+          onSshSessionActive={props.onSshSessionActive}
+          onSshSessionEnded={props.onSshSessionEnded}
         />
       );
     default:

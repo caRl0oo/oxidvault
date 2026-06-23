@@ -27,9 +27,10 @@ serde.workspace = true
 serde_json.workspace = true
 open = "5"
 url = "2"
-russh = { version = "0.61", default-features = false, features = ["flate2", "ring"] }
+russh = { version = "0.61", default-features = false, features = ["flate2", "ring", "rsa"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 zeroize.workspace = true
 arboard = "3"
+data-encoding = "2.6"

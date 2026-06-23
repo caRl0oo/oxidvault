@@ -93,7 +93,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
   const renderBody = () => {
     if (loading && entries.length === 0) {
       return (
-        <div className="flex flex-1 items-center justify-center p-8">
+        <div className="vault-main-scroll flex items-center justify-center p-8">
           <p className="font-mono text-sm text-vault-muted">{t("audit.loading")}</p>
         </div>
       );
@@ -101,7 +101,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
 
     if (error && entries.length === 0) {
       return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
+        <div className="vault-main-scroll flex flex-col items-center justify-center gap-3 p-8">
           <p className="font-mono text-sm text-vault-danger">{error}</p>
           <button
             type="button"
@@ -115,7 +115,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
     }
 
     return (
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="vault-main-scroll px-6 py-4">
         {filteredEntries.length === 0 ? (
           <p className="py-8 text-center font-mono text-xs text-vault-muted">
             {search.trim() ? t("audit.noSearchResults") : t("audit.empty")}
@@ -187,17 +187,17 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <header className="border-b border-vault-border px-6 py-4">
+    <div className="vault-main-panel">
+      <header className="shrink-0 border-b border-vault-border px-6 py-4">
         <h1 className="font-mono text-sm font-semibold text-vault-text">{t("audit.title")}</h1>
         <p className="mt-1 font-mono text-xs text-vault-muted">{t("audit.subtitle")}</p>
       </header>
 
-      <div className="border-b border-vault-border bg-vault-surface/40 px-6 py-3">
+      <div className="shrink-0 border-b border-vault-border bg-vault-surface/40 px-6 py-3">
         <p className="font-mono text-xs text-vault-muted">{t("audit.privacyHint")}</p>
       </div>
 
-      <div className="flex items-center gap-3 border-b border-vault-border px-6 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-vault-border px-6 py-3">
         <input
           type="search"
           value={search}
@@ -226,7 +226,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
       </div>
 
       {exportMessage ? (
-        <div className="border-b border-vault-border px-6 py-2">
+        <div className="shrink-0 border-b border-vault-border px-6 py-2">
           <p
             className={`font-mono text-xs ${
               exportSuccess ? "text-vault-success" : "text-vault-danger"
