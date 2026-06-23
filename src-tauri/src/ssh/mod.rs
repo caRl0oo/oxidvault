@@ -5,43 +5,23 @@
 
 mod auth;
 mod key_loader;
+mod provider;
 
 use std::collections::HashMap;
-use std::io::Cursor;
-use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use auth::authenticate_publickey;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use key_loader::load_private_key_from_vault;
-use russh::client::{self, Handler};
-use russh::keys;
-use russh::ChannelMsg;
+use provider::{parse_host, ConnectContext, ConnectParams, RusshProvider, SshConnection};
 use serde::Serialize;
-use tauri::{async_runtime, AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tauri::{AppHandle, Emitter};
 use tokio::time::timeout;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 const SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const SSH_OUTPUT_BACKLOG_LIMIT: usize = 512 * 1024;
-
-struct PtyDimensions {
-    cols: u32,
-    rows: u32,
-}
-
-impl PtyDimensions {
-    fn clamped(cols: u32, rows: u32) -> Self {
-        Self {
-            cols: cols.clamp(20, 500),
-            rows: rows.clamp(8, 200),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,31 +84,20 @@ fn trim_backlog(backlog: &mut Vec<Vec<u8>>) {
     }
 }
 
-enum SessionInput {
-    Stdin(Vec<u8>),
-    Resize { cols: u32, rows: u32 },
-    Close,
-}
-
 struct ActiveSession {
-    write_tx: mpsc::Sender<SessionInput>,
     output: Arc<SessionOutput>,
 }
 
-struct LiveSession {
-    #[allow(dead_code)]
-    handle: client::Handle<SshClientHandler>,
-    channel: russh::Channel<client::Msg>,
-}
-
 pub struct SshManager {
-    sessions: std::sync::Mutex<HashMap<String, ActiveSession>>,
+    provider: RusshProvider,
+    sessions: Mutex<HashMap<String, ActiveSession>>,
 }
 
 impl SshManager {
     pub fn new() -> Self {
         Self {
-            sessions: std::sync::Mutex::new(HashMap::new()),
+            provider: RusshProvider::new(),
+            sessions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -145,35 +114,29 @@ impl SshManager {
         initial_cols: u32,
         initial_rows: u32,
     ) -> Result<SshSessionInfo, String> {
-        let pty = PtyDimensions::clamped(initial_cols, initial_rows);
         let (hostname, port) = parse_host(host)?;
         let session_id = Uuid::new_v4().to_string();
-        let (write_tx, write_rx) = mpsc::channel::<SessionInput>(256);
         let output = Arc::new(SessionOutput::new());
-
-        let display_host = format!("{hostname}:{port}");
-        let info = SshSessionInfo {
-            session_id: session_id.clone(),
-            host: display_host,
-            username: username.to_string(),
-        };
 
         let key_material = Zeroizing::new(private_key.to_string());
         let pass = passphrase.map(|p| Zeroizing::new(p.to_string()));
-        let pass_provided = pass.as_ref().is_some_and(|p| !p.is_empty());
         let user = username.trim().to_string();
-        let host_name = hostname;
 
-        let live = timeout(
+        let ctx = build_connect_context(app.clone(), session_id.clone(), Arc::clone(&output));
+
+        let connected = timeout(
             SSH_HANDSHAKE_TIMEOUT,
-            open_interactive_shell(
-                &host_name,
-                port,
-                &user,
-                key_material.as_str(),
-                pass.as_deref().map(|p| p.as_str()),
-                pass_provided,
-                pty,
+            self.provider.connect(
+                ctx,
+                ConnectParams {
+                    host: &hostname,
+                    port,
+                    username: &user,
+                    private_key: key_material.as_str(),
+                    passphrase: pass.as_deref().map(|p| p.as_str()),
+                    cols: initial_cols,
+                    rows: initial_rows,
+                },
             ),
         )
         .await
@@ -184,50 +147,24 @@ impl SshManager {
             sessions.insert(
                 session_id.clone(),
                 ActiveSession {
-                    write_tx: write_tx.clone(),
                     output: Arc::clone(&output),
                 },
             );
         }
 
-        let sid = session_id.clone();
-        async_runtime::spawn(async move {
-            let error = run_session_loop(&app, &sid, live, write_rx, output)
-                .await
-                .err()
-                .map(|e| e.to_string());
-            let _ = app.emit(
-                "ssh-closed",
-                SshClosedPayload {
-                    session_id: sid,
-                    error,
-                },
-            );
-        });
-
-        Ok(info)
+        Ok(SshSessionInfo {
+            session_id: connected.session_id,
+            host: connected.host,
+            username: connected.username,
+        })
     }
 
     pub fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
-        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| "SSH session not found".to_string())?;
-        session
-            .write_tx
-            .try_send(SessionInput::Stdin(data.to_vec()))
-            .map_err(|_| "SSH session closed".to_string())
+        self.provider.send_data_sync(session_id, data)
     }
 
     pub fn resize_pty(&self, session_id: &str, cols: u32, rows: u32) -> Result<(), String> {
-        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| "SSH session not found".to_string())?;
-        session
-            .write_tx
-            .try_send(SessionInput::Resize { cols, rows })
-            .map_err(|_| "SSH session closed".to_string())
+        self.provider.resize_pty_sync(session_id, cols, rows)
     }
 
     /// Drains buffered terminal output and enables live `ssh-data` events for the UI.
@@ -242,144 +179,57 @@ impl SshManager {
     }
 
     pub fn disconnect(&self, session_id: &str) {
-        let write_tx = {
-            let sessions = self.sessions.lock();
-            sessions
-                .ok()
-                .and_then(|map| map.get(session_id).map(|s| s.write_tx.clone()))
-        };
-        if let Some(tx) = write_tx {
-            let _ = tx.try_send(SessionInput::Close);
-        }
+        self.provider.disconnect_sync(session_id);
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.remove(session_id);
         }
     }
 
     pub fn disconnect_all(&self) {
-        if let Ok(sessions) = self.sessions.lock() {
-            for session in sessions.values() {
-                let _ = session.write_tx.try_send(SessionInput::Close);
-            }
+        let session_ids: Vec<String> = self
+            .sessions
+            .lock()
+            .map(|sessions| sessions.keys().cloned().collect())
+            .unwrap_or_default();
+
+        for session_id in &session_ids {
+            self.provider.disconnect_sync(session_id);
         }
+
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.clear();
         }
     }
 }
 
-struct SshClientHandler;
-
-impl Handler for SshClientHandler {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        _server_public_key: &keys::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-
-    async fn auth_banner(
-        &mut self,
-        _banner: &str,
-        _session: &mut russh::client::Session,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-async fn open_interactive_shell(
-    host: &str,
-    port: u16,
-    username: &str,
-    private_key: &str,
-    passphrase: Option<&str>,
-    passphrase_was_provided: bool,
-    pty: PtyDimensions,
-) -> Result<LiveSession, String> {
-    let addr = resolve_socket_addr(host, port)?;
-    let config = Arc::new(client::Config::default());
-
-    let mut handle = client::connect(config, addr, SshClientHandler)
-        .await
-        .map_err(|_| "SSH connection failed".to_string())?;
-
-    let private_key = load_private_key_from_vault(private_key, passphrase)?;
-    authenticate_publickey(&mut handle, username, private_key, passphrase_was_provided).await?;
-
-    let channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|_| "SSH session could not be opened".to_string())?;
-
-    // want_reply=true: server must acknowledge PTY and shell before interactive I/O.
-    channel
-        .request_pty(true, "xterm-256color", pty.cols, pty.rows, 0, 0, &[])
-        .await
-        .map_err(|_| "SSH terminal setup failed".to_string())?;
-
-    channel
-        .request_shell(true)
-        .await
-        .map_err(|_| "SSH shell could not be started".to_string())?;
-
-    Ok(LiveSession { handle, channel })
-}
-
-async fn run_session_loop(
-    app: &AppHandle,
-    session_id: &str,
-    live: LiveSession,
-    mut write_rx: mpsc::Receiver<SessionInput>,
+fn build_connect_context(
+    app: AppHandle,
+    session_id: String,
     output: Arc<SessionOutput>,
-) -> Result<(), String> {
-    let LiveSession {
-        handle: _handle,
-        mut channel,
-    } = live;
+) -> ConnectContext {
+    let sid_for_output = session_id.clone();
+    let app_for_output = app.clone();
+    let output_for_callback = Arc::clone(&output);
+    let on_output = Arc::new(move |data: &[u8]| {
+        emit_ssh_data(&app_for_output, &sid_for_output, &output_for_callback, data);
+    });
 
-    loop {
-        tokio::select! {
-            msg = channel.wait() => {
-                match msg {
-                    Some(ChannelMsg::Data { data }) => {
-                        emit_ssh_data(app, session_id, &output, data.as_ref());
-                    }
-                    Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        emit_ssh_data(app, session_id, &output, data.as_ref());
-                    }
-                    Some(ChannelMsg::ExitStatus { .. }) | Some(ChannelMsg::Eof) | None => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            input = write_rx.recv() => {
-                match input {
-                    Some(SessionInput::Stdin(bytes)) => {
-                        channel
-                            .data(Cursor::new(bytes))
-                            .await
-                            .map_err(|_| "SSH write failed".to_string())?;
-                    }
-                    Some(SessionInput::Resize { cols, rows }) => {
-                        channel
-                            .window_change(cols, rows, 0, 0)
-                            .await
-                            .map_err(|_| "SSH terminal resize failed".to_string())?;
-                    }
-                    Some(SessionInput::Close) | None => {
-                        let _ = channel.close().await;
-                        break;
-                    }
-                }
-            }
-        }
+    let sid_for_closed = session_id.clone();
+    let on_closed = Arc::new(move |error: Option<String>| {
+        let _ = app.emit(
+            "ssh-closed",
+            SshClosedPayload {
+                session_id: sid_for_closed.clone(),
+                error,
+            },
+        );
+    });
+
+    ConnectContext {
+        session_id,
+        on_output,
+        on_closed,
     }
-
-    let _ = channel.close().await;
-    Ok(())
 }
 
 fn emit_ssh_data(app: &AppHandle, session_id: &str, output: &SessionOutput, data: &[u8]) {
@@ -397,41 +247,9 @@ fn emit_ssh_data(app: &AppHandle, session_id: &str, output: &SessionOutput, data
     }
 }
 
-fn parse_host(raw: &str) -> Result<(String, u16), String> {
-    let mut host = raw.trim();
-    if host.is_empty() {
-        return Err("Host is empty".into());
-    }
-    if let Some(stripped) = host.strip_prefix("ssh://") {
-        host = stripped;
-    }
-
-    let (hostname, port) = if let Some((h, p)) = host.rsplit_once(':') {
-        if h.contains(']') || !p.chars().all(|c| c.is_ascii_digit()) {
-            (host.to_string(), 22)
-        } else {
-            let port: u16 = p.parse().map_err(|_| "Invalid SSH port".to_string())?;
-            (h.to_string(), port)
-        }
-    } else {
-        (host.to_string(), 22)
-    };
-
-    Ok((hostname, port))
-}
-
-fn resolve_socket_addr(host: &str, port: u16) -> Result<std::net::SocketAddr, String> {
-    let target = format!("{host}:{port}");
-    target
-        .to_socket_addrs()
-        .map_err(|_| format!("Host not found: {host}"))?
-        .next()
-        .ok_or_else(|| format!("Host not found: {host}"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::provider::parse_host;
 
     #[test]
     fn parses_host_with_port() {

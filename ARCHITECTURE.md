@@ -474,6 +474,7 @@ Bei lock_vault: cancel_pending() — Timer wird invalidiert
 ```
 OxidVault/
 ├── ARCHITECTURE.md          ← Diese Datei (Single Source of Truth)
+├── DEVELOPMENT_LOG.md       ← Architektur-Backlog & Refactoring-Ideen
 ├── Cargo.toml               ← Rust-Workspace-Root
 ├── rust-toolchain.toml      ← Rust-Toolchain-Pinning
 ├── package.json             ← Frontend-Abhängigkeiten & npm-Scripts
@@ -534,6 +535,13 @@ OxidVault/
 │       ├── window_events.rs ← Lock-on-Minimize (Tauri Window Events)
 │       ├── settings.rs      ← App-Einstellungen (Vault-Pfad, Git-Sync, kein Secret)
 │       ├── git_sync.rs      ← Git pull/commit/push via std::process::Command
+│       ├── ssh/             ← SSH Quick Connect (russh; Provider-Abstraktion in Arbeit)
+│       │   ├── mod.rs       ← SshManager, Session-Loop, Tauri-Events
+│       │   ├── auth.rs      ← Publickey-Auth (ring)
+│       │   ├── key_loader.rs← PEM/PPK aus Vault-RAM
+│       │   └── provider/
+│       │       ├── mod.rs       ← Trait `SshConnection`, `ConnectContext`
+│       │       └── russh_provider.rs ← `RusshProvider` (russh-Backend)
 │       └── commands/
 │           ├── mod.rs       ← Tauri Command-Handler
 │           ├── bootstrap.rs ← Smart-Start, Vault abkoppeln
@@ -643,7 +651,7 @@ Detail → delete_entry → zeroize → remove from Vec → persist (atomic) →
 
 ### Datenfluss: SSH Quick Connect
 
-> **Status:** ✅ `russh` · `src-tauri/src/ssh/` · `SshTerminalPanel` (xterm.js, Split-View) · Command-Await (Option B)
+> **Status:** ✅ `russh` via `RusshProvider` · `src-tauri/src/ssh/` · `SshTerminalPanel` · Command-Await (Option B)
 
 ```
 Quick Connect (entry_id)
@@ -676,6 +684,7 @@ SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
 | Aspekt | Detail |
 |---|---|
 | **SSH-Crate** | `russh` 0.61+ (`ring`, `flate2`; kein `rsa`-Feature — Marvin-Audit) |
+| **Provider-Abstraktion** | `ssh/provider/` — Trait `SshConnection`, `RusshProvider` (russh); `SshManager` delegiert Connect/I/O |
 | **Credentials** | `Vault::extract_ssh_credentials` — Private Key **nie** ans Frontend; IPC nur `entry_id` |
 | **Key-Loader** | `src-tauri/src/ssh/key_loader.rs` — PEM/PPK-Validierung, format-spezifisches Parsing; **kein Key in Quelltext** |
 | **Logging** | Kein Debug-/Warn-Logging im SSH-Modul; Fehler nur als generische UI-Strings (keine Keys/Passphrasen) |
@@ -2055,6 +2064,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 0.1.0 | Dashboard-Kacheln als Sidebar-Filter: klickbare Metriken, `DashboardFilterBar` |
 | 2025-06-19 | 1.0.0 | **Release:** Offizielles Branding (`logo.png`), Tauri-Icons, `AppLogo`, Version 1.0.0, MSI-Build-Doku |
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
+| 2025-06-20 | 1.0.0 | **SSH-Provider Phase 1:** `RusshProvider` implementiert `SshConnection`; `SshManager` delegiert russh-Logik |
+| 2025-06-20 | 1.0.0 | **SSH-Provider-Scaffold:** `ssh/provider/mod.rs` mit Trait `SshConnection`; `DEVELOPMENT_LOG.md` für Refactoring-Backlog |
 | 2025-06-20 | 1.0.0 | **Dependency-Audit:** `rsa`-Feature aus `russh` entfernt (RUSTSEC-2023-0071); `.cargo/audit.toml` mit Allowlist für Linux-GTK-Bindings (Tauri/wry) |
 | 2025-06-19 | 1.0.0 | Dependency-Audit: `russh` 0.61 (`ring`), `rsa` aus Dependency-Tree entfernt |
 | 2025-06-19 | 1.0.0 | **Native Messaging Phase 1:** CLI `--native-messaging` (Headless), `native_messaging.rs` (stdio LE-Framing), Dummy `ping`→`pong`, Manifest `browser-extension/host/com.oxidvault.app.json` |
