@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
-import { GitSyncStatusIndicator } from "@/components/GitSyncStatusIndicator";
-import { VaultLockButton } from "@/components/ui/VaultLockButton";
+import { AppMainArea } from "@/components/app/AppMainArea";
+import { AppVaultStatus } from "@/components/app/AppVaultStatus";
+import type { SettingsCategory } from "@/components/settings/types";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
 import { useExtensionPrefillListener } from "@/hooks/useExtensionPrefillListener";
@@ -88,7 +89,8 @@ export default function App() {
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
   const [gitSyncing, setGitSyncing] = useState(false);
   const [gitSyncError, setGitSyncError] = useState<string | null>(null);
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("general");
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
@@ -166,9 +168,25 @@ export default function App() {
     }
   }, [refreshEntries, selectedId]);
 
-  const openGitSettings = useCallback(() => {
-    setSettingsMenuOpen(true);
+  const openSettings = useCallback((category: SettingsCategory = "general") => {
+    setSettingsCategory(category);
+    setSettingsOpen(true);
   }, []);
+
+  const openGitSettings = useCallback(() => {
+    openSettings("sync");
+  }, [openSettings]);
+
+  const handleGoToUnlockFromSettings = useCallback(() => {
+    setSettingsOpen(false);
+    if (vaultInfo?.initialized) {
+      setScreen("unlock");
+    } else {
+      setScreen("welcome");
+    }
+  }, [vaultInfo?.initialized]);
+
+  const vaultLocked = !vaultInfo || vaultInfo.locked;
 
   const handleGitSyncChange = useCallback((settings: GitSyncSettings) => {
     setGitSyncSettings(settings);
@@ -695,34 +713,16 @@ export default function App() {
 
   const reachability = useReachabilityPolling(entries, vaultUnlocked);
 
-  const vaultStatus = vaultInfo ? (
-    <div className="flex items-center gap-2 font-mono text-[11px]">
-      {vaultInfo.initialized && gitSyncSettings.enabled ? (
-        <GitSyncStatusIndicator
-          syncing={gitSyncing}
-          syncError={gitSyncError}
-          onOpenSettings={openGitSettings}
-        />
-      ) : null}
-      <div
-        className={`flex items-center gap-2 ${
-          vaultInfo.initialized && gitSyncSettings.enabled
-            ? "border-l border-vault-border/40 pl-2"
-            : ""
-        }`}
-      >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${vaultInfo.locked ? "bg-vault-danger" : "bg-vault-success"}`}
-          aria-hidden
-        />
-        <span className="text-vault-muted">
-          {vaultInfo.locked ? t("app.statusLocked") : t("app.statusUnlocked")} · v
-          {vaultInfo.version}
-        </span>
-        <VaultLockButton locked={vaultInfo.locked} onLock={handleVaultLockClick} />
-      </div>
-    </div>
-  ) : null;
+  const vaultStatus = (
+    <AppVaultStatus
+      vaultInfo={vaultInfo}
+      gitSyncSettings={gitSyncSettings}
+      gitSyncing={gitSyncing}
+      gitSyncError={gitSyncError}
+      onOpenGitSettings={openGitSettings}
+      onLock={handleVaultLockClick}
+    />
+  );
 
   if (!isTauri()) {
     return (
@@ -735,93 +735,93 @@ export default function App() {
   return (
     <Layout
       vaultStatus={vaultStatus}
-      onGitSyncChange={handleGitSyncChange}
-      onTriggerGitSync={() => runAsync(handleGitSync)}
-      gitSyncing={gitSyncing}
-      settingsMenuOpen={settingsMenuOpen}
-      onSettingsMenuOpenChange={setSettingsMenuOpen}
+      onOpenSettings={() => openSettings("general")}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {idleWarningSeconds !== null && vaultUnlocked ? (
-          <output
-            className="block shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-100"
-          >
-            {t("app.idleLockWarning", { seconds: idleWarningSeconds })}
-          </output>
-        ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <AppMainArea
+          settingsOpen={settingsOpen}
+          settingsCategory={settingsCategory}
+          onCloseSettings={() => setSettingsOpen(false)}
+          onGitSyncChange={handleGitSyncChange}
+          onTriggerGitSync={() => runAsync(handleGitSync)}
+          gitSyncing={gitSyncing}
+          vaultLocked={vaultLocked}
+          onGoToUnlock={handleGoToUnlockFromSettings}
+          idleWarningSeconds={idleWarningSeconds}
+          vaultUnlocked={vaultUnlocked}
+        >
           <AppScreenContent
-        screen={screen}
-        backendStatus={backendStatus}
-        vaultInfo={vaultInfo}
-        vaultPath={vaultPath}
-        password={password}
-        vaultName={vaultName}
-        error={error}
-        loading={loading}
-        passwordRef={passwordRef}
-        searchRef={searchRef}
-        onPasswordChange={setPassword}
-        onVaultNameChange={setVaultName}
-        onStartCreate={startCreate}
-        onStartOpen={startOpen}
-        onCreate={handleCreate}
-        onOpen={handleAuthSubmit}
-        onUnlock={handleAuthSubmit}
-        mfaChallengeActive={mfaChallengeActive}
-        mfaCode={mfaCode}
-        mfaLockedOut={mfaLockedOut}
-        mfaLockoutSeconds={mfaLockoutSeconds}
-        onMfaCodeChange={setMfaCode}
-        onMfaAutoSubmit={handleMfaAutoSubmit}
-        onCancelMfaChallenge={handleCancelMfaChallenge}
-        onSwitchVault={handleSwitchVault}
-        onBackToWelcome={backToWelcome}
-        onBackFromOpen={backFromOpen}
-        vaultMainView={vaultMainView}
-        onVaultMainViewChange={setVaultMainView}
-        search={search}
-        onSearchChange={setSearch}
-        entries={entries}
-        filteredEntries={filteredEntries}
-        hasSidebarFilter={hasSidebarFilter}
-        activeTag={activeTag}
-        onTagChange={handleTagChange}
-        dashboardFilter={dashboardFilter}
-        onClearDashboardFilter={clearDashboardFilter}
-        selectedId={selectedId}
-        selectedEntry={selectedEntry}
-        onSelectEntry={handleSelectEntry}
-        onCopyPassword={handleSidebarCopyPassword}
-        onOpenWebsite={handleSidebarOpenWebsite}
-        onQuickConnect={handleQuickConnect}
-        sshConnecting={sshConnecting}
-        sidebarCopyingId={sidebarCopyingId}
-        reachability={reachability}
-        onApplyDashboardFilter={handleApplyDashboardFilter}
-        onShowAddForm={handleShowAddForm}
-        onEditEntry={setEditEntry}
-        showAddForm={showAddForm}
-        editEntry={editEntry}
-        newSecretPrefillPassword={newSecretPrefillPassword}
-        onCloseSecretForm={closeSecretForm}
-        onAddEntry={handleAddEntry}
-        onUpdateEntry={handleUpdateEntry}
-        onDeleteEntry={handleDeleteEntry}
-        deleteEntryLoading={loading}
-        onOpenGenerator={openPasswordGenerator}
-        showPasswordGenerator={showPasswordGenerator}
-        onClosePasswordGenerator={closePasswordGenerator}
-        generatorApply={generatorApply ?? undefined}
-        sshTerminal={sshTerminal}
-        sshSessionStatus={sshSessionStatus}
-        sshFocusMode={sshFocusMode}
-        onToggleSshFocusMode={handleToggleSshFocusMode}
-        onCloseSshTerminal={handleCloseSshTerminal}
-        onSshSessionActive={handleSshSessionActive}
-        onSshSessionEnded={handleSshSessionEnded}
-      />
-        </div>
+            screen={screen}
+            backendStatus={backendStatus}
+            vaultInfo={vaultInfo}
+            vaultPath={vaultPath}
+            password={password}
+            vaultName={vaultName}
+            error={error}
+            loading={loading}
+            passwordRef={passwordRef}
+            searchRef={searchRef}
+            onPasswordChange={setPassword}
+            onVaultNameChange={setVaultName}
+            onStartCreate={startCreate}
+            onStartOpen={startOpen}
+            onCreate={handleCreate}
+            onOpen={handleAuthSubmit}
+            onUnlock={handleAuthSubmit}
+            mfaChallengeActive={mfaChallengeActive}
+            mfaCode={mfaCode}
+            mfaLockedOut={mfaLockedOut}
+            mfaLockoutSeconds={mfaLockoutSeconds}
+            onMfaCodeChange={setMfaCode}
+            onMfaAutoSubmit={handleMfaAutoSubmit}
+            onCancelMfaChallenge={handleCancelMfaChallenge}
+            onSwitchVault={handleSwitchVault}
+            onBackToWelcome={backToWelcome}
+            onBackFromOpen={backFromOpen}
+            vaultMainView={vaultMainView}
+            onVaultMainViewChange={setVaultMainView}
+            search={search}
+            onSearchChange={setSearch}
+            entries={entries}
+            filteredEntries={filteredEntries}
+            hasSidebarFilter={hasSidebarFilter}
+            activeTag={activeTag}
+            onTagChange={handleTagChange}
+            dashboardFilter={dashboardFilter}
+            onClearDashboardFilter={clearDashboardFilter}
+            selectedId={selectedId}
+            selectedEntry={selectedEntry}
+            onSelectEntry={handleSelectEntry}
+            onCopyPassword={handleSidebarCopyPassword}
+            onOpenWebsite={handleSidebarOpenWebsite}
+            onQuickConnect={handleQuickConnect}
+            sshConnecting={sshConnecting}
+            sidebarCopyingId={sidebarCopyingId}
+            reachability={reachability}
+            onApplyDashboardFilter={handleApplyDashboardFilter}
+            onShowAddForm={handleShowAddForm}
+            onEditEntry={setEditEntry}
+            showAddForm={showAddForm}
+            editEntry={editEntry}
+            newSecretPrefillPassword={newSecretPrefillPassword}
+            onCloseSecretForm={closeSecretForm}
+            onAddEntry={handleAddEntry}
+            onUpdateEntry={handleUpdateEntry}
+            onDeleteEntry={handleDeleteEntry}
+            deleteEntryLoading={loading}
+            onOpenGenerator={openPasswordGenerator}
+            showPasswordGenerator={showPasswordGenerator}
+            onClosePasswordGenerator={closePasswordGenerator}
+            generatorApply={generatorApply ?? undefined}
+            sshTerminal={sshTerminal}
+            sshSessionStatus={sshSessionStatus}
+            sshFocusMode={sshFocusMode}
+            onToggleSshFocusMode={handleToggleSshFocusMode}
+            onCloseSshTerminal={handleCloseSshTerminal}
+            onSshSessionActive={handleSshSessionActive}
+            onSshSessionEnded={handleSshSessionEnded}
+          />
+        </AppMainArea>
       </div>
     </Layout>
   );

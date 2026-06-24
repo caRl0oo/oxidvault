@@ -1,27 +1,17 @@
 import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingsMenu } from "@/components/SettingsMenu";
-import type { GitSyncSettings } from "@/types/settings";
+import { SettingsGearButton } from "@/components/SettingsGearButton";
 
 interface LayoutProps {
   readonly children: ReactNode;
-  /** Right command-bar slot: vault lock state, version, lock action. */
   readonly vaultStatus?: ReactNode;
-  readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
-  readonly onTriggerGitSync?: () => void;
-  readonly gitSyncing?: boolean;
-  readonly settingsMenuOpen?: boolean;
-  readonly onSettingsMenuOpenChange?: (open: boolean) => void;
+  readonly onOpenSettings?: () => void;
 }
 
 export function Layout({
   children,
   vaultStatus,
-  onGitSyncChange,
-  onTriggerGitSync,
-  gitSyncing,
-  settingsMenuOpen,
-  onSettingsMenuOpenChange,
+  onOpenSettings,
 }: Readonly<LayoutProps>) {
   const { t } = useTranslation();
 
@@ -29,13 +19,7 @@ export function Layout({
     <div className="flex h-full flex-col">
       <header className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-vault-border/40 bg-vault-bg px-4">
         {vaultStatus}
-        <SettingsMenu
-          onGitSyncChange={onGitSyncChange}
-          onTriggerGitSync={onTriggerGitSync}
-          gitSyncing={gitSyncing}
-          open={settingsMenuOpen}
-          onOpenChange={onSettingsMenuOpenChange}
-        />
+        <SettingsGearButton onClick={() => onOpenSettings?.()} />
       </header>
       <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
       <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-vault-border bg-vault-surface px-4 font-mono text-[11px] text-vault-muted">

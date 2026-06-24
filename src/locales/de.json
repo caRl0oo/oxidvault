@@ -380,6 +380,15 @@
   },
   "settings": {
     "title": "Einstellungen",
+    "back": "Zurück",
+    "lockedTitle": "Tresor gesperrt",
+    "lockedHint": "Bitte entsperren Sie den Tresor, um diese Einstellungen zu verwalten.",
+    "goToUnlock": "Zum Entsperren",
+    "nav": {
+      "general": "Allgemein",
+      "sync": "Synchronisation",
+      "security": "Sicherheit"
+    },
     "theme": "Design",
     "language": "Sprache",
     "gitSync": "Git Synchronisation",

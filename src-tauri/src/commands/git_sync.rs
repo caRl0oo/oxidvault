@@ -13,7 +13,7 @@ use crate::git::{self, GitSyncAuth, GitSyncResult};
 use crate::settings::{load_settings, save_settings, AppSettings, GitSyncSettings};
 use zeroize::Zeroizing;
 
-use super::AppState;
+use super::{ensure_vault_unlocked, ensure_vault_unlocked_state, AppState};
 
 fn record_vault_audit<F>(state: &AppState, write: F) -> Result<(), String>
 where
@@ -38,6 +38,7 @@ pub fn update_git_sync_settings(
     https_username: Option<String>,
     https_password: Option<String>,
 ) -> Result<AppSettings, String> {
+    ensure_vault_unlocked(&state)?;
     state.touch_activity_if_unlocked();
     let settings = load_settings(&app)?;
     let resolved = resolve_config(&settings.policy_preferences());
@@ -92,7 +93,8 @@ pub async fn sync_vault_git(
 
 /// Stores the Git SSH key passphrase in the OS keyring (`oxidvault` / `git-ssh-passphrase`).
 #[tauri::command]
-pub fn save_ssh_passphrase(passphrase: String) -> Result<(), String> {
+pub fn save_ssh_passphrase(state: State<'_, AppState>, passphrase: String) -> Result<(), String> {
+    ensure_vault_unlocked(&state)?;
     let secret = Zeroizing::new(passphrase);
     log::info!("[git-sync] save_ssh_passphrase command invoked");
     git::save_ssh_passphrase(secret.as_str())
@@ -100,11 +102,13 @@ pub fn save_ssh_passphrase(passphrase: String) -> Result<(), String> {
 
 /// Removes the Git SSH key passphrase from the OS keyring.
 #[tauri::command]
-pub fn remove_ssh_passphrase() -> Result<(), String> {
+pub fn remove_ssh_passphrase(state: State<'_, AppState>) -> Result<(), String> {
+    ensure_vault_unlocked(&state)?;
     git::remove_ssh_passphrase()
 }
 
 async fn execute_git_sync(app: &AppHandle, state: &AppState) -> Result<GitSyncResult, String> {
+    ensure_vault_unlocked_state(state)?;
     state.touch_activity_if_unlocked();
     let settings = load_settings(app)?;
     let resolved = resolve_config(&settings.policy_preferences());

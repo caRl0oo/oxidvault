@@ -793,6 +793,17 @@ ReachabilityDot — Sidebar + Detailansicht
 
 > Alle Commands sind synchron, laufen im Rust-Backend und geben `Result<T, String>` zurück.
 
+### Vault-Lock-Guard (sensible Commands)
+
+| Aspekt | Detail |
+|---|---|
+| **Modul** | `src-tauri/src/commands/vault_guard.rs` |
+| **API** | `ensure_vault_unlocked(&State<AppState>)` · `ensure_vault_unlocked_state(&AppState)` |
+| **Prüfung** | `AppState::is_vault_unlocked()` → `initialized && !locked` |
+| **Fehler** | `Err("Vault locked")` — stabile Meldung für Frontend-Abbruch |
+| **Geschützte Commands** | `enable_mfa`, `disable_mfa`, `reencrypt_vault`, `update_git_sync_settings`, `save_ssh_passphrase`, `remove_ssh_passphrase`, `trigger_git_sync`, `sync_vault_git` |
+| **Konvention** | Neue Security-/Sync-Commands: als erste Zeile `ensure_vault_unlocked(&state)?` |
+
 | Command | Parameter | Rückgabe | Beschreibung | Status |
 |---|---|---|---|---|
 | `health_check` | — | `String` | Backend-Liveness-Probe (`"ok"`) | ✅ |
@@ -820,18 +831,18 @@ ReachabilityDot — Sidebar + Detailansicht
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
 | `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
 | `get_system_diagnostics` | — | `SystemDiagnostics` | Admin-Support-Snapshot: Vault-Pfad (UNC), GPO-Policy, Audit-Log-Schreibbarkeit, Version — **keine Secrets** | ✅ |
-| `enable_mfa` | — | `MfaSetupInfo` | TOTP-Enrollment: CSPRNG-Secret, otpauth-URI, QR-PNG (base64) — Secret bleibt bis Verifikation im Vault-RAM (`Zeroizing`) | ✅ |
+| `enable_mfa` | — | `MfaSetupInfo` | TOTP-Enrollment — **Vault-Lock-Guard** | ✅ |
 | `get_mfa_status` | — | `MfaStatus` | `{ mfaEnabled, vaultLocked }` — kein Secret über IPC | ✅ |
-| `disable_mfa` | — | `()` | MFA deaktivieren, verschlüsseltes Secret aus Payload entfernen | ✅ |
+| `disable_mfa` | — | `()` | MFA deaktivieren — **Vault-Lock-Guard** | ✅ |
 | `verify_mfa_code` | `code: String` | `bool` | TOTP-Validierung (RFC 6238, offline); bei Enrollment → verschlüsselte Persistenz im Vault-Payload | ✅ |
-| `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container (Header) unter neuem Passwort rotieren | ✅ |
+| `reencrypt_vault` | `current_password`, `new_password` | `()` | Master-Key-Container rotieren — **Vault-Lock-Guard** | ✅ |
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
-| `update_git_sync_settings` | `enabled`, `remote_url?`, `ssh_key_path?`, `https_username?`, `https_password?` | `AppSettings` | Git-Sync-Konfiguration speichern (`https_password` nicht per IPC zurück) | ✅ |
-| `trigger_git_sync` | — | `GitSyncResult` | `git2` pull → commit/push (`spawn_blocking`, `RemoteCallbacks`) | ✅ async |
-| `save_ssh_passphrase` | `passphrase: String` | `()` | SSH-Key-Passphrase im OS-Keyring speichern (`Zeroizing`, Service `oxidvault-git`) | ✅ |
-| `remove_ssh_passphrase` | — | `()` | SSH-Key-Passphrase aus OS-Keyring entfernen | ✅ |
-| `sync_vault_git` | — | `GitSyncResult` | Alias von `trigger_git_sync` (Abwärtskompatibilität) | ✅ async |
+| `update_git_sync_settings` | `enabled`, `remote_url?`, `ssh_key_path?`, `https_username?`, `https_password?` | `AppSettings` | Git-Sync-Konfiguration — **Vault-Lock-Guard** | ✅ |
+| `trigger_git_sync` | — | `GitSyncResult` | `git2` pull → commit/push — **Vault-Lock-Guard** | ✅ async |
+| `save_ssh_passphrase` | `passphrase: String` | `()` | SSH-Key-Passphrase im OS-Keyring — **Vault-Lock-Guard** | ✅ |
+| `remove_ssh_passphrase` | — | `()` | SSH-Key-Passphrase aus Keyring — **Vault-Lock-Guard** | ✅ |
+| `sync_vault_git` | — | `GitSyncResult` | Alias von `trigger_git_sync` — **Vault-Lock-Guard** | ✅ async |
 | `ssh_connect` | `entry_id: String`, `cols: u32`, `rows: u32` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM); **async**, blockiert bis Auth + Shell; initiale PTY-Größe vom Frontend | ✅ async |
 | `ssh_write` | `session_id`, `data: String` | `()` | Terminal-Stdin an SSH-Kanal senden | ✅ |
 | `ssh_disconnect` | `session_id: String` | `()`` | SSH-Session beenden | ✅ |
@@ -1244,7 +1255,7 @@ ReachabilityDot — Sidebar + Detailansicht
 
 | Aspekt | Detail |
 |---|---|
-| **UI** | Zahnrad-Dropdown oben rechts im Header (`SettingsMenu`: Theme + Git-Sync) |
+| **UI** | Zahnrad-Icon öffnet Vollbild-`SettingsView` (Kategorien: Allgemein, Synchronisation, Sicherheit) |
 | **Mechanismus** | `document.documentElement.setAttribute("data-theme", id)` |
 | **CSS** | Pro Theme überschreibt `[data-theme="…"]` die `--color-vault-*` Variablen |
 | **Persistenz** | `localStorage` Key `oxidvault-theme` — Restore via `initTheme()` in `main.tsx` |
@@ -1342,7 +1353,7 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 
 ### Git-Synchronisation (v0.1.0 — Runde 4)
 
-> **Status:** ✅ `trigger_git_sync` · `git2` 0.19 (`vendored-libgit2`, `ssh`) · `SettingsMenu` · `GitSyncStatusIndicator`
+> **Status:** ✅ `trigger_git_sync` · `git2` 0.19 (`vendored-libgit2`, `ssh`) · `SettingsView` · `GitSyncStatusIndicator`
 
 | Aspekt | Detail |
 |---|---|
@@ -1383,8 +1394,9 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | `SshTerminalModal` | `src/components/SshTerminalModal.tsx` | Integriertes xterm.js-Terminal, Theme-aware |
 | `AppLogo` | `src/components/AppLogo.tsx` | Quadratisches App-Logo (`/logo.png`) in Header & Auth-Screens |
 | `ThemeSelector` | `src/components/ThemeSelector.tsx` | *(ersetzt durch SettingsMenu)* |
-| `GitSyncStatusIndicator` | `src/components/GitSyncStatusIndicator.tsx` | Header-Icon: Git-Sync-Status (klickbar → Einstellungen) |
-| `SettingsMenu` | `src/components/SettingsMenu.tsx` | Zahnrad-Dropdown: Theme + Git-Sync-Einstellungen + manueller Sync |
+| `SettingsView` | `src/components/settings/SettingsView.tsx` | Einstellungsseite mit vertikaler Navigation |
+| `SettingsGearButton` | `src/components/SettingsGearButton.tsx` | Zahnrad-Icon im Header |
+| `GitSyncStatusIndicator` | `src/components/GitSyncStatusIndicator.tsx` | Header-Icon: Git-Sync-Status (klickbar → Sync-Einstellungen) |
 | `ClipboardToast` | `src/components/ClipboardToast.tsx` | Toast-Hinweis für 30s Clipboard Auto-Clear |
 | `SecretTypeIcon` | `src/components/SecretTypeIcon.tsx` | SVG-Icons für alle 6 Secret-Typen in Sidebar |
 | `openWebsite.ts` | `src/lib/openWebsite.ts` | URL-Validierung + IPC zu `open_website_url` |
@@ -2078,6 +2090,9 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
 | 2025-06-20 | 1.0.0 | **Git SSH-Passphrase UI:** Settings-Feld + `saveSshPassphrase` IPC; Keyring-INFO-Log bei `set_password` |
 | 2025-06-20 | 1.0.0 | **Git SSH-Keyring:** `ssh_keyring.rs` + `keyring` 3; `save_ssh_passphrase` / `remove_ssh_passphrase`; Passphrase nur im OS-Store |
+| 2025-06-23 | 1.0.0 | **Vault-Lock-Guard:** `commands/vault_guard.rs` — `ensure_vault_unlocked`; sensible Commands liefern `Err("Vault locked")` |
+| 2025-06-23 | 1.0.0 | **SettingsView Lock:** Sync/Sicherheit nur bei entsperrtem Tresor; `SettingsLockedView` mit Navigation zum Entsperren |
+| 2025-06-23 | 1.0.0 | **SettingsView:** Vollbild-Einstellungsseite mit Nav (Allgemein/Sync/Sicherheit); `SettingsMenu`-Dropdown entfernt |
 | 2025-06-23 | 1.0.0 | **Git-Sync Header:** `GitSyncStatusIndicator` im Status-Cluster oben rechts; untere Statusleiste entfernt |
 | 2025-06-23 | 1.0.0 | **Git-Sync StatusBar:** `GitSyncStatusBar` am Fensterfuß (volle Breite); Header-Sync-Icon entfernt; Klick öffnet Git-Einstellungen |
 | 2025-06-23 | 1.0.0 | **Git-Sync UI:** SSH-Key/Passphrase in eingeklappter „Erweitert“-Sektion; SSH-Secret-Passphrase klar benannt; Keyring-Service `oxidvault-git` (Migration von `oxidvault`) |

@@ -380,6 +380,15 @@
   },
   "settings": {
     "title": "Settings",
+    "back": "Back",
+    "lockedTitle": "Vault locked",
+    "lockedHint": "Please unlock the vault to manage these settings.",
+    "goToUnlock": "Go to unlock",
+    "nav": {
+      "general": "General",
+      "sync": "Synchronization",
+      "security": "Security"
+    },
     "theme": "Theme",
     "language": "Language",
     "gitSync": "Git synchronization",

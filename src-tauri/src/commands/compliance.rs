@@ -7,6 +7,7 @@ use tauri::State;
 use vault_core::ComplianceStatus;
 use zeroize::Zeroizing;
 
+use super::ensure_vault_unlocked;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -22,6 +23,7 @@ pub fn reencrypt_vault(
     new_password: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    ensure_vault_unlocked(&state)?;
     let current = Zeroizing::new(current_password);
     let new_password = Zeroizing::new(new_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;

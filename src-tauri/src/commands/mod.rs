@@ -14,6 +14,9 @@ use crate::settings;
 
 pub use crate::state::AppState;
 
+mod vault_guard;
+pub use vault_guard::{ensure_vault_unlocked, ensure_vault_unlocked_state};
+
 fn note_unlock_error(state: &AppState, err: &VaultError) {
     if matches!(err, VaultError::InvalidMfaCode) {
         if let Ok(mut bridge) = state.bridge.lock() {
@@ -224,6 +227,7 @@ pub fn generate_password_cmd(options: PasswordGenOptions) -> Result<String, Stri
 
 #[tauri::command]
 pub fn enable_mfa(state: State<'_, AppState>) -> Result<vault_core::MfaSetupInfo, String> {
+    ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
     vault.begin_mfa_enrollment().map_err(|e| e.to_string())
@@ -247,6 +251,7 @@ pub fn take_extension_new_secret(state: State<'_, AppState>) -> Result<Option<St
 
 #[tauri::command]
 pub fn disable_mfa(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
     vault.disable_mfa().map_err(|e| e.to_string())?;
