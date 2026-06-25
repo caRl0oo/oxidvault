@@ -485,7 +485,10 @@ pub fn resolve_payload_key(meta: &VaultFileMeta, kek: &MasterKey) -> Result<Mast
 }
 
 /// Reads a v3 vault header and returns the user list plus encrypted payload parts.
-pub fn read_v3_vault_file(path: &Path) -> Result<(Vec<VaultUser>, Vec<u8>, Vec<u8>), VaultError> {
+/// (users, payload_nonce, payload_ciphertext)
+type V3VaultFileContents = (Vec<VaultUser>, Vec<u8>, Vec<u8>);
+
+pub fn read_v3_vault_file(path: &Path) -> Result<V3VaultFileContents, VaultError> {
     let bytes = fs::read(path)?;
     let (meta, header_len) = parse_header(&bytes)?;
     if meta.format_version != FORMAT_VERSION_V3 {
@@ -1040,7 +1043,7 @@ mod tests {
         write_v3_vault_file(
             &path,
             "V3Vault",
-            &[user.clone()],
+            std::slice::from_ref(&user),
             dek.as_bytes(),
             &payload.entries,
         )

@@ -1987,7 +1987,7 @@ mod tests {
         let mut vault =
             Vault::create_v3(&path, "TeamVault", "admin", admin_password.clone()).unwrap();
         assert_eq!(vault.list_users().len(), 1);
-        assert!(vault.list_users()[0].mfa_enabled == false);
+        assert!(!vault.list_users()[0].mfa_enabled);
         assert!(vault.list_users()[0].is_current_user);
 
         vault
