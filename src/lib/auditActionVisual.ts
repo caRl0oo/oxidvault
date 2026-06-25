@@ -37,6 +37,7 @@ const ACTION_VISUALS: Record<string, AuditActionVisual> = {
   AuthFailed: { icon: ShieldAlert, tone: "danger" },
   SyncEvent: { icon: GitBranch, tone: "accent" },
   ConfigChanged: { icon: Settings, tone: "config" },
+  SshHostTrusted: { icon: ShieldAlert, tone: "success" },
 };
 
 const DEFAULT_VISUAL: AuditActionVisual = {

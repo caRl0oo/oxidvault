@@ -34,6 +34,7 @@ export interface SshKeyPublic {
   username: string;
   has_private_key: boolean;
   has_passphrase: boolean;
+  has_known_host_fingerprint: boolean;
 }
 
 export interface ApiTokenPublic {
@@ -87,6 +88,7 @@ export interface SshKeyPayload {
   username: string;
   private_key: string;
   passphrase?: string;
+  known_host_fingerprint?: string | null;
 }
 
 export interface ApiTokenPayload {

@@ -24,6 +24,9 @@ use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
 
+/// `(host, username, private_key, passphrase, known_host_fingerprint)`
+pub type SshConnectCredentials = (String, String, String, Option<String>, Option<String>);
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VaultInfo {
     pub version: String,
@@ -355,6 +358,8 @@ impl Vault {
         }
 
         let created_at = existing.created_at.clone();
+        let mut input = input;
+        merge_ssh_known_host_on_update(&existing.payload, &mut input.payload);
         let entry = SecretEntry::update_from(id, created_at, input)?;
         let summary = entry.summary();
         self.entries[idx] = entry;
@@ -488,7 +493,7 @@ impl Vault {
     pub fn extract_ssh_credentials(
         &self,
         entry_id: &str,
-    ) -> Result<(String, String, String, Option<String>), VaultError> {
+    ) -> Result<SshConnectCredentials, VaultError> {
         self.ensure_unlocked()?;
         let entry = self
             .entries
@@ -501,14 +506,79 @@ impl Vault {
                 username,
                 private_key,
                 passphrase,
+                known_host_fingerprint,
             } => Ok((
                 host.clone(),
                 username.clone(),
                 private_key.clone(),
                 passphrase.clone(),
+                known_host_fingerprint.clone(),
             )),
             _ => Err(VaultError::Other("entry is not an SSH key".into())),
         }
+    }
+
+    /// Persists a trusted SSH host key fingerprint for an entry.
+    pub fn update_entry_fingerprint(
+        &mut self,
+        entry_id: &str,
+        fingerprint: &str,
+    ) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        let fp = fingerprint.trim();
+        if fp.is_empty() {
+            return Err(VaultError::Other("host key fingerprint is empty".into()));
+        }
+
+        let idx = self
+            .entries
+            .iter()
+            .position(|e| e.id == entry_id)
+            .ok_or(VaultError::EntryNotFound)?;
+
+        let entry = &mut self.entries[idx];
+        let SecretPayload::SshKey {
+            known_host_fingerprint,
+            ..
+        } = &mut entry.payload
+        else {
+            return Err(VaultError::Other("entry is not an SSH key".into()));
+        };
+
+        *known_host_fingerprint = Some(fp.to_string());
+        entry.updated_at = unix_timestamp_string();
+        self.persist()?;
+        self.audit(AuditAction::SshHostTrusted {
+            id: Self::parse_entry_uuid(entry_id)?,
+        })?;
+        Ok(())
+    }
+
+    /// Removes a stored SSH host key fingerprint (user-initiated reset).
+    pub fn clear_ssh_known_host_fingerprint(&mut self, entry_id: &str) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        let idx = self
+            .entries
+            .iter()
+            .position(|e| e.id == entry_id)
+            .ok_or(VaultError::EntryNotFound)?;
+
+        let entry = &mut self.entries[idx];
+        let SecretPayload::SshKey {
+            known_host_fingerprint,
+            ..
+        } = &mut entry.payload
+        else {
+            return Err(VaultError::Other("entry is not an SSH key".into()));
+        };
+
+        *known_host_fingerprint = None;
+        entry.updated_at = unix_timestamp_string();
+        self.persist()?;
+        self.audit(AuditAction::SecretModified {
+            id: Self::parse_entry_uuid(entry_id)?,
+        })?;
+        Ok(())
     }
 
     pub fn audit_security(&self) -> Result<SecurityAuditReport, VaultError> {
@@ -741,6 +811,35 @@ impl Vault {
     }
 }
 
+fn merge_ssh_known_host_on_update(existing: &SecretPayload, incoming: &mut SecretPayload) {
+    let (
+        SecretPayload::SshKey {
+            known_host_fingerprint: existing_fp,
+            ..
+        },
+        SecretPayload::SshKey {
+            known_host_fingerprint: incoming_fp,
+            ..
+        },
+    ) = (existing, incoming)
+    else {
+        return;
+    };
+
+    if incoming_fp.is_none() {
+        *incoming_fp = existing_fp.clone();
+    }
+}
+
+fn unix_timestamp_string() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
 fn effective_key_created_at(meta: &format::VaultFileMeta, path: &std::path::Path) -> u64 {
     if meta.key_created_at > 0 {
         return meta.key_created_at;
@@ -942,6 +1041,7 @@ mod tests {
                     username: "root".into(),
                     private_key: "-----BEGIN KEY-----".into(),
                     passphrase: None,
+                    known_host_fingerprint: None,
                 },
             })
             .unwrap();

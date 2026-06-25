@@ -60,6 +60,7 @@ interface AppScreenContentProps {
   readonly onCopyPassword: (id: string) => void;
   readonly onOpenWebsite: (entry: SecretEntrySummary) => void;
   readonly onQuickConnect: (id: string) => void;
+  readonly onResetSshFingerprint?: (entryId: string) => void;
   readonly sshConnecting: boolean;
   readonly sidebarCopyingId: string | null;
   readonly reachability: Record<string, ReachabilityState>;
@@ -184,6 +185,7 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onCopyPassword={props.onCopyPassword}
           onOpenWebsite={props.onOpenWebsite}
           onQuickConnect={props.onQuickConnect}
+          onResetSshFingerprint={props.onResetSshFingerprint}
           sshConnecting={props.sshConnecting}
           sidebarCopyingId={props.sidebarCopyingId}
           reachability={props.reachability}

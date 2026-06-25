@@ -1,13 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { SshClosedEvent, SshDataEvent, SshSessionInfo } from "@/types/ssh";
+import type { SshClosedEvent, SshConnectResponse, SshDataEvent, SshSessionInfo } from "@/types/ssh";
 
 export async function sshConnect(
   entryId: string,
   cols: number,
   rows: number,
+): Promise<SshConnectResponse> {
+  return invoke<SshConnectResponse>("ssh_connect", { entryId, cols, rows });
+}
+
+export async function sshTrustHost(
+  entryId: string,
+  sessionId: string,
+  fingerprint: string,
 ): Promise<SshSessionInfo> {
-  return invoke<SshSessionInfo>("ssh_connect", { entryId, cols, rows });
+  return invoke<SshSessionInfo>("ssh_trust_host", { entryId, sessionId, fingerprint });
+}
+
+export async function sshRejectHost(sessionId: string): Promise<void> {
+  return invoke("ssh_reject_host", { sessionId });
+}
+
+export async function clearSshHostFingerprint(entryId: string): Promise<void> {
+  return invoke("ssh_clear_host_fingerprint", { entryId });
 }
 
 /** Enables live ssh-data events and returns output emitted before the UI attached. */

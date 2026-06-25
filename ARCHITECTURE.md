@@ -242,6 +242,7 @@ Detailansicht / Sidebar
 | **Zero-Clone Persist (K3)** | `persist()` serialisiert `&self.entries` in-place — kein `entries.clone()` |
 | **Serialisierungs-Puffer (K3)** | `serialize_entries_zeroizing()` in `format.rs` → `Zeroizing<Vec<u8>>` vor `encrypt` |
 | **IPC ohne Secrets (K4)** | `get_entry` → `SecretEntryPublic`; Secrets nur via `reveal_secret` / `copy_to_clipboard` |
+| **Known-Host-Fingerprint** | Teil von `SecretPayload` → AES-256-GCM im `.oxid`-Body; nie als Klartext über IPC (`has_known_host_fingerprint: bool` nur) |
 | **Eingehende Passwörter (K4)** | `Zeroizing<String>` in `create_vault`, `open_vault`, `unlock_vault` |
 | **Atomic Writes** | Temp-Datei `.oxid.tmp` → `fsync` → `rename` (crash-safe) |
 | **Lock-on-Minimize** | Tauri `WindowEvent::Focused(false)` + `is_minimized()` → sofortiger Lock |
@@ -667,11 +668,19 @@ ssh_connect (async) ──► Vault::extract_ssh_credentials(id)  [Key bleibt im
         │                        ▼
         │              open_interactive_shell()  [blockiert bis Handshake fertig]
         │                        │
+        │                        ├── check_server_key → SHA-256-Fingerprint (OpenSSH-Format)
         │                        ├── TCP → Pubkey-Auth → PTY (want_reply) → Shell (want_reply)
         │                        ├── tokio::time::timeout(15s) — Auth/Shell-Schritte
         │                        └── Fehler → generische Err(String) ans Frontend (setError)
         │
-        │  bei Ok(SshSessionInfo):
+        │  Host-Key-Prüfung (nach Handshake):
+        │                        ├── kein gespeicherter Fingerprint → `UnknownHost` (Pending-Session)
+        │                        ├── Fingerprint stimmt → `Connected`
+        │                        └── Fingerprint abweichend → `HostKeyMismatch` + sofort disconnect
+        │
+        │  bei UnknownHost: UI-Dialog → `ssh_trust_host` (persist + promote) | `ssh_reject_host`
+        │
+        │  bei Connected:
         │                        ▼
         │              async_runtime::spawn → run_session_loop (I/O-Loop)
         │                        │
@@ -700,13 +709,13 @@ SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
 | **Terminal-UI** | `@xterm/xterm` + `@xterm/addon-fit`; pixelbasierter Split + ResizeObserver; Fokus-Modus (Overlay); Schließen mit Bestätigung |
 | **Session-Status** | UI: `connecting` \| `active` \| `disconnected` — grüner Status-Punkt bei aktiver Sitzung |
 | **Session-Ende** | Server `exit` → `ssh-closed` → Panel schließt; manuell → `SessionInput::Close` + `channel.close()` |
-| **Vault-Lock** | `lock_vault` → `disconnect_all_ssh()` — graceful Close für alle Sessions |
+| **Host-Key-Verifikation** | TOFU + Known-Hosts: `known_host_fingerprint` im `ssh_key`-Payload (verschlüsselt); IPC nur `has_known_host_fingerprint: bool` |
+| **Pending-Sessions** | Unbekannter Host: Shell offen, I/O gebuffert, bis `ssh_trust_host` / `ssh_reject_host`; Cleanup bei Vault-Lock (`disconnect_all_ssh`) |
+| **Vault-Lock** | `lock_vault` → `disconnect_all_ssh()` — graceful Close für alle Sessions (inkl. Pending) |
 | **Key-Sicherheit** | Kein Key in Source; `Zeroizing` für Key + Passphrase in `ssh_connect` und `SshManager::connect` |
 
-**Tauri Commands:** `ssh_connect`, `ssh_begin_streaming`, `ssh_write`, `ssh_resize_pty`, `ssh_disconnect`  
+**Tauri Commands:** `ssh_connect`, `ssh_trust_host`, `ssh_reject_host`, `ssh_clear_host_fingerprint`, `ssh_begin_streaming`, `ssh_write`, `ssh_resize_pty`, `ssh_disconnect`  
 **Tauri Events:** `ssh-data`, `ssh-closed`
-
-**Hinweis Host-Keys:** v0.1 akzeptiert Server-Keys für Admin-Quick-Connect (TOFU-Whitelist folgt optional).
 
 ### Datenfluss: Web-Login — Website öffnen
 
@@ -843,7 +852,10 @@ ReachabilityDot — Sidebar + Detailansicht
 | `save_ssh_passphrase` | `passphrase: String` | `()` | SSH-Key-Passphrase im OS-Keyring — **Vault-Lock-Guard** | ✅ |
 | `remove_ssh_passphrase` | — | `()` | SSH-Key-Passphrase aus Keyring — **Vault-Lock-Guard** | ✅ |
 | `sync_vault_git` | — | `GitSyncResult` | Alias von `trigger_git_sync` — **Vault-Lock-Guard** | ✅ async |
-| `ssh_connect` | `entry_id: String`, `cols: u32`, `rows: u32` | `SshSessionInfo` | SSH-Session starten (Key aus Vault-RAM); **async**, blockiert bis Auth + Shell; initiale PTY-Größe vom Frontend | ✅ async |
+| `ssh_connect` | `entry_id: String`, `cols: u32`, `rows: u32` | `SshConnectResponse` | SSH-Session — **async**; Host-Key-TOFU/Known-Hosts | ✅ async |
+| `ssh_trust_host` | `entry_id`, `session_id`, `fingerprint` | `SshSessionInfo` | Pending-Session aktivieren + Fingerprint persistieren | ✅ |
+| `ssh_reject_host` | `session_id` | `()` | Pending-Session abbrechen | ✅ |
+| `ssh_clear_host_fingerprint` | `entry_id` | `()` | Gespeicherten Host-Key-Fingerprint löschen | ✅ |
 | `ssh_write` | `session_id`, `data: String` | `()` | Terminal-Stdin an SSH-Kanal senden | ✅ |
 | `ssh_disconnect` | `session_id: String` | `()`` | SSH-Session beenden | ✅ |
 
@@ -896,7 +908,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `type` | Label | Pflichtfelder (Vault-RAM) | IPC-Public (Frontend) |
 |---|---|---|---|
 | `web_login` | Web-Login | `url`, `username`, `password` | `url`, `username`, `has_password`, `has_notes` |
-| `ssh_key` | SSH-Key | `host`, `username`, `private_key` | `host`, `username`, `has_private_key`, `has_passphrase` |
+| `ssh_key` | SSH-Key | `host`, `username`, `private_key`, `known_host_fingerprint?` | `host`, `username`, `has_private_key`, `has_passphrase`, `has_known_host_fingerprint` |
 | `api_token` | API-Token | `service`, `token` | `service`, `has_token` |
 | `database` | Datenbank | `host`, `port`, …, `password` | Metadaten + `has_password` |
 | `network_wifi` | Netzwerk / WLAN | `ssid`, `encryption_type`, `password` | `ssid`, `encryption_type`, `has_password` |
@@ -970,9 +982,12 @@ ReachabilityDot — Sidebar + Detailansicht
   "host": "10.0.0.1",
   "username": "deploy",
   "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
-  "passphrase": "…"
+  "passphrase": "…",
+  "known_host_fingerprint": "SHA256:abc123…"
 }
 ```
+
+> `known_host_fingerprint` ist optional (`null` / fehlend bei Neuanlage). Wird nach erstem Verbindungsaufbau und Bestätigung im Unknown-Host-Dialog (`ssh_trust_host`) gesetzt; bei erneutem Connect gegen den gespeicherten Wert geprüft.
 
 **Beispiel `api_token`:**
 
@@ -1178,6 +1193,9 @@ ReachabilityDot — Sidebar + Detailansicht
 | `removeSshPassphrase()` | `remove_ssh_passphrase` |
 | `syncVaultGit()` | `trigger_git_sync` (Alias) |
 | `sshConnect(entryId)` | `ssh_connect` |
+| `sshTrustHost(entryId, sessionId, fingerprint)` | `ssh_trust_host` |
+| `sshRejectHost(sessionId)` | `ssh_reject_host` |
+| `sshClearHostFingerprint(entryId)` | `ssh_clear_host_fingerprint` |
 | `sshWrite(sessionId, data)` | `ssh_write` |
 | `sshDisconnect(sessionId)` | `ssh_disconnect` |
 
@@ -1695,7 +1713,7 @@ Details und Fehlerbehebung: [`browser-extension/README.md`](browser-extension/RE
 | **Extension-ID** | Von Google beim ersten Upload vergeben → lokal in `browser-extension/extension.id` (gitignored, Vorlage: `extension.id.example`) |
 | **Manifest** | MV3, `permissions: ["nativeMessaging"]` — kein `key`, kein `update_url` im Store-Build |
 | **Desktop-MSI** | Tauri-Bundle: App + `oxidvault-nmh.exe` — **ohne** `browser-extension/` im MSI |
-| **Native Messaging** | `register_native_host.ps1` — HKCU-Registry; ID aus Datei, Parameter oder `$env:OXIDVAULT_EXTENSION_ID` |
+| **Native Messaging** | MSI: automatische HKCU-Registrierung (WiX Custom Action). Dev/Debug weiterhin `register_native_host.ps1` (ID aus Datei/Parameter/`$env:OXIDVAULT_EXTENSION_ID`) |
 | **Updates (Store)** | `manifest.json` `version` erhöhen → neues ZIP → Developer Dashboard |
 | **Optional GPO** | `ExtensionInstallForcelist`: `<store_id>;https://clients2.google.com/service/update2/crx` |
 
@@ -2090,6 +2108,9 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-19 | 1.0.0 | **Security-Härtung K1–K4:** `Zeroizing` in crypto/format, Zero-Clone-`persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust-Clear), `Zeroizing<String>` für Master-Passwort-IPC |
 | 2025-06-20 | 1.0.0 | **Git SSH-Passphrase UI:** Settings-Feld + `saveSshPassphrase` IPC; Keyring-INFO-Log bei `set_password` |
 | 2025-06-20 | 1.0.0 | **Git SSH-Keyring:** `ssh_keyring.rs` + `keyring` 3; `save_ssh_passphrase` / `remove_ssh_passphrase`; Passphrase nur im OS-Store |
+| 2025-06-23 | 1.0.0 | **SSH Host-Key TOFU:** `known_host_fingerprint` im `ssh_key`-Payload; `SshConnectResponse`; `ssh_trust_host` / `ssh_reject_host` |
+| 2026-06-24 | 1.0.0 | **SSH Known-Hosts (TOFU):** `known_host_fingerprint` in `SecretPayload`, `SshConnectResponse` mit `Connected`/`UnknownHost`/`HostKeyMismatch`, `ssh_trust_host` / `ssh_reject_host` / `ssh_clear_host_fingerprint`, Pending-Session-Cleanup bei Lock |
+| 2026-06-25 | 1.0.0 | **MSI Native Messaging Auto-Setup:** WiX-Fragment `src-tauri/wix/native_messaging.wxs` registriert Host-Manifest + Chrome/Edge-HKCU-Keys automatisch bei Installation (Cleanup bei Uninstall) |
 | 2025-06-23 | 1.0.0 | **Vault-Lock-Guard:** `commands/vault_guard.rs` — `ensure_vault_unlocked`; sensible Commands liefern `Err("Vault locked")` |
 | 2025-06-23 | 1.0.0 | **SettingsView Lock:** Sync/Sicherheit nur bei entsperrtem Tresor; `SettingsLockedView` mit Navigation zum Entsperren |
 | 2025-06-23 | 1.0.0 | **SettingsView:** Vollbild-Einstellungsseite mit Nav (Allgemein/Sync/Sicherheit); `SettingsMenu`-Dropdown entfernt |
@@ -2301,8 +2322,8 @@ In der App zeigt `get_resolved_config` → `adminPolicyActive: true`, wenn `poli
 3. **`policy.json`** aus [`docs/policy.json.example`](../docs/policy.json.example) anpassen
 4. Per **GPO** (Computer Configuration → Preferences → Files) oder Intune **File** deployen nach:  
    `C:\ProgramData\OxidVault\policy.json`
-5. **Native Messaging:** Nach bekannter Store-Extension-ID einmalig (Login-Skript oder Anleitung):  
-   `register_native_host.ps1 -BuildProfile installed -ExtensionId <id>`
+5. **Native Messaging:** Bei MSI automatisch registriert (Chrome/Edge HKCU + Host-Manifest).  
+   Dev/Debug weiterhin manuell: `register_native_host.ps1 -BuildProfile release -ExtensionId <id>`
 6. **Test-Client:** System-Diagnose + Vault öffnen → Policy-Felder gesperrt?
 
 ### 7. Linux / macOS

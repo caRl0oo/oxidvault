@@ -37,6 +37,7 @@ interface VaultWorkspaceProps {
   readonly onCopyPassword: (id: string) => void;
   readonly onOpenWebsite: (entry: SecretEntrySummary) => void;
   readonly onQuickConnect: (id: string) => void;
+  readonly onResetSshFingerprint?: (entryId: string) => void;
   readonly sshConnecting: boolean;
   readonly sidebarCopyingId: string | null;
   readonly reachability: Record<string, ReachabilityState>;
@@ -94,6 +95,7 @@ export function VaultWorkspace(props: Readonly<VaultWorkspaceProps>) {
       onDeleteEntry={props.onDeleteEntry}
       deleteEntryLoading={props.deleteEntryLoading}
       onQuickConnect={props.onQuickConnect}
+      onResetSshFingerprint={props.onResetSshFingerprint}
       sshConnecting={props.sshConnecting}
       reachability={props.reachability}
       sshSessionStatus={props.sshSessionStatus}

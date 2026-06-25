@@ -213,7 +213,8 @@
       "VaultKeyRotated": "Master-Schlüssel wurde rotiert",
       "AuthFailed": "Entsperrversuch fehlgeschlagen",
       "SyncEvent": "Git-Synchronisation",
-      "ConfigChanged": "Sicherheitsrelevante Einstellung geändert"
+      "ConfigChanged": "Sicherheitsrelevante Einstellung geändert",
+      "SshHostTrusted": "SSH-Host-Key vertraut"
     },
     "syncStatus": {
       "success": "Erfolgreich",
@@ -337,6 +338,19 @@
     "focusModeEnter": "Fokus-Modus — Eintragsbereich überdecken",
     "focusModeExit": "Fokus-Modus beenden",
     "resizeDivider": "Tresor- und Terminal-Bereich skalieren",
+    "unknownHost": "Unbekannter Server",
+    "trustAndOpen": "Vertrauen & Öffnen",
+    "reject": "Ablehnen",
+    "hostKeyMismatch": "Host-Key Konflikt",
+    "mitmWarning": "Möglicher MITM-Angriff",
+    "resetFingerprint": "Fingerprint zurücksetzen",
+    "trustHostExplanation": "Diesen Server dauerhaft vertrauen? Der Fingerprint wird im Vault gespeichert und bei jedem weiteren Verbindungsaufbau geprüft.",
+    "hostLabel": "Host",
+    "fingerprintLabel": "Fingerprint",
+    "expectedFingerprint": "Erwartet",
+    "receivedFingerprint": "Erhalten",
+    "mismatchInstruction": "Um fortzufahren, lösche den gespeicherten Fingerprint im Eintrag und verbinde erneut.",
+    "missingSessionId": "SSH-Sitzungs-ID fehlt — bitte erneut verbinden.",
     "status": {
       "connecting": "Verbinden…",
       "active": "SSH-Sitzung aktiv",

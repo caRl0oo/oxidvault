@@ -44,6 +44,9 @@ pub enum SecretPayload {
         private_key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         passphrase: Option<String>,
+        /// OpenSSH-style SHA-256 host key fingerprint, e.g. `SHA256:abc123…`
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        known_host_fingerprint: Option<String>,
     },
     ApiToken {
         service: String,
@@ -112,6 +115,7 @@ pub enum SecretPayloadPublic {
         username: String,
         has_private_key: bool,
         has_passphrase: bool,
+        has_known_host_fingerprint: bool,
     },
     ApiToken {
         service: String,
@@ -261,11 +265,15 @@ impl SecretPayload {
                 username,
                 private_key,
                 passphrase,
+                known_host_fingerprint,
             } => SecretPayloadPublic::SshKey {
                 host: host.clone(),
                 username: username.clone(),
                 has_private_key: !private_key.is_empty(),
                 has_passphrase: passphrase.as_ref().is_some_and(|p| !p.is_empty()),
+                has_known_host_fingerprint: known_host_fingerprint
+                    .as_ref()
+                    .is_some_and(|fp| !fp.trim().is_empty()),
             },
             Self::ApiToken { service, token } => SecretPayloadPublic::ApiToken {
                 service: service.clone(),

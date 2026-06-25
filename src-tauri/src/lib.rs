@@ -76,6 +76,9 @@ pub fn run() {
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize_pty,
             commands::ssh::ssh_disconnect,
+            commands::ssh::ssh_trust_host,
+            commands::ssh::ssh_reject_host,
+            commands::ssh::ssh_clear_host_fingerprint,
         ])
         .on_window_event(|window, event| {
             if let Some(state) = window.try_state::<AppState>() {

@@ -31,6 +31,26 @@ pub struct SshSessionInfo {
     pub username: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum SshConnectResponse {
+    Connected {
+        session: SshSessionInfo,
+    },
+    #[serde(rename_all = "camelCase")]
+    UnknownHost {
+        fingerprint: String,
+        session_id: String,
+        host: String,
+        username: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    HostKeyMismatch {
+        expected: String,
+        got: String,
+    },
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SshDataPayload {
@@ -84,13 +104,24 @@ fn trim_backlog(backlog: &mut Vec<Vec<u8>>) {
     }
 }
 
-struct ActiveSession {
+enum SessionTrustState {
+    Pending {
+        entry_id: String,
+        fingerprint: String,
+    },
+    Active,
+}
+
+struct ManagedSession {
     output: Arc<SessionOutput>,
+    host: String,
+    username: String,
+    trust: SessionTrustState,
 }
 
 pub struct SshManager {
     provider: RusshProvider,
-    sessions: Mutex<HashMap<String, ActiveSession>>,
+    sessions: Mutex<HashMap<String, ManagedSession>>,
 }
 
 impl SshManager {
@@ -107,16 +138,19 @@ impl SshManager {
     pub async fn connect(
         &self,
         app: AppHandle,
+        entry_id: &str,
         host: &str,
         username: &str,
         private_key: &str,
         passphrase: Option<&str>,
+        known_host_fingerprint: Option<&str>,
         initial_cols: u32,
         initial_rows: u32,
-    ) -> Result<SshSessionInfo, String> {
+    ) -> Result<SshConnectResponse, String> {
         let (hostname, port) = parse_host(host)?;
         let session_id = Uuid::new_v4().to_string();
         let output = Arc::new(SessionOutput::new());
+        let captured_fingerprint = Arc::new(Mutex::new(None));
 
         let key_material = Zeroizing::new(private_key.to_string());
         let pass = passphrase.map(|p| Zeroizing::new(p.to_string()));
@@ -136,34 +170,133 @@ impl SshManager {
                     passphrase: pass.as_deref().map(|p| p.as_str()),
                     cols: initial_cols,
                     rows: initial_rows,
+                    captured_fingerprint: Arc::clone(&captured_fingerprint),
                 },
             ),
         )
         .await
         .map_err(|_| "SSH connection timed out".to_string())??;
 
-        {
-            let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
-            sessions.insert(
-                session_id.clone(),
-                ActiveSession {
-                    output: Arc::clone(&output),
-                },
-            );
-        }
+        let observed_fingerprint = captured_fingerprint
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "SSH host key fingerprint was not captured".to_string())?;
 
-        Ok(SshSessionInfo {
-            session_id: connected.session_id,
+        let session_info = SshSessionInfo {
+            session_id: connected.session_id.clone(),
             host: connected.host,
             username: connected.username,
+        };
+
+        match known_host_fingerprint {
+            None => {
+                self.insert_session(
+                    connected.session_id.clone(),
+                    ManagedSession {
+                        output,
+                        host: session_info.host.clone(),
+                        username: session_info.username.clone(),
+                        trust: SessionTrustState::Pending {
+                            entry_id: entry_id.to_string(),
+                            fingerprint: observed_fingerprint.clone(),
+                        },
+                    },
+                )?;
+                Ok(SshConnectResponse::UnknownHost {
+                    fingerprint: observed_fingerprint,
+                    session_id: session_info.session_id,
+                    host: session_info.host,
+                    username: session_info.username,
+                })
+            }
+            Some(stored) if stored != observed_fingerprint => {
+                self.provider.disconnect_sync(&connected.session_id);
+                Ok(SshConnectResponse::HostKeyMismatch {
+                    expected: stored.to_string(),
+                    got: observed_fingerprint,
+                })
+            }
+            Some(_) => {
+                self.insert_session(
+                    connected.session_id.clone(),
+                    ManagedSession {
+                        output,
+                        host: session_info.host.clone(),
+                        username: session_info.username.clone(),
+                        trust: SessionTrustState::Active,
+                    },
+                )?;
+                Ok(SshConnectResponse::Connected {
+                    session: session_info,
+                })
+            }
+        }
+    }
+
+    pub fn promote_pending_session(
+        &self,
+        session_id: &str,
+        entry_id: &str,
+        fingerprint: &str,
+    ) -> Result<SshSessionInfo, String> {
+        let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| "SSH session not found".to_string())?;
+
+        let SessionTrustState::Pending {
+            entry_id: pending_entry,
+            fingerprint: pending_fp,
+        } = &session.trust
+        else {
+            return Err("SSH session is not awaiting host key trust".into());
+        };
+
+        let pending_entry = pending_entry.clone();
+        let pending_fp = pending_fp.clone();
+
+        if pending_entry != entry_id {
+            return Err("SSH session does not belong to this entry".into());
+        }
+        if pending_fp != fingerprint {
+            return Err("SSH host key fingerprint mismatch".into());
+        }
+
+        session.trust = SessionTrustState::Active;
+        let host = session.host.clone();
+        let username = session.username.clone();
+        Ok(SshSessionInfo {
+            session_id: session_id.to_string(),
+            host,
+            username,
         })
     }
 
+    pub fn reject_pending_session(&self, session_id: &str) -> Result<(), String> {
+        let pending = {
+            let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| "SSH session not found".to_string())?;
+            matches!(session.trust, SessionTrustState::Pending { .. })
+        };
+
+        if !pending {
+            return Err("SSH session is not awaiting host key trust".into());
+        }
+
+        self.disconnect(session_id);
+        Ok(())
+    }
+
     pub fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        self.ensure_active(session_id)?;
         self.provider.send_data_sync(session_id, data)
     }
 
     pub fn resize_pty(&self, session_id: &str, cols: u32, rows: u32) -> Result<(), String> {
+        self.ensure_active(session_id)?;
         self.provider.resize_pty_sync(session_id, cols, rows)
     }
 
@@ -173,6 +306,9 @@ impl SshManager {
         let session = sessions
             .get(session_id)
             .ok_or_else(|| "SSH session not found".to_string())?;
+        if matches!(session.trust, SessionTrustState::Pending { .. }) {
+            return Err("SSH session awaiting host key trust".into());
+        }
         let drained = session.output.drain_backlog();
         session.output.streaming.store(true, Ordering::SeqCst);
         Ok(drained.iter().map(|chunk| BASE64.encode(chunk)).collect())
@@ -199,6 +335,23 @@ impl SshManager {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.clear();
         }
+    }
+
+    fn insert_session(&self, session_id: String, session: ManagedSession) -> Result<(), String> {
+        let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        sessions.insert(session_id, session);
+        Ok(())
+    }
+
+    fn ensure_active(&self, session_id: &str) -> Result<(), String> {
+        let sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| "SSH session not found".to_string())?;
+        if matches!(session.trust, SessionTrustState::Pending { .. }) {
+            return Err("SSH session awaiting host key trust".into());
+        }
+        Ok(())
     }
 }
 

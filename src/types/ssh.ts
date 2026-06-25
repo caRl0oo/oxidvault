@@ -4,6 +4,31 @@ export interface SshSessionInfo {
   username: string;
 }
 
+export type SshConnectResponse =
+  | { status: "connected"; session: SshSessionInfo }
+  | {
+      status: "unknownHost";
+      fingerprint: string;
+      sessionId: string;
+      host: string;
+      username: string;
+    }
+  | { status: "hostKeyMismatch"; expected: string; got: string };
+
+export interface SshPendingHostState {
+  entryId: string;
+  entryTitle: string;
+  fingerprint: string;
+  sessionId: string;
+  host: string;
+  username: string;
+}
+
+export interface SshHostKeyMismatchState {
+  expected: string;
+  got: string;
+}
+
 export interface SshDataEvent {
   sessionId: string;
   data: string;

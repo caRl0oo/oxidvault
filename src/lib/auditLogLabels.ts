@@ -16,6 +16,7 @@ const AUDIT_ACTION_KEYS = [
   "AuthFailed",
   "SyncEvent",
   "ConfigChanged",
+  "SshHostTrusted",
 ] as const;
 
 const LEGACY_ACTION_ALIASES: Record<string, (typeof AUDIT_ACTION_KEYS)[number]> = {

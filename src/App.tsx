@@ -4,6 +4,10 @@ import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent"
 import { Layout } from "@/components/Layout";
 import { AppMainArea } from "@/components/app/AppMainArea";
 import { AppVaultStatus } from "@/components/app/AppVaultStatus";
+import {
+  SshHostKeyMismatchDialog,
+  SshUnknownHostDialog,
+} from "@/components/SshHostKeyDialogs";
 import type { SettingsCategory } from "@/components/settings/types";
 import { evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { useAutoLock } from "@/hooks/useAutoLock";
@@ -20,7 +24,13 @@ import { vaultLockMessage, resolveIdleLockSeconds } from "@/lib/vaultLockMessage
 import { filterEntries } from "@/lib/search";
 import { openWebsiteUrl } from "@/lib/openWebsite";
 import { estimateInitialPtySize } from "@/lib/sshTerminalLayout";
-import { sshConnect, sshDisconnect } from "@/lib/ssh";
+import {
+  clearSshHostFingerprint,
+  sshConnect,
+  sshDisconnect,
+  sshRejectHost,
+  sshTrustHost,
+} from "@/lib/ssh";
 import {
   addEntry,
   bootstrapVault,
@@ -51,7 +61,12 @@ import type {
   SecretEntrySummary,
   VaultInfo,
 } from "@/types/vault";
-import type { SshSessionStatus, SshTerminalState } from "@/types/ssh";
+import type {
+  SshHostKeyMismatchState,
+  SshPendingHostState,
+  SshSessionStatus,
+  SshTerminalState,
+} from "@/types/ssh";
 
 type Screen = "welcome" | "create" | "open" | "unlock" | "vault";
 type VaultMainView = "secrets" | "security" | "activity";
@@ -81,6 +96,11 @@ export default function App() {
   const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter | null>(null);
   const [vaultMainView, setVaultMainView] = useState<VaultMainView>("secrets");
   const [sshTerminal, setSshTerminal] = useState<SshTerminalState | null>(null);
+  const [sshPendingHost, setSshPendingHost] = useState<SshPendingHostState | null>(null);
+  const [sshHostKeyMismatch, setSshHostKeyMismatch] = useState<SshHostKeyMismatchState | null>(
+    null,
+  );
+  const [sshTrustLoading, setSshTrustLoading] = useState(false);
   const [sshConnecting, setSshConnecting] = useState(false);
   const [sshSessionStatus, setSshSessionStatus] = useState<SshSessionStatus | null>(null);
   const [sshFocusMode, setSshFocusMode] = useState(false);
@@ -366,6 +386,13 @@ export default function App() {
     setShowPasswordGenerator(false);
     setGeneratorApply(null);
     setSshTerminal(null);
+    setSshPendingHost((prev) => {
+      if (prev?.sessionId) {
+        void sshRejectHost(prev.sessionId);
+      }
+      return null;
+    });
+    setSshHostKeyMismatch(null);
     setSshConnecting(false);
     setSshSessionStatus(null);
     setSshFocusMode(false);
@@ -452,8 +479,25 @@ export default function App() {
       setError(null);
       try {
         const { cols, rows } = estimateInitialPtySize();
-        const session = await sshConnect(entryId, cols, rows);
-        setSshTerminal({ session, entryTitle: title, entryId });
+        const response = await sshConnect(entryId, cols, rows);
+        if (response.status === "connected") {
+          setSshTerminal({ session: response.session, entryTitle: title, entryId });
+          return;
+        }
+        if (response.status === "unknownHost") {
+          setSshPendingHost({
+            entryId,
+            entryTitle: title,
+            fingerprint: response.fingerprint,
+            sessionId: response.sessionId,
+            host: response.host,
+            username: response.username,
+          });
+          setSshSessionStatus(null);
+          return;
+        }
+        setSshHostKeyMismatch({ expected: response.expected, got: response.got });
+        setSshSessionStatus(null);
       } catch (e) {
         setError(formatVaultError(e));
         setSshSessionStatus(null);
@@ -642,6 +686,59 @@ export default function App() {
     setSshSessionStatus(null);
   }, []);
 
+  const handleRejectUnknownHost = useCallback(() => {
+    const pending = sshPendingHost;
+    setSshPendingHost(null);
+    if (pending?.sessionId) {
+      void sshRejectHost(pending.sessionId);
+    }
+  }, [sshPendingHost]);
+
+  const handleTrustUnknownHost = useCallback(async () => {
+    if (!sshPendingHost?.sessionId) {
+      setError(t("ssh.missingSessionId"));
+      return;
+    }
+    const pending = sshPendingHost;
+    setSshTrustLoading(true);
+    setError(null);
+    try {
+      const session = await sshTrustHost(
+        pending.entryId,
+        pending.sessionId,
+        pending.fingerprint,
+      );
+      setSshPendingHost(null);
+      setSshTerminal({
+        session,
+        entryId: pending.entryId,
+        entryTitle: pending.entryTitle,
+      });
+      if (selectedEntry?.id === pending.entryId) {
+        const entry = await getEntry(pending.entryId);
+        setSelectedEntry(entry);
+      }
+    } catch (e) {
+      setError(formatVaultError(e));
+      handleRejectUnknownHost();
+    } finally {
+      setSshTrustLoading(false);
+    }
+  }, [handleRejectUnknownHost, selectedEntry?.id, sshPendingHost, t]);
+
+  const handleResetSshFingerprint = useCallback(
+    async (entryId: string) => {
+      setError(null);
+      try {
+        await clearSshHostFingerprint(entryId);
+        await handleSelectEntry(entryId);
+      } catch (e) {
+        setError(formatVaultError(e));
+      }
+    },
+    [handleSelectEntry],
+  );
+
   const handleSshSessionActive = useCallback(() => {
     setSshSessionStatus("active");
   }, []);
@@ -795,6 +892,7 @@ export default function App() {
             onCopyPassword={handleSidebarCopyPassword}
             onOpenWebsite={handleSidebarOpenWebsite}
             onQuickConnect={handleQuickConnect}
+            onResetSshFingerprint={handleResetSshFingerprint}
             sshConnecting={sshConnecting}
             sidebarCopyingId={sidebarCopyingId}
             reachability={reachability}
@@ -823,6 +921,20 @@ export default function App() {
           />
         </AppMainArea>
       </div>
+      {sshPendingHost ? (
+        <SshUnknownHostDialog
+          pending={sshPendingHost}
+          loading={sshTrustLoading}
+          onTrust={() => runAsync(handleTrustUnknownHost)}
+          onReject={handleRejectUnknownHost}
+        />
+      ) : null}
+      {sshHostKeyMismatch ? (
+        <SshHostKeyMismatchDialog
+          mismatch={sshHostKeyMismatch}
+          onClose={() => setSshHostKeyMismatch(null)}
+        />
+      ) : null}
     </Layout>
   );
 }

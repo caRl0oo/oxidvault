@@ -54,7 +54,7 @@ pub use mfa::{MfaSetupInfo, MfaStatus, StoredMfaConfig};
 pub use probe::{resolve_probe_target, ProbeTarget};
 pub use unlock::{UnlockStep, UnlockVaultResponse};
 pub use url_match::{normalize_hostname, score_web_login_url_match, UrlMatchScore};
-pub use vault::{Vault, VaultInfo};
+pub use vault::{SshConnectCredentials, Vault, VaultInfo};
 
 pub const VAULT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

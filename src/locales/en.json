@@ -213,7 +213,8 @@
       "VaultKeyRotated": "Master key was rotated",
       "AuthFailed": "Unlock attempt failed",
       "SyncEvent": "Git synchronization",
-      "ConfigChanged": "Security-relevant setting changed"
+      "ConfigChanged": "Security-relevant setting changed",
+      "SshHostTrusted": "SSH host key trusted"
     },
     "syncStatus": {
       "success": "Successful",
@@ -337,6 +338,19 @@
     "focusModeEnter": "Focus mode — cover entry area",
     "focusModeExit": "Exit focus mode",
     "resizeDivider": "Resize vault and terminal panels",
+    "unknownHost": "Unknown server",
+    "trustAndOpen": "Trust & open",
+    "reject": "Reject",
+    "hostKeyMismatch": "Host key conflict",
+    "mitmWarning": "Possible MITM attack",
+    "resetFingerprint": "Reset fingerprint",
+    "trustHostExplanation": "Trust this server permanently? The fingerprint will be stored in the vault and verified on every future connection.",
+    "hostLabel": "Host",
+    "fingerprintLabel": "Fingerprint",
+    "expectedFingerprint": "Expected",
+    "receivedFingerprint": "Received",
+    "mismatchInstruction": "To continue, clear the stored fingerprint on the entry and connect again.",
+    "missingSessionId": "SSH session ID missing — please reconnect.",
     "status": {
       "connecting": "Connecting…",
       "active": "SSH session active",

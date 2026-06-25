@@ -21,6 +21,7 @@ export interface VaultMainPanelProps {
   readonly onDeleteEntry: (id: string) => void;
   readonly deleteEntryLoading?: boolean;
   readonly onQuickConnect: (id: string) => void;
+  readonly onResetSshFingerprint?: (entryId: string) => void;
   readonly sshConnecting: boolean;
   readonly reachability: Record<string, ReachabilityState>;
   readonly sshSessionStatus: SshSessionStatus | null;
@@ -38,6 +39,7 @@ export function VaultMainPanel({
   onDeleteEntry,
   deleteEntryLoading,
   onQuickConnect,
+  onResetSshFingerprint,
   sshConnecting,
   reachability,
   sshSessionStatus,
@@ -59,6 +61,7 @@ export function VaultMainPanel({
         onDelete={() => onDeleteEntry(selectedEntry.id)}
         deleteLoading={deleteEntryLoading}
         onQuickConnect={onQuickConnect}
+        onResetSshFingerprint={onResetSshFingerprint}
         sshConnecting={sshConnecting}
         reachability={reachability[selectedEntry.id]}
         sshSessionStatus={

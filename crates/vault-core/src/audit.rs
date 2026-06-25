@@ -62,6 +62,10 @@ pub enum AuditAction {
     ConfigChanged {
         area: String,
     },
+    /// SSH host key fingerprint was trusted and persisted for an entry.
+    SshHostTrusted {
+        id: Uuid,
+    },
 }
 
 impl AuditAction {
@@ -82,6 +86,7 @@ impl AuditAction {
             Self::AuthFailed => "AuthFailed",
             Self::SyncEvent { .. } => "SyncEvent",
             Self::ConfigChanged { .. } => "ConfigChanged",
+            Self::SshHostTrusted { .. } => "SshHostTrusted",
         }
     }
 
@@ -99,7 +104,8 @@ impl AuditAction {
             | Self::SecretModified { id }
             | Self::EntryDeleted { id }
             | Self::SecretCopied { id }
-            | Self::SecretRevealed { id } => id.to_string(),
+            | Self::SecretRevealed { id }
+            | Self::SshHostTrusted { id } => id.to_string(),
             Self::SyncEvent { status } => sanitize_detail_token(status),
             Self::ConfigChanged { area } => sanitize_detail_token(area),
         }
@@ -122,6 +128,7 @@ impl AuditAction {
             "EntryDeleted" => parse_uuid_action(entry_id, |id| Self::EntryDeleted { id }),
             "SecretCopied" => parse_uuid_action(entry_id, |id| Self::SecretCopied { id }),
             "SecretRevealed" => parse_uuid_action(entry_id, |id| Self::SecretRevealed { id }),
+            "SshHostTrusted" => parse_uuid_action(entry_id, |id| Self::SshHostTrusted { id }),
             "SyncEvent" => Self::SyncEvent {
                 status: entry_id.to_string(),
             },

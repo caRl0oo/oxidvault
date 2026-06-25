@@ -152,6 +152,7 @@ mod tests {
             username: "root".into(),
             private_key: "key".into(),
             passphrase: None,
+            known_host_fingerprint: None,
         })
         .unwrap();
         assert_eq!(target.port, 22);
@@ -164,6 +165,7 @@ mod tests {
             username: "root".into(),
             private_key: "key".into(),
             passphrase: None,
+            known_host_fingerprint: None,
         })
         .unwrap();
         assert_eq!(target.port, 2222);

@@ -11,7 +11,7 @@ use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 
 use russh::client::{self, Handler};
-use russh::keys;
+use russh::keys::{self, HashAlg};
 use russh::ChannelMsg;
 use tokio::sync::mpsc;
 
@@ -46,15 +46,21 @@ struct LiveSession {
     channel: russh::Channel<client::Msg>,
 }
 
-struct SshClientHandler;
+struct SshClientHandler {
+    captured_fingerprint: Arc<Mutex<Option<String>>>,
+}
 
 impl Handler for SshClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &keys::PublicKey,
+        server_public_key: &keys::PublicKey,
     ) -> Result<bool, Self::Error> {
+        let fingerprint = format_ssh_host_fingerprint(server_public_key);
+        if let Ok(mut slot) = self.captured_fingerprint.lock() {
+            *slot = Some(fingerprint);
+        }
         Ok(true)
     }
 
@@ -138,6 +144,7 @@ impl SshConnection for RusshProvider {
             params.passphrase,
             pass_provided,
             pty,
+            Arc::clone(&params.captured_fingerprint),
         )
         .await?;
 
@@ -184,6 +191,7 @@ impl SshConnection for RusshProvider {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn open_interactive_shell(
     host: &str,
     port: u16,
@@ -192,11 +200,15 @@ async fn open_interactive_shell(
     passphrase: Option<&str>,
     passphrase_was_provided: bool,
     pty: PtyDimensions,
+    captured_fingerprint: Arc<Mutex<Option<String>>>,
 ) -> Result<LiveSession, String> {
     let addr = resolve_socket_addr(host, port)?;
     let config = Arc::new(client::Config::default());
 
-    let mut handle = client::connect(config, addr, SshClientHandler)
+    let handler = SshClientHandler {
+        captured_fingerprint,
+    };
+    let mut handle = client::connect(config, addr, handler)
         .await
         .map_err(|_| "SSH connection failed".to_string())?;
 
@@ -282,4 +294,8 @@ fn resolve_socket_addr(host: &str, port: u16) -> Result<std::net::SocketAddr, St
         .map_err(|_| format!("Host not found: {host}"))?
         .next()
         .ok_or_else(|| format!("Host not found: {host}"))
+}
+
+pub(crate) fn format_ssh_host_fingerprint(public_key: &keys::PublicKey) -> String {
+    public_key.fingerprint(HashAlg::Sha256).to_string()
 }

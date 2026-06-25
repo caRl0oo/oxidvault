@@ -7,9 +7,9 @@
 
 mod russh_provider;
 
-pub use russh_provider::RusshProvider;
+use std::sync::{Arc, Mutex};
 
-use std::sync::Arc;
+pub use russh_provider::RusshProvider;
 
 /// Metadata returned after a successful SSH handshake and shell open.
 #[derive(Debug, Clone)]
@@ -38,6 +38,7 @@ pub struct ConnectParams<'a> {
     pub passphrase: Option<&'a str>,
     pub cols: u32,
     pub rows: u32,
+    pub captured_fingerprint: Arc<Mutex<Option<String>>>,
 }
 
 /// Backend-agnostic contract for interactive SSH sessions.

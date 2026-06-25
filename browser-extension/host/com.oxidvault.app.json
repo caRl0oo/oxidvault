@@ -3,5 +3,5 @@
   "description": "OxidVault Native Messaging Host",
   "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_oxidvault-nmh.exe",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
+  "allowed_origins": ["chrome-extension://belagnpfebgljfamjihdoinbcehingjd/"]
 }

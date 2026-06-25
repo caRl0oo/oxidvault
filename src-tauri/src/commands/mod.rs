@@ -301,6 +301,6 @@ pub async fn ssh_connect(
     entry_id: String,
     cols: u32,
     rows: u32,
-) -> Result<crate::ssh::SshSessionInfo, String> {
+) -> Result<crate::ssh::SshConnectResponse, String> {
     ssh::ssh_connect(app, state, entry_id, cols, rows).await
 }

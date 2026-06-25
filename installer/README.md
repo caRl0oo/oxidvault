@@ -22,17 +22,16 @@ Upload at [Chrome Web Store Developer Dashboard](https://chrome.google.com/webst
    # Edit extension.id — paste your 32-character store ID
    ```
 
-3. Register Native Messaging:
+3. Register Native Messaging for dev builds only:
 
    ```powershell
    # Dev build
    .\scripts\register_native_host.ps1
 
-   # MSI install under Program Files
-   .\scripts\register_native_host.ps1 -BuildProfile installed
    ```
 
    The script resolves the ID from `-ExtensionId`, `browser-extension/extension.id`, or `$env:OXIDVAULT_EXTENSION_ID`.
+   MSI installations register Native Messaging automatically during setup.
 
 ## Optional enterprise force-install (GPO)
 
@@ -61,5 +60,6 @@ npm run tauri:build
 ```
 
 Builds the Tauri app + `oxidvault-nmh.exe`. Does **not** bundle the browser extension.
+The MSI registers Native Messaging for Chrome/Edge automatically (manifest + HKCU registry keys).
 
 Further details: [ARCHITECTURE.md §10](../ARCHITECTURE.md#10-browser-erweiterung--native-messaging-phase-13).

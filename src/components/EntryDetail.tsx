@@ -24,6 +24,7 @@ interface EntryDetailProps {
   readonly onDelete: () => void;
   readonly deleteLoading?: boolean;
   readonly onQuickConnect?: (entryId: string) => void;
+  readonly onResetSshFingerprint?: (entryId: string) => void;
   readonly sshConnecting?: boolean;
   readonly reachability?: ReachabilityState;
   readonly sshSessionStatus?: SshSessionStatus | null;
@@ -47,6 +48,7 @@ export function EntryDetail({
   onDelete,
   deleteLoading = false,
   onQuickConnect,
+  onResetSshFingerprint,
   sshConnecting,
   reachability,
   sshSessionStatus,
@@ -57,6 +59,7 @@ export function EntryDetail({
   const [openingWebsite, setOpeningWebsite] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [resettingFingerprint, setResettingFingerprint] = useState(false);
   const canOpenWebsite =
     entry.type === "web_login" && validateHttpUrl(entry.url).ok;
 
@@ -242,6 +245,25 @@ export function EntryDetail({
                   runAsync(() => copySecret(`${prefix}-passphrase`, entry.id, "passphrase"))
                 }
               />
+            )}
+            {entry.has_known_host_fingerprint && onResetSshFingerprint && (
+              <VaultButton
+                variant="outline"
+                size="sm"
+                disabled={resettingFingerprint}
+                onClick={() => {
+                  setResettingFingerprint(true);
+                  runAsync(async () => {
+                    try {
+                      onResetSshFingerprint(entry.id);
+                    } finally {
+                      setResettingFingerprint(false);
+                    }
+                  });
+                }}
+              >
+                {resettingFingerprint ? t("common.loading") : t("ssh.resetFingerprint")}
+              </VaultButton>
             )}
           </>
         )}
