@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 //! `.oxid` on-disk format — v1 (direct key) and v2 (wrapped DEK header).
 #![allow(clippy::too_many_arguments)]
@@ -17,10 +15,12 @@ use crate::crypto::{self, KdfParams, MasterKey, NONCE_LEN, SALT_LEN};
 use crate::entry::SecretEntry;
 use crate::error::VaultError;
 use crate::mfa::StoredMfaConfig;
+use crate::vault_user::VaultUser;
 
 pub const MAGIC: &[u8; 4] = b"OXID";
 pub const FORMAT_VERSION_V1: u16 = 1;
 pub const FORMAT_VERSION_V2: u16 = 2;
+pub const FORMAT_VERSION_V3: u16 = 3;
 
 #[derive(Debug, Clone)]
 pub struct WrappedDek {
@@ -37,6 +37,8 @@ pub struct VaultFileMeta {
     pub key_created_at: u64,
     pub key_rotated_at: u64,
     pub wrapped_dek: Option<WrappedDek>,
+    /// Multi-user entries (format v3 only).
+    pub users: Option<Vec<VaultUser>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,8 +479,220 @@ pub fn resolve_payload_key(meta: &VaultFileMeta, kek: &MasterKey) -> Result<Mast
             let wrapped = meta.wrapped_dek.as_ref().ok_or(VaultError::InvalidFormat)?;
             crypto::unwrap_data_key(kek, &wrapped.nonce, &wrapped.ciphertext)
         }
+        FORMAT_VERSION_V3 => Err(VaultError::InvalidFormat),
         _ => Err(VaultError::InvalidFormat),
     }
+}
+
+/// Reads a v3 vault header and returns the user list plus encrypted payload parts.
+pub fn read_v3_vault_file(path: &Path) -> Result<(Vec<VaultUser>, Vec<u8>, Vec<u8>), VaultError> {
+    let bytes = fs::read(path)?;
+    let (meta, header_len) = parse_header(&bytes)?;
+    if meta.format_version != FORMAT_VERSION_V3 {
+        return Err(VaultError::InvalidFormat);
+    }
+    let users = meta.users.ok_or(VaultError::InvalidFormat)?;
+    let payload_blob = &bytes[header_len..];
+    if payload_blob.len() <= NONCE_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
+    let (nonce_bytes, ciphertext) = payload_blob.split_at(NONCE_LEN);
+    Ok((users, nonce_bytes.to_vec(), ciphertext.to_vec()))
+}
+
+/// Writes a new v3 vault file (fails if the path already exists).
+pub fn write_v3_vault_file(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    dek: &[u8; 32],
+    entries: &[SecretEntry],
+) -> Result<(), VaultError> {
+    if path.exists() {
+        return Err(VaultError::FileExists);
+    }
+    let dek_key = MasterKey::from_bytes(*dek);
+    let key_created_at = crate::compliance::unix_timestamp_secs();
+    atomic_write_v3_vault(path, name, users, &dek_key, entries, key_created_at, 0)
+}
+
+/// Atomically rewrites an existing v3 vault file.
+pub fn update_v3_vault_file(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    dek: &MasterKey,
+    entries: &[SecretEntry],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<(), VaultError> {
+    atomic_write_v3_vault(
+        path,
+        name,
+        users,
+        dek,
+        entries,
+        key_created_at,
+        key_rotated_at,
+    )
+}
+
+fn atomic_write_v3_vault(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    dek: &MasterKey,
+    entries: &[SecretEntry],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<(), VaultError> {
+    let tmp_path = temp_vault_path(path)?;
+    if let Err(error) = write_v3_vault_bytes(
+        &tmp_path,
+        name,
+        users,
+        dek,
+        entries,
+        key_created_at,
+        key_rotated_at,
+    ) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error);
+    }
+
+    if fs::rename(&tmp_path, path).is_ok() {
+        return Ok(());
+    }
+
+    match copy_temp_over_target(&tmp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&tmp_path);
+            Ok(())
+        }
+        Err(copy_err) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(copy_err)
+        }
+    }
+}
+
+/// Atomically rewrites only the v3 header; payload bytes are copied unchanged.
+pub fn update_v3_vault_header_only(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<(), VaultError> {
+    let (meta, payload_blob) = read_raw_vault(path)?;
+    if meta.format_version != FORMAT_VERSION_V3 {
+        return Err(VaultError::InvalidFormat);
+    }
+
+    let tmp_path = temp_vault_path(path)?;
+    if let Err(error) = write_v3_header_and_payload(
+        &tmp_path,
+        name,
+        users,
+        key_created_at,
+        key_rotated_at,
+        &payload_blob,
+    ) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error);
+    }
+
+    if fs::rename(&tmp_path, path).is_ok() {
+        return Ok(());
+    }
+
+    match copy_temp_over_target(&tmp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&tmp_path);
+            Ok(())
+        }
+        Err(copy_err) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(copy_err)
+        }
+    }
+}
+
+fn write_v3_header_and_payload(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    key_created_at: u64,
+    key_rotated_at: u64,
+    payload_blob: &[u8],
+) -> Result<(), VaultError> {
+    let mut file = fs::File::create(path)?;
+    write_v3_header(&mut file, name, users, key_created_at, key_rotated_at)?;
+    file.write_all(payload_blob)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn write_v3_vault_bytes(
+    path: &Path,
+    name: &str,
+    users: &[VaultUser],
+    dek: &MasterKey,
+    entries: &[SecretEntry],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<(), VaultError> {
+    let plaintext = serialize_payload_zeroizing(entries, None)?;
+    let (nonce, ciphertext) = crypto::encrypt(dek, plaintext.as_ref())?;
+    let mut file = fs::File::create(path)?;
+    write_v3_header(&mut file, name, users, key_created_at, key_rotated_at)?;
+    file.write_all(&nonce)?;
+    file.write_all(&ciphertext)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn write_v3_header(
+    writer: &mut impl Write,
+    name: &str,
+    users: &[VaultUser],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<(), VaultError> {
+    let name_bytes = name.as_bytes();
+    if name_bytes.len() > u16::MAX as usize {
+        return Err(VaultError::Other("vault name too long".into()));
+    }
+
+    let users_json = serde_json::to_vec(users).map_err(|e| VaultError::Other(e.to_string()))?;
+
+    writer.write_all(MAGIC)?;
+    writer.write_all(&FORMAT_VERSION_V3.to_le_bytes())?;
+    writer.write_all(&(name_bytes.len() as u16).to_le_bytes())?;
+    writer.write_all(name_bytes)?;
+    writer.write_all(&key_created_at.to_le_bytes())?;
+    writer.write_all(&key_rotated_at.to_le_bytes())?;
+    writer.write_all(&(users_json.len() as u32).to_le_bytes())?;
+    writer.write_all(&users_json)?;
+    Ok(())
+}
+
+/// Decrypts a v3 payload blob using the shared DEK.
+pub fn decrypt_v3_payload(
+    dek: &MasterKey,
+    payload_nonce: &[u8],
+    payload_ciphertext: &[u8],
+) -> Result<VaultPayload, VaultError> {
+    if payload_nonce.len() != NONCE_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
+    let mut nonce = [0u8; NONCE_LEN];
+    nonce.copy_from_slice(payload_nonce);
+    if payload_ciphertext.is_empty() {
+        return Err(VaultError::InvalidFormat);
+    }
+    let plaintext = crypto::decrypt(dek, &nonce, payload_ciphertext)?;
+    serde_json::from_slice(plaintext.as_ref()).map_err(|_| VaultError::InvalidFormat)
 }
 
 fn write_header(
@@ -533,10 +747,56 @@ fn read_header(reader: &mut impl Read) -> Result<VaultFileMeta, VaultError> {
     let mut version = [0u8; 2];
     reader.read_exact(&mut version)?;
     let format_version = u16::from_le_bytes(version);
+    if format_version == FORMAT_VERSION_V3 {
+        return read_header_v3(reader, format_version);
+    }
     if format_version != FORMAT_VERSION_V1 && format_version != FORMAT_VERSION_V2 {
         return Err(VaultError::InvalidFormat);
     }
 
+    read_header_v1_v2(reader, format_version)
+}
+
+fn read_header_v3(
+    reader: &mut impl Read,
+    format_version: u16,
+) -> Result<VaultFileMeta, VaultError> {
+    let mut name_len = [0u8; 2];
+    reader.read_exact(&mut name_len)?;
+    let len = u16::from_le_bytes(name_len) as usize;
+    let mut name_buf = vec![0u8; len];
+    reader.read_exact(&mut name_buf)?;
+    let name = String::from_utf8(name_buf).map_err(|_| VaultError::InvalidFormat)?;
+
+    let mut created = [0u8; 8];
+    let mut rotated = [0u8; 8];
+    reader.read_exact(&mut created)?;
+    reader.read_exact(&mut rotated)?;
+
+    let mut users_len = [0u8; 4];
+    reader.read_exact(&mut users_len)?;
+    let users_size = u32::from_le_bytes(users_len) as usize;
+    let mut users_buf = vec![0u8; users_size];
+    reader.read_exact(&mut users_buf)?;
+    let users: Vec<VaultUser> =
+        serde_json::from_slice(&users_buf).map_err(|_| VaultError::InvalidFormat)?;
+
+    Ok(VaultFileMeta {
+        name,
+        kdf: KdfParams::default(),
+        salt: [0u8; SALT_LEN],
+        format_version,
+        key_created_at: u64::from_le_bytes(created),
+        key_rotated_at: u64::from_le_bytes(rotated),
+        wrapped_dek: None,
+        users: Some(users),
+    })
+}
+
+fn read_header_v1_v2(
+    reader: &mut impl Read,
+    format_version: u16,
+) -> Result<VaultFileMeta, VaultError> {
     let mut memory = [0u8; 4];
     let mut iterations = [0u8; 4];
     let mut parallelism = [0u8; 4];
@@ -593,6 +853,7 @@ fn read_header(reader: &mut impl Read) -> Result<VaultFileMeta, VaultError> {
         key_created_at,
         key_rotated_at,
         wrapped_dek,
+        users: None,
     })
 }
 
@@ -761,5 +1022,44 @@ mod tests {
 
         let content = fs::read(&target).unwrap();
         assert_eq!(content, b"new-content");
+    }
+
+    #[test]
+    fn v3_vault_file_roundtrip() {
+        use crate::vault_user::{build_vault_user, unwrap_user_dek, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("v3.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user =
+            build_vault_user("admin", password.clone(), UserRole::Admin, &dek, None).unwrap();
+        let payload = sample_payload();
+
+        write_v3_vault_file(
+            &path,
+            "V3Vault",
+            &[user.clone()],
+            dek.as_bytes(),
+            &payload.entries,
+        )
+        .unwrap();
+
+        let meta = read_vault_meta(&path).unwrap();
+        assert_eq!(meta.format_version, FORMAT_VERSION_V3);
+        assert_eq!(meta.users.as_ref().unwrap().len(), 1);
+
+        let (users, nonce, ciphertext) = read_v3_vault_file(&path).unwrap();
+        assert_eq!(users[0].username, "admin");
+        let kek = MasterKey::derive_from_password(
+            password.as_str(),
+            &crate::vault_user::decode_salt(&users[0].kdf_salt).unwrap(),
+            meta.kdf,
+        )
+        .unwrap();
+        let opened_dek = unwrap_user_dek(&users[0], &kek).unwrap();
+        let loaded = decrypt_v3_payload(&opened_dek, &nonce, &ciphertext).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
     }
 }

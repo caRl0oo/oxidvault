@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SshClosedEvent, SshConnectResponse, SshDataEvent, SshSessionInfo } from "@/types/ssh";

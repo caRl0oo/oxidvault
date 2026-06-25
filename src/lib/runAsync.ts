@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** Run a promise without floating-promise warnings and without the `void` operator (Sonar S6544). */
 export function runAsync(
   task: () => Promise<unknown>,

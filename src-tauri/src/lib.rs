@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 mod clipboard;
 mod commands;
@@ -79,6 +77,15 @@ pub fn run() {
             commands::ssh::ssh_trust_host,
             commands::ssh::ssh_reject_host,
             commands::ssh::ssh_clear_host_fingerprint,
+            commands::users::attach_vault_path,
+            commands::users::create_vault_v3,
+            commands::users::unlock_vault_as_user,
+            commands::users::list_vault_users,
+            commands::users::add_vault_user,
+            commands::users::remove_vault_user,
+            commands::users::change_user_password,
+            commands::users::migrate_vault_to_v3,
+            commands::users::get_current_user,
         ])
         .on_window_event(|window, event| {
             if let Some(state) = window.try_state::<AppState>() {

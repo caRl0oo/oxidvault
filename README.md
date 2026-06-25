@@ -1,6 +1,6 @@
 # OxidVault
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Alpha-yellow)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Beta-green) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.de-purple)
 
 **Hochsicherer, on-premise Passwortmanager für Enterprise-Umgebungen.**
 
@@ -19,6 +19,8 @@ OxidVault ist ein **Offline-First**-Tresor für Passwörter, SSH-Zugänge und we
 | **Governance-ready** | Zentrale Richtlinien per Policy-Datei, auditierbare Ereignisse, Compliance-Dashboard |
 | **Betriebssicher** | Atomare Schreibvorgänge, exklusives Datei-Locking, Key-Rotation ohne Payload-Re-Encrypt |
 | **MFA-geschützt** | TOTP (RFC 6238) als zweite Faktor-Hürde; atomare Entsperrung ohne Zwischenzustände im RAM |
+| **Multi-User** | Pro Vault bis zu 5 Benutzer (CE) — jeder mit eigenem Passwort und MFA; shared DEK-Architektur |
+| **Kommerzielle Lizenz** | Enterprise Edition für unbegrenzte User, LDAP, SSO — [oxidvault.de](https://oxidvault.de) |
 
 Ausführliche technische Spezifikationen: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
@@ -39,6 +41,19 @@ OxidVault ist als **speichersicherer, offline-fähiger Tresor** konzipiert. Sich
 - **RFC 6238** — zeitbasierte Einmalpasswörter (TOTP) vollständig **offline** validierbar; kein SMS-Gateway, kein OAuth-Provider.
 - **Enrollment in den Einstellungen** — CSPRNG-Secret, QR-Code (otpauth-URI), verschlüsselte Persistenz im Vault-Payload (AES-256-GCM).
 - **Entsperr-Flow** — nach korrektem Master-Passwort erscheint die MFA-Challenge; Auto-Fokus, Auto-Submit und **UI-seitiges Rate-Limiting** (3 Fehlversuche → 30 s Sperre) erschweren Brute-Force-Versuche am Desktop.
+
+### Multi-User Vaults (Format v3)
+
+OxidVault unterstützt gemeinsam genutzte Tresore mit mehreren Benutzern — ohne zentralen Server.
+
+- **Eigenes Passwort pro User** — kein geteiltes Master-Passwort
+- **Eigenes TOTP pro User** — MFA ist personengebunden, nicht vault-gebunden
+- **Shared DEK-Architektur** — ein gemeinsamer Data-Encryption-Key, pro User mit dessen KEK gewrappt; Passwort-Rotation eines Users berührt andere User nicht
+- **Rollen** — `Admin` (User verwalten) und `Member` (Secrets lesen/schreiben)
+- **Migration** — bestehende v1/v2-Tresore per Einmalvorgang auf v3 migrierbar; das bisherige Master-Passwort wird zum ersten Admin-User
+
+Community Edition: bis zu **5 Benutzer** pro Vault.  
+Enterprise Edition: unbegrenzte Benutzer — [oxidvault.de](https://oxidvault.de)
 
 ### Atomare Entsperrung
 
@@ -124,6 +139,9 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 ### Weitere Enterprise-Funktionen
 
 - **Zwei-Faktor-Authentifizierung (TOTP)** — MFA-Enrollment, atomare Entsperrung, UI-Rate-Limiting
+- **Multi-User Vaults (v3)** — bis 5 User CE, unbegrenzt EE; pro User Passwort + MFA
+- **SSH Known-Hosts Verifikation** — TOFU + gespeicherter Fingerprint; MITM-Warnung bei Abweichung
+- **reveal_secret Rate-Limiting** — Sliding Window (5 Anfragen / 60s) gegen Bulk-Extraktion
 - **Security Dashboard** — Offline-Schwachstellenanalyse (Duplikate, Entropie, Ablaufdaten)
 - **Compliance-Dashboard** — Policy-, Audit- und Key-Age-Status mit Rotations-Empfehlung (> 90 Tage)
 - **SSH Quick Connect** — Integriertes Terminal für gespeicherte SSH-Zugänge
@@ -244,9 +262,43 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 ---
 
+## Community & Enterprise Edition
+
+| Feature | Community (CE) | Enterprise (EE) |
+|---|---|---|
+| Alle aktuellen Features | ✅ | ✅ |
+| Bis 5 User pro Vault | ✅ | ✅ |
+| Unbegrenzte User | ❌ | ✅ |
+| LDAP / Active Directory | ❌ | ✅ |
+| SSO (SAML / OIDC) | ❌ | ✅ |
+| Priority Support + SLA | ❌ | ✅ |
+| Lizenz | AGPLv3 (Open Source) | Kommerziell |
+| Preis | Kostenlos | Auf Anfrage |
+
+→ **[oxidvault.de](https://oxidvault.de)** · [support@oxidvault.de](mailto:support@oxidvault.de)
+
+---
+
 ## Changelog
 
-### [Unreleased]
+### [2.0.0] — Multi-User & Security
+
+#### Multi-User Architektur
+
+- **Format v3** — shared DEK, pro-User KEK-Wrapping, User-Tabelle im Plaintext-Header
+- **Multi-User Login** — Username-Textfeld (kein Dropdown, kein Username-Enumeration-Risiko)
+- **Benutzerverwaltung** — Admin kann User hinzufügen/entfernen, Rollen ändern
+- **Passwort ändern** — jeder User kann sein eigenes Passwort ohne Vault-Re-Encrypt rotieren
+- **MFA pro User** — TOTP in User-Eintrag (KEK-verschlüsselt), nicht im Vault-Payload
+- **Migration v1/v2 → v3** — einmaliger Vorgang in den Einstellungen
+
+#### Sicherheit
+
+- **SSH Known-Hosts** — TOFU + gespeicherter SHA-256-Fingerprint; MITM-Warnung bei Abweichung
+- **reveal_secret Rate-Limiting** — Sliding Window (5/60s), Reset bei Lock, Audit-Event
+- **reload_from_disk v3** — DEK bleibt nach Git-Sync-Pull erhalten; kein stiller Session-Verlust
+
+### [1.0.0] — Enterprise Release
 
 #### Sicherheit & Authentifizierung
 
@@ -268,10 +320,15 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Vollständige technische Referenz (IPC, Dateiformate, Sicherheit) |
 | [`browser-extension/README.md`](browser-extension/README.md) | Browser-Integration via Native Messaging |
+| [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) | Kommerzielle Lizenz ohne AGPLv3-Pflichten |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Beiträge, CLA, Security-Reporting |
 
 ### Lizenzierung
 
 OxidVault steht unter der **[GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html)**. Die AGPL-3.0 verpflichtet jeden, der die Software (oder davon abgeleitete Werke) weiterverbreitet oder als Netzwerkdienst bereitstellt, den **vollständigen Quellcode** unter derselben Lizenz zugänglich zu machen. Für Enterprise-Umgebungen bedeutet das: Änderungen am Tresor-Kern, an der Kryptografie oder an sicherheitsrelevanten Komponenten bleiben nachvollziehbar und können nicht ohne Quellenoffenlegung als proprietäre Blackbox weitergegeben werden — ein zentraler Baustein für **Transparenz, Prüfbarkeit und langfristige Sicherheit**.
+
+Für kommerzielle Nutzung ohne AGPLv3-Pflichten steht eine **Enterprise-Lizenz** zur Verfügung.  
+Details: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) · [support@oxidvault.de](mailto:support@oxidvault.de)
 
 ---
 
@@ -281,11 +338,11 @@ Wenn Sie eine Sicherheitslücke in OxidVault entdecken, melden Sie diese bitte *
 
 | Kanal | Adresse |
 |---|---|
-| **Security Contact** | [security@oxidvault.dev](mailto:security@oxidvault.dev) |
+| **Security Contact** | [security@oxidvault.de](mailto:security@oxidvault.de) |
 
 Bitte beschreiben Sie betroffene Version, Plattform, Reproduktionsschritte und — falls möglich — einen Proof of Concept. Wir bestätigen den Eingang in der Regel innerhalb von **72 Stunden** und koordinieren mit Ihnen einen verantwortungsvollen Disclosure-Zeitplan, bevor Details veröffentlicht werden.
 
-> **Hinweis:** Meldungen an `security@oxidvault.dev` sind ausschließlich für Sicherheitsvorfälle gedacht. Für allgemeine Support- oder Feature-Anfragen nutzen Sie bitte die Projekt-Issues auf GitHub.
+> **Hinweis:** Meldungen an `security@oxidvault.de` sind ausschließlich für Sicherheitsvorfälle gedacht. Für allgemeine Support- oder Feature-Anfragen nutzen Sie bitte die Projekt-Issues auf GitHub.
 
 ---
 

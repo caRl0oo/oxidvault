@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 //! ISO 27001 compliance audit log — metadata-only, append-only, hash-chained.
 //!
@@ -20,6 +18,7 @@ use uuid::Uuid;
 
 use crate::audit_secure;
 use crate::error::VaultError;
+use crate::vault_user::UserRole;
 
 pub use audit_secure::secure_audit_log_file;
 
@@ -66,6 +65,28 @@ pub enum AuditAction {
     SshHostTrusted {
         id: Uuid,
     },
+    UserAdded {
+        username: String,
+    },
+    UserRemoved {
+        username: String,
+    },
+    UserPasswordChanged {
+        username: String,
+    },
+    UserRoleChanged {
+        username: String,
+        new_role: UserRole,
+    },
+    UserMfaEnabled {
+        username: String,
+    },
+    UserMfaDisabled {
+        username: String,
+    },
+    VaultMigratedToV3 {
+        admin_username: String,
+    },
 }
 
 impl AuditAction {
@@ -87,6 +108,13 @@ impl AuditAction {
             Self::SyncEvent { .. } => "SyncEvent",
             Self::ConfigChanged { .. } => "ConfigChanged",
             Self::SshHostTrusted { .. } => "SshHostTrusted",
+            Self::UserAdded { .. } => "UserAdded",
+            Self::UserRemoved { .. } => "UserRemoved",
+            Self::UserPasswordChanged { .. } => "UserPasswordChanged",
+            Self::UserRoleChanged { .. } => "UserRoleChanged",
+            Self::UserMfaEnabled { .. } => "UserMfaEnabled",
+            Self::UserMfaDisabled { .. } => "UserMfaDisabled",
+            Self::VaultMigratedToV3 { .. } => "VaultMigratedToV3",
         }
     }
 
@@ -108,6 +136,21 @@ impl AuditAction {
             | Self::SshHostTrusted { id } => id.to_string(),
             Self::SyncEvent { status } => sanitize_detail_token(status),
             Self::ConfigChanged { area } => sanitize_detail_token(area),
+            Self::UserAdded { username }
+            | Self::UserRemoved { username }
+            | Self::UserPasswordChanged { username }
+            | Self::UserMfaEnabled { username }
+            | Self::UserMfaDisabled { username }
+            | Self::VaultMigratedToV3 {
+                admin_username: username,
+            } => sanitize_detail_token(username),
+            Self::UserRoleChanged { username, new_role } => {
+                let role = match new_role {
+                    UserRole::Member => "member",
+                    UserRole::Admin => "admin",
+                };
+                sanitize_detail_token(&format!("{username}:{role}"))
+            }
         }
     }
 
@@ -140,6 +183,36 @@ impl AuditAction {
             "VaultOpened" => Self::VaultOpened,
             "VaultLocked" => Self::VaultLocked,
             "VaultKeyRotated" => Self::VaultKeyRotated,
+            "UserAdded" => Self::UserAdded {
+                username: entry_id.to_string(),
+            },
+            "UserRemoved" => Self::UserRemoved {
+                username: entry_id.to_string(),
+            },
+            "UserPasswordChanged" => Self::UserPasswordChanged {
+                username: entry_id.to_string(),
+            },
+            "UserMfaEnabled" => Self::UserMfaEnabled {
+                username: entry_id.to_string(),
+            },
+            "UserMfaDisabled" => Self::UserMfaDisabled {
+                username: entry_id.to_string(),
+            },
+            "VaultMigratedToV3" => Self::VaultMigratedToV3 {
+                admin_username: entry_id.to_string(),
+            },
+            "UserRoleChanged" => {
+                let (username, role) = entry_id.split_once(':').unwrap_or((entry_id, "member"));
+                let new_role = if role == "admin" {
+                    UserRole::Admin
+                } else {
+                    UserRole::Member
+                };
+                Self::UserRoleChanged {
+                    username: username.to_string(),
+                    new_role,
+                }
+            }
             other => Self::ConfigChanged {
                 area: sanitize_detail_token(other),
             },

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
 import * as zxcvbnCommon from "@zxcvbn-ts/language-common";
 import * as zxcvbnEn from "@zxcvbn-ts/language-en";

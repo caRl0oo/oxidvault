@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -147,7 +145,9 @@ async fn execute_git_sync(app: &AppHandle, state: &AppState) -> Result<GitSyncRe
             record_vault_audit(state, |vault| vault.record_sync_event("success"))?;
             if result.vault_reloaded {
                 let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-                vault.reload_from_disk().map_err(|e| e.to_string())?;
+                if vault.is_unlocked() {
+                    vault.reload_from_disk().map_err(|e| e.to_string())?;
+                }
             }
             Ok(result)
         }

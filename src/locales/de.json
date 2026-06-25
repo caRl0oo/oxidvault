@@ -55,15 +55,20 @@
   },
   "auth": {
     "createTitle": "Neuen Vault anlegen",
-    "createDescription": "Master-Passwort festlegen. Anschließend wählst du den Speicherort für die .oxid-Datei.",
+    "createDescription": "Admin-Benutzer und Master-Passwort festlegen. Anschließend wählst du den Speicherort für die .oxid-Datei.",
     "createSubmit": "Weiter — Speicherort wählen",
     "openTitle": "Vault öffnen",
     "openDescription": "Master-Passwort eingeben, um den Vault zu entschlüsseln.",
+    "openDescriptionMultiUser": "Benutzername und Passwort eingeben, um den Vault zu entschlüsseln.",
     "openSubmit": "Vault öffnen",
     "unlockTitle": "Vault entsperren",
     "unlockSubmit": "Entsperren",
+    "username": "Benutzername",
+    "invalidCredentials": "Benutzername oder Passwort falsch",
+    "usernamePlaceholder": "Benutzer wählen",
+    "adminUsernamePlaceholder": "Admin-Benutzername",
     "mfaChallengeTitle": "Zwei-Faktor-Authentifizierung",
-    "mfaChallengeDescription": "Master-Passwort bestätigt. Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
+    "mfaChallengeDescription": "Passwort bestätigt. Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
     "mfaCodePlaceholder": "6-stelliger Code",
     "mfaSubmit": "Code bestätigen",
     "mfaCancel": "Abbrechen",
@@ -214,7 +219,14 @@
       "AuthFailed": "Entsperrversuch fehlgeschlagen",
       "SyncEvent": "Git-Synchronisation",
       "ConfigChanged": "Sicherheitsrelevante Einstellung geändert",
-      "SshHostTrusted": "SSH-Host-Key vertraut"
+      "SshHostTrusted": "SSH-Host-Key vertraut",
+      "UserAdded": "Benutzer hinzugefügt",
+      "UserRemoved": "Benutzer entfernt",
+      "UserPasswordChanged": "Benutzerpasswort geändert",
+      "UserRoleChanged": "Benutzerrolle geändert",
+      "UserMfaEnabled": "2FA für Benutzer aktiviert",
+      "UserMfaDisabled": "2FA für Benutzer deaktiviert",
+      "VaultMigratedToV3": "Tresor auf Multi-User migriert"
     },
     "syncStatus": {
       "success": "Erfolgreich",
@@ -291,7 +303,13 @@
     "urlNoSpaces": "URL darf keine Leerzeichen enthalten.",
     "databaseIncomplete": "Bitte alle Datenbank-Felder ausfüllen.",
     "wifiIncomplete": "Bitte alle WLAN-Felder ausfüllen.",
-    "secureNoteRequired": "Notiz-Inhalt ist erforderlich."
+    "secureNoteRequired": "Notiz-Inhalt ist erforderlich.",
+    "invalidUserPassword": "Passwort für diesen Benutzer ist falsch.",
+    "userAlreadyExists": "Dieser Benutzername existiert bereits.",
+    "userNotFound": "Benutzer nicht gefunden.",
+    "insufficientPermissions": "Unzureichende Berechtigung — Administratorrolle erforderlich.",
+    "lastAdminCannotBeRemoved": "Der letzte Administrator kann nicht entfernt werden.",
+    "invalidUsername": "Ungültiger Benutzername."
   },
   "theme": {
     "selectAria": "Design auswählen",
@@ -401,7 +419,8 @@
     "nav": {
       "general": "Allgemein",
       "sync": "Synchronisation",
-      "security": "Sicherheit"
+      "security": "Sicherheit",
+      "users": "Benutzer"
     },
     "theme": "Design",
     "language": "Sprache",
@@ -540,6 +559,36 @@
       "audit_chain_invalid": "Audit-Hash-Kette beschädigt",
       "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)"
     }
+  },
+  "users": {
+    "title": "Benutzer verwalten",
+    "addUser": "Benutzer hinzufügen",
+    "removeUser": "Benutzer entfernen",
+    "username": "Benutzername",
+    "role": "Rolle",
+    "roleAdmin": "Administrator",
+    "roleMember": "Mitglied",
+    "currentUser": "Du",
+    "mfaEnabled": "2FA aktiv",
+    "addUserSuccess": "Benutzer erfolgreich hinzugefügt",
+    "removeUserSuccess": "Benutzer entfernt",
+    "removeUserConfirm": "Benutzer {{username}} wirklich entfernen?",
+    "lastAdminError": "Der letzte Administrator kann nicht entfernt werden",
+    "changePassword": "Eigenes Passwort ändern",
+    "changePasswordSuccess": "Passwort erfolgreich geändert",
+    "confirmPassword": "Passwort wiederholen",
+    "passwordMismatch": "Passwörter stimmen nicht überein.",
+    "migrationBanner": "Dieser Tresor verwendet ein älteres Format. Für Multi-User-Support auf v3 migrieren.",
+    "migrateNow": "Jetzt migrieren",
+    "migrateLater": "Später",
+    "migrateTitle": "Tresor auf Multi-User migrieren",
+    "migrateWarning": "Diese Aktion kann nicht rückgängig gemacht werden.",
+    "migrateSuccess": "Migration erfolgreich",
+    "migrateDescription": "Das bestehende Passwort wird zum Passwort des ersten Admin-Benutzers.",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort",
+    "addUserTitle": "Neuen Benutzer hinzufügen",
+    "addUserSubmit": "Hinzufügen"
   },
   "rotation": {
     "title": "Master-Passwort rotieren",

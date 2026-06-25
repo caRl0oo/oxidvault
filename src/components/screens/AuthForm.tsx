@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLogo } from "@/components/AppLogo";
@@ -13,6 +16,20 @@ function normalizeMfaCode(value: string): string {
 
 const PASSWORD_INPUT_CLASS =
   "w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted focus:border-vault-accent";
+const MFA_INPUT_CLASS = `${INPUT_FIELD_CLASS} ${INPUT_FIELD_DISABLED_CLASS}`;
+const SUBMIT_BUTTON_CLASS = `w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50 ${INPUT_FIELD_DISABLED_CLASS}`;
+
+interface SubmitEnabledOptions {
+  readonly loading: boolean;
+  readonly mfaChallenge: boolean;
+  readonly mfaCode: string;
+  readonly mfaLockedOut: boolean;
+  readonly enforceMasterPolicy?: boolean;
+  readonly password: string;
+  readonly isMultiUser?: boolean;
+  readonly username?: string;
+  readonly adminUsername?: string;
+}
 
 interface AuthFormProps {
   readonly titleKey: string;
@@ -22,6 +39,11 @@ interface AuthFormProps {
   readonly onPasswordChange: (v: string) => void;
   readonly vaultName?: string;
   readonly onVaultNameChange?: (v: string) => void;
+  readonly adminUsername?: string;
+  readonly onAdminUsernameChange?: (v: string) => void;
+  readonly isMultiUser?: boolean;
+  readonly username?: string;
+  readonly onUsernameChange?: (v: string) => void;
   readonly enforceMasterPolicy?: boolean;
   readonly mfaChallenge?: boolean;
   readonly mfaCode?: string;
@@ -61,24 +83,23 @@ function resolveAuthLabels(
   return { titleKey, descriptionKey, submitLabelKey };
 }
 
-function isSubmitEnabled(
-  loading: boolean,
-  mfaChallenge: boolean,
-  mfaCode: string,
-  mfaLockedOut: boolean,
-  enforceMasterPolicy: boolean | undefined,
-  password: string,
-): boolean {
-  if (loading || mfaLockedOut) {
+function isSubmitEnabled(opts: SubmitEnabledOptions): boolean {
+  if (opts.loading || opts.mfaLockedOut) {
     return false;
   }
-  if (mfaChallenge) {
-    return mfaCode.length === MFA_CODE_LENGTH;
+  if (opts.mfaChallenge) {
+    return opts.mfaCode.length === MFA_CODE_LENGTH;
   }
-  if (enforceMasterPolicy) {
-    return evaluateMasterPassword(password).valid;
+  if (opts.isMultiUser && !opts.username?.trim()) {
+    return false;
   }
-  return password.length > 0;
+  if (opts.adminUsername !== undefined && !opts.adminUsername.trim()) {
+    return false;
+  }
+  if (opts.enforceMasterPolicy) {
+    return evaluateMasterPassword(opts.password).valid;
+  }
+  return opts.password.length > 0;
 }
 
 function AuthFormHeader({
@@ -101,6 +122,49 @@ function AuthFormHeader({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function UsernameField({
+  username,
+  onUsernameChange,
+}: Readonly<{
+  username: string;
+  onUsernameChange: (v: string) => void;
+}>) {
+  const { t } = useTranslation();
+
+  return (
+    <input
+      type="text"
+      value={username}
+      onChange={(e) => onUsernameChange(e.target.value)}
+      placeholder={t("auth.username")}
+      autoComplete="username"
+      autoFocus
+      className={PASSWORD_INPUT_CLASS}
+      aria-label={t("auth.username")}
+    />
+  );
+}
+
+function AdminUsernameField({
+  adminUsername,
+  onAdminUsernameChange,
+}: Readonly<{
+  adminUsername: string;
+  onAdminUsernameChange: (v: string) => void;
+}>) {
+  const { t } = useTranslation();
+  return (
+    <input
+      type="text"
+      value={adminUsername}
+      onChange={(e) => onAdminUsernameChange(e.target.value)}
+      placeholder={t("auth.adminUsernamePlaceholder")}
+      autoComplete="username"
+      className={PASSWORD_INPUT_CLASS}
+    />
   );
 }
 
@@ -222,7 +286,7 @@ function MfaCodeField({
       placeholder={t("auth.mfaCodePlaceholder")}
       maxLength={MFA_CODE_LENGTH}
       disabled={loading || lockedOut}
-      className={`${INPUT_FIELD_CLASS} ${INPUT_FIELD_DISABLED_CLASS}`}
+      className={MFA_INPUT_CLASS}
       aria-label={t("auth.mfaCodePlaceholder")}
       aria-disabled={lockedOut}
     />
@@ -250,11 +314,26 @@ function AuthFormFields(props: Readonly<AuthFormProps>) {
   const vaultName = props.vaultName;
   const onVaultNameChange = props.onVaultNameChange;
   const showVaultName = vaultName !== undefined && onVaultNameChange !== undefined;
+  const showAdminUsername =
+    props.adminUsername !== undefined && props.onAdminUsernameChange !== undefined;
+  const showUsername =
+    props.isMultiUser && props.username !== undefined && props.onUsernameChange !== undefined;
+  const adminUsernameChange = props.onAdminUsernameChange;
+  const usernameChange = props.onUsernameChange;
 
   return (
     <>
       {showVaultName ? (
         <VaultNameField vaultName={vaultName} onVaultNameChange={onVaultNameChange} />
+      ) : null}
+      {showAdminUsername && adminUsernameChange ? (
+        <AdminUsernameField
+          adminUsername={props.adminUsername ?? ""}
+          onAdminUsernameChange={adminUsernameChange}
+        />
+      ) : null}
+      {showUsername && usernameChange ? (
+        <UsernameField username={props.username ?? ""} onUsernameChange={usernameChange} />
       ) : null}
       <PasswordField
         password={props.password}
@@ -318,14 +397,17 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
     props.descriptionKey,
     props.submitLabelKey,
   );
-  const canSubmit = isSubmitEnabled(
-    props.loading,
+  const canSubmit = isSubmitEnabled({
+    loading: props.loading,
     mfaChallenge,
     mfaCode,
     mfaLockedOut,
-    props.enforceMasterPolicy,
-    props.password,
-  );
+    enforceMasterPolicy: props.enforceMasterPolicy,
+    password: props.password,
+    isMultiUser: props.isMultiUser,
+    username: props.username,
+    adminUsername: props.adminUsername,
+  });
 
   return (
     <section className="flex flex-1 items-center justify-center p-8">
@@ -345,7 +427,7 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
           <button
             type="submit"
             disabled={!canSubmit}
-            className={`w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50 ${INPUT_FIELD_DISABLED_CLASS}`}
+            className={SUBMIT_BUTTON_CLASS}
           >
             {props.loading ? t("common.pleaseWait") : t(labels.submitLabelKey)}
           </button>

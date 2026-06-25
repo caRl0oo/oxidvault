@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { getDashboardFilterLabel } from "@/lib/vaultLabels";
 import type { SecurityAuditReport } from "@/types/audit";
 

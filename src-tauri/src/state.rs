@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -17,6 +15,8 @@ pub struct AppState {
     pub ssh: SshManager,
     pub clipboard: SecureClipboard,
     pub bridge: Mutex<BridgeAuthState>,
+    /// Format version of the currently loaded vault (1, 2, or 3).
+    pub vault_format_version: Mutex<u8>,
     last_activity_secs: AtomicU64,
     idle_warning_sent: AtomicBool,
 }
@@ -28,9 +28,24 @@ impl AppState {
             ssh: SshManager::new(),
             clipboard: SecureClipboard::new(),
             bridge: Mutex::new(BridgeAuthState::default()),
+            vault_format_version: Mutex::new(0),
             last_activity_secs: AtomicU64::new(unix_secs_now()),
             idle_warning_sent: AtomicBool::new(false),
         }
+    }
+
+    /// Returns true if the current vault is v3 (multi-user).
+    pub fn is_multi_user(&self) -> bool {
+        self.vault_format_version
+            .lock()
+            .map(|version| *version == vault_core::format::FORMAT_VERSION_V3 as u8)
+            .unwrap_or(false)
+    }
+
+    /// Returns the current username if the vault is v3 and unlocked.
+    pub fn current_username(&self) -> Option<String> {
+        let vault = self.vault.lock().ok()?;
+        vault.get_current_user_public().map(|user| user.username)
     }
 
     pub fn touch_activity(&self) {

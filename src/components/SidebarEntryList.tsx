@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useState } from "react";
 import { SidebarEntryItem } from "@/components/SidebarEntryItem";
 import { groupEntriesByFolder, shouldGroupByFolder } from "@/lib/tags";

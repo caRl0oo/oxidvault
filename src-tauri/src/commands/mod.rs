@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use tauri::State;
 use vault_core::{
@@ -17,7 +15,7 @@ pub use crate::state::AppState;
 mod vault_guard;
 pub use vault_guard::{ensure_vault_unlocked, ensure_vault_unlocked_state};
 
-fn note_unlock_error(state: &AppState, err: &VaultError) {
+pub(super) fn note_unlock_error(state: &AppState, err: &VaultError) {
     if matches!(err, VaultError::InvalidMfaCode) {
         if let Ok(mut bridge) = state.bridge.lock() {
             bridge.note_mfa_failed();
@@ -25,7 +23,11 @@ fn note_unlock_error(state: &AppState, err: &VaultError) {
     }
 }
 
-fn note_unlock_success(state: &AppState, app: &tauri::AppHandle, vault: &vault_core::Vault) {
+pub(super) fn note_unlock_success(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    vault: &vault_core::Vault,
+) {
     if let Ok(mut bridge) = state.bridge.lock() {
         bridge.clear_mfa_failed();
     }
@@ -34,15 +36,37 @@ fn note_unlock_success(state: &AppState, app: &tauri::AppHandle, vault: &vault_c
     crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
 }
 
-fn wrap_password(password: String) -> Zeroizing<String> {
+pub(super) fn wrap_password(password: String) -> Zeroizing<String> {
     Zeroizing::new(password)
 }
 
-fn unlock_response(vault: &vault_core::Vault, step: UnlockStep) -> UnlockVaultResponse {
+pub(super) fn unlock_response(vault: &vault_core::Vault, step: UnlockStep) -> UnlockVaultResponse {
     match step {
-        UnlockStep::Complete => UnlockVaultResponse::complete(vault.info()),
+        UnlockStep::Complete => {
+            if vault.is_multi_user_vault() {
+                let username = vault
+                    .get_current_user_public()
+                    .map(|user| user.username)
+                    .unwrap_or_default();
+                UnlockVaultResponse::complete_as_user(vault.info(), username)
+            } else {
+                UnlockVaultResponse::complete(vault.info())
+            }
+        }
         UnlockStep::MfaRequired => UnlockVaultResponse::mfa_pending(vault.info()),
     }
+}
+
+pub(super) fn sync_vault_format_state(state: &AppState, vault: &vault_core::Vault) {
+    if let Ok(mut version) = state.vault_format_version.lock() {
+        *version = vault.format_version() as u8;
+    }
+}
+
+fn is_v3_vault_path(path: &str) -> Result<bool, String> {
+    let meta = vault_core::format::read_vault_meta(std::path::Path::new(path))
+        .map_err(|e| e.to_string())?;
+    Ok(meta.format_version == vault_core::format::FORMAT_VERSION_V3)
 }
 
 #[tauri::command]
@@ -75,6 +99,7 @@ pub fn create_vault(
     vault
         .create(&path, name, &password)
         .map_err(|e| e.to_string())?;
+    sync_vault_format_state(&state, &vault);
     let info = vault.info();
     bootstrap::remember_vault_path(&app, &info);
     state.touch_activity();
@@ -92,6 +117,17 @@ pub fn open_vault(
     let password = wrap_password(password);
     let mfa_code = mfa_code.map(wrap_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+
+    if is_v3_vault_path(&path)? {
+        vault.attach_locked(&path).map_err(|e| e.to_string())?;
+        sync_vault_format_state(&state, &vault);
+        let response = UnlockVaultResponse::multi_user_pending(vault.info());
+        if response.vault.initialized {
+            bootstrap::remember_vault_path(&app, &response.vault);
+        }
+        return Ok(response);
+    }
+
     let step = match vault.open(
         &path,
         &password,
@@ -106,6 +142,7 @@ pub fn open_vault(
     if step == UnlockStep::Complete {
         note_unlock_success(&state, &app, &vault);
     }
+    sync_vault_format_state(&state, &vault);
     let response = unlock_response(&vault, step);
     if response.vault.initialized {
         bootstrap::remember_vault_path(&app, &response.vault);
@@ -123,6 +160,11 @@ pub fn unlock_vault(
     let password = wrap_password(password);
     let mfa_code = mfa_code.map(wrap_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+
+    if vault.is_multi_user_vault() {
+        return Ok(UnlockVaultResponse::multi_user_pending(vault.info()));
+    }
+
     let step = match vault.unlock(&password, mfa_code.as_ref().map(|code| code.as_str())) {
         Ok(step) => step,
         Err(err) => {
@@ -133,6 +175,7 @@ pub fn unlock_vault(
     if step == UnlockStep::Complete {
         note_unlock_success(&state, &app, &vault);
     }
+    sync_vault_format_state(&state, &vault);
     Ok(unlock_response(&vault, step))
 }
 
@@ -226,11 +269,24 @@ pub fn generate_password_cmd(options: PasswordGenOptions) -> Result<String, Stri
 }
 
 #[tauri::command]
-pub fn enable_mfa(state: State<'_, AppState>) -> Result<vault_core::MfaSetupInfo, String> {
+pub fn enable_mfa(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<vault_core::MfaSetupInfo, String> {
     ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    vault.begin_mfa_enrollment().map_err(|e| e.to_string())
+    let info = if vault.is_v3() {
+        vault
+            .enable_mfa_for_current_user()
+            .map_err(|e| e.to_string())?
+    } else {
+        vault.begin_mfa_enrollment().map_err(|e| e.to_string())?
+    };
+    if vault.is_v3() {
+        let _ = settings::save_vault_mfa_configured(&app, true);
+    }
+    Ok(info)
 }
 
 #[tauri::command]
@@ -254,7 +310,13 @@ pub fn disable_mfa(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<
     ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    vault.disable_mfa().map_err(|e| e.to_string())?;
+    if vault.is_v3() {
+        vault
+            .disable_mfa_for_current_user()
+            .map_err(|e| e.to_string())?;
+    } else {
+        vault.disable_mfa().map_err(|e| e.to_string())?;
+    }
     let _ = settings::save_vault_mfa_configured(&app, false);
     Ok(())
 }
@@ -268,16 +330,23 @@ pub fn verify_mfa_code(
     let code = Zeroizing::new(code);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    let verified = vault
-        .verify_mfa_code(code.as_str())
-        .map_err(|e| e.to_string())?;
-    if verified {
+    let verified = if vault.is_v3() {
+        vault
+            .verify_mfa_code_for_current_user(code.as_str())
+            .map_err(|e| e.to_string())?
+    } else {
+        vault
+            .verify_mfa_code(code.as_str())
+            .map_err(|e| e.to_string())?
+    };
+    if verified && !vault.is_v3() {
         let _ = settings::save_vault_mfa_configured(&app, true);
     }
     Ok(verified)
 }
 
 pub mod ssh;
+pub mod users;
 
 pub mod audit;
 pub mod bootstrap;

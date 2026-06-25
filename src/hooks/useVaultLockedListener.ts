@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { listen, type Event } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { isTauri } from "@/lib/ipc";

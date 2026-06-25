@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use std::path::{Path, PathBuf};
 
@@ -23,6 +21,10 @@ use crate::policy::{admin_policy, validate_master_password_with_min_len, MIN_MAS
 use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
+use crate::vault_user::{
+    build_vault_user, derive_user_kek, rewrap_user_dek, to_public, unwrap_user_dek,
+    user_mfa_enabled, validate_username, UnlockedUser, UserRole, VaultUser, VaultUserPublic,
+};
 
 /// `(host, username, private_key, passphrase, known_host_fingerprint)`
 pub type SshConnectCredentials = (String, String, String, Option<String>, Option<String>);
@@ -35,6 +37,7 @@ pub struct VaultInfo {
     pub entry_count: usize,
     pub locked: bool,
     pub initialized: bool,
+    pub is_multi_user: bool,
 }
 
 pub struct Vault {
@@ -54,6 +57,10 @@ pub struct Vault {
     kek: Option<MasterKey>,
     mfa: Option<StoredMfaConfig>,
     pending_mfa_secret: Option<Zeroizing<Vec<u8>>>,
+    users: Vec<VaultUser>,
+    current_user: Option<UnlockedUser>,
+    /// v3 only: current user's KEK for MFA operations; zeroed on lock.
+    session_kek: Option<Zeroizing<[u8; 32]>>,
 }
 
 enum UnlockAuditAction {
@@ -86,6 +93,9 @@ impl Vault {
             kek: None,
             mfa: None,
             pending_mfa_secret: None,
+            users: Vec::new(),
+            current_user: None,
+            session_kek: None,
         }
     }
 
@@ -294,6 +304,8 @@ impl Vault {
         }
         self.master_key = None;
         self.kek = None;
+        self.current_user = None;
+        self.session_kek = None;
         self.entries.clear();
         self.pending_mfa_secret = None;
         self.locked = true;
@@ -314,14 +326,23 @@ impl Vault {
         self.path = Some(path.clone());
         self.name = meta.name;
         self.kdf = meta.kdf;
-        self.salt = Some(meta.salt);
         self.format_version = meta.format_version;
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = key_rotated_at;
         self.master_key = None;
+        self.kek = None;
+        self.current_user = None;
+        self.session_kek = None;
         self.entries.clear();
         self.mfa = None;
         self.pending_mfa_secret = None;
+        if meta.format_version == format::FORMAT_VERSION_V3 {
+            self.users = meta.users.unwrap_or_default();
+            self.salt = None;
+        } else {
+            self.users.clear();
+            self.salt = Some(meta.salt);
+        }
         self.cached_entry_count = 0;
         self.locked = true;
         self.bind_audit_logger(&path)?;
@@ -653,6 +674,27 @@ impl Vault {
             return self.attach_locked(path);
         }
 
+        if self.format_version == format::FORMAT_VERSION_V3 {
+            let current_user = self.current_user.as_ref().ok_or(VaultError::Locked)?;
+            let dek = MasterKey::from_bytes(current_user.dek);
+
+            let (updated_users, payload_nonce, payload_ciphertext) =
+                format::read_v3_vault_file(&path)?;
+            let payload = format::decrypt_v3_payload(&dek, &payload_nonce, &payload_ciphertext)?;
+
+            let meta = format::read_vault_meta(&path)?;
+            let key_created_at = effective_key_created_at(&meta, &path);
+            let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
+
+            self.name = meta.name;
+            self.key_created_at = Some(key_created_at);
+            self.key_rotated_at = key_rotated_at;
+            self.users = updated_users;
+            self.apply_payload(payload);
+            self.cached_entry_count = self.entries.len();
+            return Ok(());
+        }
+
         let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
         let meta = format::read_vault_meta(&path)?;
         let key_created_at = effective_key_created_at(&meta, &path);
@@ -666,6 +708,11 @@ impl Vault {
         self.apply_payload(payload);
         self.cached_entry_count = self.entries.len();
         Ok(())
+    }
+
+    /// Returns whether the vault is loaded and unlocked.
+    pub fn is_unlocked(&self) -> bool {
+        !self.locked
     }
 
     /// Starts TOTP enrollment — generates secret + QR (vault must be unlocked).
@@ -718,6 +765,12 @@ impl Vault {
 
     /// Returns whether TOTP MFA is active for the current vault session.
     pub fn mfa_status(&self) -> MfaStatus {
+        if self.is_v3() {
+            return MfaStatus {
+                mfa_enabled: self.current_user_has_mfa(),
+                vault_locked: self.locked,
+            };
+        }
         MfaStatus {
             mfa_enabled: self.mfa.as_ref().is_some_and(|config| config.enabled),
             vault_locked: self.locked,
@@ -766,6 +819,59 @@ impl Vault {
         Ok(())
     }
 
+    pub fn format_version(&self) -> u16 {
+        self.format_version
+    }
+
+    pub fn is_multi_user_vault(&self) -> bool {
+        self.format_version == format::FORMAT_VERSION_V3
+    }
+
+    /// Returns true when the loaded vault uses format v3 (multi-user).
+    pub fn is_v3(&self) -> bool {
+        self.is_multi_user_vault()
+    }
+
+    /// Returns whether the current v3 user has MFA enabled in the header.
+    pub fn current_user_has_mfa(&self) -> bool {
+        let username = match self.current_user.as_ref() {
+            Some(user) => user.username.as_str(),
+            None => return false,
+        };
+        self.users
+            .iter()
+            .find(|user| user.username == username)
+            .is_some_and(user_mfa_enabled)
+    }
+
+    fn store_session_kek(&mut self, kek: &MasterKey) {
+        self.session_kek = Some(Zeroizing::new(*kek.as_bytes()));
+    }
+
+    fn session_kek_master_key(&self) -> Result<MasterKey, VaultError> {
+        let bytes = self.session_kek.as_ref().ok_or(VaultError::Locked)?;
+        Ok(MasterKey::from_bytes(**bytes))
+    }
+
+    fn persist_v3_header(&self) -> Result<(), VaultError> {
+        let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
+        format::update_v3_vault_header_only(
+            path,
+            &self.name,
+            &self.users,
+            self.key_created_at.unwrap_or(0),
+            self.key_rotated_at.unwrap_or(0),
+        )
+    }
+
+    pub fn get_current_user_public(&self) -> Option<VaultUserPublic> {
+        let username = self.current_user.as_ref()?.username.clone();
+        self.users
+            .iter()
+            .find(|user| user.username == username)
+            .map(|user| to_public(user, true))
+    }
+
     pub fn info(&self) -> VaultInfo {
         VaultInfo {
             version: crate::VAULT_VERSION.to_string(),
@@ -778,6 +884,7 @@ impl Vault {
             },
             locked: self.locked,
             initialized: self.path.is_some(),
+            is_multi_user: self.is_multi_user_vault(),
         }
     }
 
@@ -792,6 +899,19 @@ impl Vault {
     fn persist(&self) -> Result<(), VaultError> {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+
+        if self.format_version == format::FORMAT_VERSION_V3 {
+            return format::update_v3_vault_file(
+                path,
+                &self.name,
+                &self.users,
+                payload_key,
+                &self.entries,
+                self.key_created_at.unwrap_or(0),
+                self.key_rotated_at.unwrap_or(0),
+            );
+        }
+
         let salt = self.salt.ok_or(VaultError::NotInitialized)?;
         format::update_vault_file_payload(
             path,
@@ -808,6 +928,412 @@ impl Vault {
                 mfa: self.mfa.as_ref(),
             },
         )
+    }
+
+    /// Creates a new v3 multi-user vault with the first admin user.
+    pub fn create_v3(
+        path: &Path,
+        vault_name: &str,
+        admin_username: &str,
+        admin_password: Zeroizing<String>,
+    ) -> Result<Self, VaultError> {
+        let path = normalize_vault_path(path)?;
+        if path.exists() {
+            return Err(VaultError::FileExists);
+        }
+
+        let dek = MasterKey::generate_data_key();
+        let admin_user = build_vault_user(
+            admin_username,
+            admin_password.clone(),
+            UserRole::Admin,
+            &dek,
+            None,
+        )?;
+        let session_kek = derive_user_kek(&admin_user, admin_password.as_str())?;
+        let users = vec![admin_user.clone()];
+        let key_created_at = crate::compliance::unix_timestamp_secs();
+
+        format::write_v3_vault_file(path.as_path(), vault_name, &users, dek.as_bytes(), &[])?;
+
+        let mut vault = Self::new();
+        vault.path = Some(path.clone());
+        vault.name = vault_name.to_string();
+        vault.format_version = format::FORMAT_VERSION_V3;
+        vault.key_created_at = Some(key_created_at);
+        vault.key_rotated_at = None;
+        vault.users = users;
+        vault.master_key = Some(dek);
+        vault.store_session_kek(&session_kek);
+        vault.current_user = Some(UnlockedUser {
+            username: admin_user.username,
+            role: UserRole::Admin,
+            dek: *vault.master_key.as_ref().expect("dek").as_bytes(),
+        });
+        vault.locked = false;
+        vault.bind_audit_logger(&path)?;
+        vault.audit(AuditAction::VaultCreated)?;
+        Ok(vault)
+    }
+
+    /// Unlocks a v3 vault as a specific user.
+    pub fn unlock_as_user(
+        &mut self,
+        username: &str,
+        password: Zeroizing<String>,
+        mfa_code: Option<&str>,
+    ) -> Result<UnlockStep, VaultError> {
+        if self.format_version != format::FORMAT_VERSION_V3 {
+            return Err(VaultError::Other("vault is not multi-user format".into()));
+        }
+
+        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
+        if self.vault_lock.is_none() {
+            self.acquire_vault_lock(&path)?;
+        }
+        let lock_meta = self.assert_lock_valid()?;
+
+        let username = validate_username(username)?;
+        let user = self
+            .users
+            .iter()
+            .find(|candidate| candidate.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?
+            .clone();
+
+        let kek = derive_user_kek(&user, password.as_str())
+            .map_err(|_| VaultError::InvalidUserPassword)?;
+        let dek = unwrap_user_dek(&user, &kek).map_err(|_| VaultError::InvalidUserPassword)?;
+
+        if user_mfa_enabled(&user) {
+            let Some(code) = mfa_code else {
+                return Ok(UnlockStep::MfaRequired);
+            };
+            let (nonce, ciphertext) = (
+                user.mfa_nonce.as_deref().unwrap_or_default(),
+                user.mfa_ciphertext.as_deref().unwrap_or_default(),
+            );
+            let secret = mfa::decrypt_mfa_secret_with_kek(&kek, nonce, ciphertext)?;
+            let account = mfa::v3_user_totp_account(&self.name, &username);
+            let valid = mfa::verify_totp_code_for_account(secret.as_ref(), &account, code)?;
+            if !valid {
+                let _ = self.record_auth_failed();
+                return Err(VaultError::InvalidMfaCode);
+            }
+        }
+
+        let (_, payload_nonce, payload_ciphertext) = format::read_v3_vault_file(&path)?;
+        let payload = format::decrypt_v3_payload(&dek, &payload_nonce, &payload_ciphertext)?;
+
+        self.master_key = Some(dek);
+        self.store_session_kek(&kek);
+        self.current_user = Some(UnlockedUser {
+            username: username.clone(),
+            role: user.role,
+            dek: *self.master_key.as_ref().expect("dek").as_bytes(),
+        });
+        self.apply_payload(payload);
+        self.cached_entry_count = self.entries.len();
+        self.locked = false;
+        self.audit(AuditAction::VaultUnlocked {
+            lock_id: lock_meta.lock_id(),
+        })?;
+        Ok(UnlockStep::Complete)
+    }
+
+    /// Adds a new user (requires current user to be Admin).
+    pub fn add_user(
+        &mut self,
+        new_username: &str,
+        new_password: Zeroizing<String>,
+        role: UserRole,
+    ) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        self.ensure_admin()?;
+
+        let new_username = validate_username(new_username)?;
+        if self.users.iter().any(|user| user.username == new_username) {
+            return Err(VaultError::UserAlreadyExists(new_username));
+        }
+
+        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        let new_user = build_vault_user(new_username.as_str(), new_password, role, dek, None)?;
+        self.users.push(new_user);
+        self.persist()?;
+        self.audit(AuditAction::UserAdded {
+            username: new_username,
+        })
+    }
+
+    /// Removes a user (requires Admin; cannot remove self).
+    pub fn remove_user(&mut self, username: &str) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        self.ensure_admin()?;
+
+        let username = validate_username(username)?;
+        let current = self
+            .current_user
+            .as_ref()
+            .ok_or(VaultError::Locked)?
+            .username
+            .clone();
+        if username == current {
+            return Err(VaultError::InsufficientPermissions);
+        }
+
+        let admin_count = self
+            .users
+            .iter()
+            .filter(|user| user.role == UserRole::Admin)
+            .count();
+        let target_is_admin = self
+            .users
+            .iter()
+            .find(|user| user.username == username)
+            .is_some_and(|user| user.role == UserRole::Admin);
+        if target_is_admin && admin_count <= 1 {
+            return Err(VaultError::LastAdminCannotBeRemoved);
+        }
+
+        let before = self.users.len();
+        self.users.retain(|user| user.username != username);
+        if self.users.len() == before {
+            return Err(VaultError::UserNotFound(username.clone()));
+        }
+
+        self.persist()?;
+        self.audit(AuditAction::UserRemoved { username })
+    }
+
+    /// Changes the current user's password (rewraps their DEK entry only).
+    pub fn change_own_password(
+        &mut self,
+        current_password: Zeroizing<String>,
+        new_password: Zeroizing<String>,
+    ) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        if self.format_version != format::FORMAT_VERSION_V3 {
+            return Err(VaultError::Other("vault is not multi-user format".into()));
+        }
+
+        let username = self
+            .current_user
+            .as_ref()
+            .ok_or(VaultError::Locked)?
+            .username
+            .clone();
+        let idx = self
+            .users
+            .iter()
+            .position(|user| user.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?;
+
+        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        rewrap_user_dek(
+            &mut self.users[idx],
+            current_password,
+            new_password.clone(),
+            dek,
+        )?;
+        let new_kek = derive_user_kek(&self.users[idx], new_password.as_str())?;
+        self.store_session_kek(&new_kek);
+        self.persist()?;
+        self.audit(AuditAction::UserPasswordChanged { username })
+    }
+
+    /// Enables MFA for the current v3 user (persisted immediately in the header).
+    pub fn enable_mfa_for_current_user(&mut self) -> Result<MfaSetupInfo, VaultError> {
+        self.ensure_unlocked()?;
+        if !self.is_v3() {
+            return Err(VaultError::Other("vault is not multi-user format".into()));
+        }
+
+        let username = self
+            .current_user
+            .as_ref()
+            .ok_or(VaultError::Locked)?
+            .username
+            .clone();
+        let user = self
+            .users
+            .iter()
+            .find(|candidate| candidate.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?;
+        if user_mfa_enabled(user) {
+            return Err(VaultError::Other("MFA is already enabled".into()));
+        }
+
+        let kek = self.session_kek_master_key()?;
+        let enrollment = mfa::create_enrollment_for_v3_user(&self.name, &username)?;
+        let (mfa_nonce, mfa_ciphertext) =
+            mfa::encrypt_mfa_secret_with_kek(&kek, enrollment.secret_bytes.as_ref())?;
+
+        let idx = self
+            .users
+            .iter()
+            .position(|user| user.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?;
+        self.users[idx].mfa_nonce = Some(mfa_nonce);
+        self.users[idx].mfa_ciphertext = Some(mfa_ciphertext);
+        self.persist_v3_header()?;
+        self.audit(AuditAction::UserMfaEnabled { username })?;
+        Ok(enrollment.info)
+    }
+
+    /// Verifies a TOTP code for the current v3 user (UI check after enrollment).
+    pub fn verify_mfa_code_for_current_user(&self, code: &str) -> Result<bool, VaultError> {
+        if !self.is_v3() {
+            return Err(VaultError::Other("vault is not multi-user format".into()));
+        }
+
+        let username = self
+            .current_user
+            .as_ref()
+            .ok_or(VaultError::Locked)?
+            .username
+            .clone();
+        let user = self
+            .users
+            .iter()
+            .find(|candidate| candidate.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?;
+        if !user_mfa_enabled(user) {
+            return Err(VaultError::Other("MFA is not enabled".into()));
+        }
+
+        let kek = self.session_kek_master_key()?;
+        let (nonce, ciphertext) = (
+            user.mfa_nonce.as_deref().unwrap_or_default(),
+            user.mfa_ciphertext.as_deref().unwrap_or_default(),
+        );
+        let secret = mfa::decrypt_mfa_secret_with_kek(&kek, nonce, ciphertext)?;
+        let account = mfa::v3_user_totp_account(&self.name, &username);
+        mfa::verify_totp_code_for_account(secret.as_ref(), &account, code)
+    }
+
+    /// Disables MFA for the current v3 user.
+    pub fn disable_mfa_for_current_user(&mut self) -> Result<(), VaultError> {
+        self.ensure_unlocked()?;
+        let username = self
+            .current_user
+            .as_ref()
+            .ok_or(VaultError::Locked)?
+            .username
+            .clone();
+        let idx = self
+            .users
+            .iter()
+            .position(|user| user.username == username)
+            .ok_or_else(|| VaultError::UserNotFound(username.clone()))?;
+
+        if !user_mfa_enabled(&self.users[idx]) {
+            return Err(VaultError::Other("MFA is not enabled".into()));
+        }
+
+        self.users[idx].mfa_nonce = None;
+        self.users[idx].mfa_ciphertext = None;
+        self.persist_v3_header()?;
+        self.audit(AuditAction::UserMfaDisabled { username })
+    }
+
+    /// Lists vault users (IPC-safe — no secrets).
+    pub fn list_users(&self) -> Vec<VaultUserPublic> {
+        let current = self
+            .current_user
+            .as_ref()
+            .map(|user| user.username.as_str());
+        self.users
+            .iter()
+            .map(|user| to_public(user, current == Some(user.username.as_str())))
+            .collect()
+    }
+
+    /// Migrates a v1/v2 single-password vault to v3 multi-user format.
+    pub fn migrate_to_v3(
+        &mut self,
+        current_password: Zeroizing<String>,
+        admin_username: &str,
+    ) -> Result<(), VaultError> {
+        if self.format_version == format::FORMAT_VERSION_V3 {
+            return Err(VaultError::Other(
+                "vault is already multi-user format".into(),
+            ));
+        }
+
+        self.verify_current_password(current_password.as_str())?;
+        self.ensure_unlocked()?;
+
+        let admin_username = validate_username(admin_username)?;
+        if self
+            .users
+            .iter()
+            .any(|user| user.username == admin_username)
+        {
+            return Err(VaultError::UserAlreadyExists(admin_username.clone()));
+        }
+
+        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
+        crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
+
+        let new_dek = MasterKey::generate_data_key();
+        let mut admin_user = build_vault_user(
+            &admin_username,
+            current_password.clone(),
+            UserRole::Admin,
+            &new_dek,
+            None,
+        )?;
+
+        if let Some(stored_mfa) = self.mfa.take().filter(|config| config.enabled) {
+            let old_dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+            let secret = mfa::decrypt_mfa_secret(old_dek, &stored_mfa)?;
+            let kek = derive_user_kek(&admin_user, current_password.as_str())?;
+            let (mfa_nonce, mfa_ciphertext) =
+                mfa::encrypt_mfa_secret_with_kek(&kek, secret.as_ref())?;
+            admin_user.mfa_nonce = Some(mfa_nonce);
+            admin_user.mfa_ciphertext = Some(mfa_ciphertext);
+        }
+
+        let entries = self.entries.clone();
+        let key_created_at = self
+            .key_created_at
+            .unwrap_or_else(crate::compliance::unix_timestamp_secs);
+        let key_rotated_at = self.key_rotated_at.unwrap_or(0);
+
+        format::update_v3_vault_file(
+            &path,
+            &self.name,
+            std::slice::from_ref(&admin_user),
+            &new_dek,
+            &entries,
+            key_created_at,
+            key_rotated_at,
+        )?;
+
+        let session_kek = derive_user_kek(&admin_user, current_password.as_str())?;
+        self.users = vec![admin_user];
+        self.master_key = Some(new_dek);
+        self.store_session_kek(&session_kek);
+        self.current_user = Some(UnlockedUser {
+            username: admin_username.clone(),
+            role: UserRole::Admin,
+            dek: *self.master_key.as_ref().expect("dek").as_bytes(),
+        });
+        self.format_version = format::FORMAT_VERSION_V3;
+        self.salt = None;
+        self.kek = None;
+        self.mfa = None;
+        self.pending_mfa_secret = None;
+        self.entries = entries;
+        self.cached_entry_count = self.entries.len();
+        self.audit(AuditAction::VaultMigratedToV3 { admin_username })
+    }
+
+    fn ensure_admin(&self) -> Result<(), VaultError> {
+        match self.current_user.as_ref().map(|user| &user.role) {
+            Some(UserRole::Admin) => Ok(()),
+            _ => Err(VaultError::InsufficientPermissions),
+        }
     }
 }
 
@@ -1447,5 +1973,324 @@ mod tests {
         let mut reopened = Vault::new();
         open_vault(&mut reopened, &path, "correct-horse-battery-staple", None);
         assert!(!reopened.mfa_status().mfa_enabled);
+    }
+
+    #[test]
+    fn v3_create_unlock_and_add_member() {
+        use crate::vault_user::UserRole;
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("multi.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault =
+            Vault::create_v3(&path, "TeamVault", "admin", admin_password.clone()).unwrap();
+        assert_eq!(vault.list_users().len(), 1);
+        assert!(vault.list_users()[0].mfa_enabled == false);
+        assert!(vault.list_users()[0].is_current_user);
+
+        vault
+            .add_user(
+                "bob",
+                Zeroizing::new("member-password-12".to_string()),
+                UserRole::Member,
+            )
+            .unwrap();
+        assert_eq!(vault.list_users().len(), 2);
+
+        vault.lock();
+        let mut session = Vault::new();
+        session.attach_locked(&path).unwrap();
+        session
+            .unlock_as_user("admin", admin_password, None)
+            .expect("unlock");
+        assert_eq!(session.list_users().len(), 2);
+        assert_eq!(session.format_version, format::FORMAT_VERSION_V3);
+    }
+
+    #[test]
+    fn migrate_v2_to_v3_preserves_entries() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault = Vault::new();
+        vault
+            .create(&path, "LegacyVault", password.as_str())
+            .unwrap();
+        vault
+            .add_entry(SecretEntryInput {
+                title: "Token".into(),
+                folder: None,
+                tags: vec![],
+                expires_at: None,
+                payload: SecretPayload::ApiToken {
+                    service: "API".into(),
+                    token: "secret-token".into(),
+                },
+            })
+            .unwrap();
+
+        vault
+            .migrate_to_v3(password.clone(), "admin")
+            .expect("migrate");
+
+        assert_eq!(vault.format_version, format::FORMAT_VERSION_V3);
+        assert_eq!(vault.list_users().len(), 1);
+        assert_eq!(vault.list_entries().unwrap().len(), 1);
+
+        vault.lock();
+        let mut reopened = Vault::new();
+        reopened.attach_locked(&path).unwrap();
+        reopened.unlock_as_user("admin", password, None).unwrap();
+        assert_eq!(reopened.list_entries().unwrap().len(), 1);
+
+        let log_path = crate::audit::audit_log_path(&path);
+        let raw = std::fs::read_to_string(log_path).unwrap();
+        assert!(raw.contains("[VaultMigratedToV3]"));
+    }
+
+    #[test]
+    fn v3_reload_from_disk_preserves_dek_and_refreshes_state() {
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("reload.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault =
+            Vault::create_v3(&path, "ReloadVault", "admin", admin_password.clone()).unwrap();
+        vault
+            .add_entry(SecretEntryInput {
+                title: "Before".into(),
+                folder: None,
+                tags: vec![],
+                expires_at: None,
+                payload: SecretPayload::SecureNote {
+                    content: "note-a".into(),
+                },
+            })
+            .unwrap();
+
+        let dek_before = *vault.master_key.as_ref().expect("dek").as_bytes();
+        let current_username = vault
+            .current_user
+            .as_ref()
+            .expect("current user")
+            .username
+            .clone();
+
+        let mut remote_entries = vault.entries.clone();
+        remote_entries.push(
+            SecretEntry::from_input(SecretEntryInput {
+                title: "After Pull".into(),
+                folder: None,
+                tags: vec![],
+                expires_at: None,
+                payload: SecretPayload::SecureNote {
+                    content: "note-b".into(),
+                },
+            })
+            .unwrap(),
+        );
+
+        let mut remote_users = vault.users.clone();
+        remote_users.push(
+            build_vault_user(
+                "carol",
+                Zeroizing::new("carol-password-12".to_string()),
+                UserRole::Member,
+                vault.master_key.as_ref().expect("dek"),
+                None,
+            )
+            .unwrap(),
+        );
+
+        format::update_v3_vault_file(
+            &path,
+            "ReloadVault",
+            &remote_users,
+            vault.master_key.as_ref().expect("dek"),
+            &remote_entries,
+            vault.key_created_at.unwrap_or(0),
+            vault.key_rotated_at.unwrap_or(0),
+        )
+        .unwrap();
+
+        vault.reload_from_disk().expect("reload");
+
+        assert!(vault.is_unlocked());
+        assert_eq!(
+            *vault.master_key.as_ref().expect("dek").as_bytes(),
+            dek_before
+        );
+        assert_eq!(
+            vault.current_user.as_ref().expect("current user").dek,
+            dek_before
+        );
+        assert_eq!(
+            vault.current_user.as_ref().expect("current user").username,
+            current_username
+        );
+        assert_eq!(vault.list_users().len(), 2);
+        assert!(vault
+            .list_users()
+            .iter()
+            .any(|user| user.username == "carol"));
+        assert_eq!(vault.list_entries().unwrap().len(), 2);
+        assert!(vault
+            .list_entries()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.title == "After Pull"));
+    }
+
+    #[test]
+    fn v3_reload_from_disk_requires_current_user() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("locked-reload.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault = Vault::create_v3(&path, "LockedReload", "admin", admin_password).unwrap();
+        vault.current_user = None;
+
+        let err = vault.reload_from_disk().unwrap_err();
+        assert!(matches!(err, VaultError::Locked));
+    }
+
+    fn v3_totp_token_for(vault: &Vault, username: &str) -> String {
+        use totp_rs::{Algorithm, TOTP};
+
+        let user = vault
+            .users
+            .iter()
+            .find(|user| user.username == username)
+            .expect("user");
+        let kek = MasterKey::from_bytes(**vault.session_kek.as_ref().expect("session kek"));
+        let secret = mfa::decrypt_mfa_secret_with_kek(
+            &kek,
+            user.mfa_nonce.as_deref().unwrap(),
+            user.mfa_ciphertext.as_deref().unwrap(),
+        )
+        .expect("decrypt mfa");
+        let account = mfa::v3_user_totp_account(&vault.name, username);
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            secret.to_vec(),
+            Some("OxidVault".to_string()),
+            account,
+        )
+        .expect("totp");
+        totp.generate_current().expect("token")
+    }
+
+    #[test]
+    fn v3_enable_mfa_stores_in_user_entry_not_payload() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mfa-enable.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault =
+            Vault::create_v3(&path, "MfaVault", "admin", admin_password.clone()).unwrap();
+        let setup = vault.enable_mfa_for_current_user().expect("enable mfa");
+        assert!(setup.account_label.contains("MfaVault"));
+        assert!(setup.account_label.contains("admin"));
+
+        let admin = vault
+            .users
+            .iter()
+            .find(|user| user.username == "admin")
+            .expect("admin");
+        assert!(admin.mfa_ciphertext.is_some());
+
+        let (_, payload_nonce, payload_ciphertext) = format::read_v3_vault_file(&path).unwrap();
+        let dek = vault.master_key.as_ref().expect("dek");
+        let payload = format::decrypt_v3_payload(dek, &payload_nonce, &payload_ciphertext).unwrap();
+        assert!(payload.mfa.is_none());
+
+        let token = v3_totp_token_for(&vault, "admin");
+        assert!(vault
+            .verify_mfa_code_for_current_user(&token)
+            .expect("verify"));
+    }
+
+    #[test]
+    fn v3_disable_mfa_clears_user_entry() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mfa-disable.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault = Vault::create_v3(&path, "MfaVault", "admin", admin_password).unwrap();
+        vault.enable_mfa_for_current_user().expect("enable");
+        vault.disable_mfa_for_current_user().expect("disable");
+
+        let admin = vault
+            .users
+            .iter()
+            .find(|user| user.username == "admin")
+            .expect("admin");
+        assert!(admin.mfa_nonce.is_none());
+        assert!(admin.mfa_ciphertext.is_none());
+        assert!(!vault.current_user_has_mfa());
+    }
+
+    #[test]
+    fn v3_unlock_requires_mfa_when_enabled() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("mfa-unlock.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault =
+            Vault::create_v3(&path, "MfaVault", "admin", admin_password.clone()).unwrap();
+        vault.enable_mfa_for_current_user().expect("enable");
+        let token = v3_totp_token_for(&vault, "admin");
+        vault.lock();
+
+        let mut session = Vault::new();
+        session.attach_locked(&path).unwrap();
+        let step = session
+            .unlock_as_user("admin", admin_password.clone(), None)
+            .expect("mfa required step");
+        assert_eq!(step, UnlockStep::MfaRequired);
+
+        let err = session
+            .unlock_as_user("admin", admin_password.clone(), Some("000000"))
+            .unwrap_err();
+        assert!(matches!(err, VaultError::InvalidMfaCode));
+
+        let step = session
+            .unlock_as_user("admin", admin_password, Some(&token))
+            .expect("unlock with mfa");
+        assert_eq!(step, UnlockStep::Complete);
+        assert!(session.current_user_has_mfa());
+    }
+
+    #[test]
+    fn v3_session_kek_zeroed_on_lock() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("session-kek.oxid");
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+
+        let mut vault = Vault::create_v3(&path, "KekVault", "admin", admin_password).unwrap();
+        assert!(vault.session_kek.is_some());
+        vault.lock();
+        assert!(vault.session_kek.is_none());
     }
 }

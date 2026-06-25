@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { SSH_SPLIT_LAYOUT } from "@/lib/sshTerminalLayout";
 

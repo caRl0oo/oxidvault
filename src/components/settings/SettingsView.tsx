@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AboutModal } from "@/components/AboutModal";
@@ -9,6 +12,7 @@ import { changeAppLocale } from "@/lib/i18n";
 import {
   disableMFA,
   getAppSettings,
+  getCurrentUser,
   getMfaStatus,
   getResolvedConfig,
   saveSshPassphrase,
@@ -23,8 +27,10 @@ import type { ResolvedConfig } from "@/types/policy";
 import type { SettingsCategory } from "@/components/settings/types";
 import { requiresUnlockedVault } from "@/components/settings/types";
 import { SettingsLockedView } from "@/components/settings/SettingsLockedView";
+import { ChangeUserPasswordPanel } from "@/components/settings/ChangeUserPasswordPanel";
+import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 
-const SETTINGS_NAV: SettingsCategory[] = ["general", "sync", "security"];
+const SETTINGS_NAV: SettingsCategory[] = ["general", "sync", "security", "users"];
 
 const inputClass =
   "mt-1.5 w-full max-w-xl rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm text-vault-text placeholder:text-vault-muted focus:border-vault-accent disabled:opacity-50";
@@ -32,6 +38,7 @@ const inputClass =
 interface SettingsViewProps {
   readonly initialCategory?: SettingsCategory;
   readonly vaultLocked: boolean;
+  readonly isMultiUser?: boolean;
   readonly onBack: () => void;
   readonly onGoToUnlock: () => void;
   readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
@@ -42,6 +49,7 @@ interface SettingsViewProps {
 export function SettingsView({
   initialCategory = "general",
   vaultLocked,
+  isMultiUser = false,
   onBack,
   onGoToUnlock,
   onGitSyncChange,
@@ -72,6 +80,7 @@ export function SettingsView({
   const [sshPassphraseError, setSshPassphraseError] = useState<string | null>(null);
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
 
   const currentLocale = isLocaleId(i18n.language) ? i18n.language : i18n.language.split("-")[0];
   const mfaControlsDisabled = mfaVaultLocked || mfaLoading || mfaDisabling;
@@ -109,10 +118,11 @@ export function SettingsView({
       setLoading(true);
       setMfaError(null);
       try {
-        const [settings, resolved, status] = await Promise.all([
+        const [settings, resolved, status, currentUser] = await Promise.all([
           getAppSettings(),
           getResolvedConfig(),
           getMfaStatus(),
+          isMultiUser && !vaultLocked ? getCurrentUser() : Promise.resolve(null),
         ]);
         setResolvedConfig(resolved);
         setGitEnabled(resolved.gitSyncEnabled.value);
@@ -121,6 +131,7 @@ export function SettingsView({
         setSshPassphrase("");
         setMfaEnabled(status.mfaEnabled);
         setMfaVaultLocked(status.vaultLocked);
+        setIsCurrentUserAdmin(currentUser?.role === "admin");
         onGitSyncChange?.({
           enabled: resolved.gitSyncEnabled.value,
           remoteUrl: settings.gitSync.remoteUrl,
@@ -132,7 +143,9 @@ export function SettingsView({
         setMfaLoading(false);
       }
     });
-  }, [onGitSyncChange]);
+  }, [onGitSyncChange, isMultiUser, vaultLocked]);
+
+  const visibleNav = SETTINGS_NAV.filter((id) => id !== "users" || (isMultiUser && isCurrentUserAdmin));
 
   const saveGitSettings = useCallback(async () => {
     setGitSaving(true);
@@ -200,7 +213,8 @@ export function SettingsView({
   const navLabel = (id: SettingsCategory) => {
     if (id === "general") return t("settings.nav.general");
     if (id === "sync") return t("settings.nav.sync");
-    return t("settings.nav.security");
+    if (id === "security") return t("settings.nav.security");
+    return t("settings.nav.users");
   };
 
   const categoryLocked = vaultLocked && requiresUnlockedVault(category);
@@ -247,6 +261,10 @@ export function SettingsView({
       );
     }
 
+    if (category === "users") {
+      return <UserManagementPanel />;
+    }
+
     return (
       <SecuritySettingsPanel
         mfaEnabled={mfaEnabled}
@@ -259,6 +277,7 @@ export function SettingsView({
         onMfaPrimaryAction={handleMfaPrimaryAction}
         onCancelDisable={() => setMfaDisableConfirm(false)}
         onConfirmDisable={() => runAsync(handleDisableMfa)}
+        isMultiUser={isMultiUser}
       />
     );
   };
@@ -269,7 +288,7 @@ export function SettingsView({
         aria-label={t("settings.title")}
         className="flex w-48 shrink-0 flex-col border-r border-vault-border bg-vault-surface/50 py-4"
       >
-        {SETTINGS_NAV.map((id) => (
+        {visibleNav.map((id) => (
           <button
             key={id}
             type="button"
@@ -571,6 +590,7 @@ interface SecuritySettingsPanelProps {
   readonly onMfaPrimaryAction: () => void;
   readonly onCancelDisable: () => void;
   readonly onConfirmDisable: () => void;
+  readonly isMultiUser?: boolean;
 }
 
 function SecuritySettingsPanel({
@@ -584,6 +604,7 @@ function SecuritySettingsPanel({
   onMfaPrimaryAction,
   onCancelDisable,
   onConfirmDisable,
+  isMultiUser = false,
 }: Readonly<SecuritySettingsPanelProps>) {
   const { t } = useTranslation();
 
@@ -645,6 +666,8 @@ function SecuritySettingsPanel({
           {mfaError}
         </p>
       )}
+
+      {isMultiUser ? <ChangeUserPasswordPanel /> : null}
     </div>
   );
 }

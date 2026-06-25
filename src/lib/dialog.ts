@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { save, open } from "@tauri-apps/plugin-dialog";
 import i18n from "@/lib/i18n";
 

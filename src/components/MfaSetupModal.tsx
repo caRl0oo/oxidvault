@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useCallback, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OverlayModal } from "@/components/ui/OverlayModal";

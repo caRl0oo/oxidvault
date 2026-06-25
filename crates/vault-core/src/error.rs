@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use thiserror::Error;
 
@@ -39,4 +37,22 @@ pub enum VaultError {
     Crypto(String),
     #[error("{0}")]
     Other(String),
+    /// Username already exists in this vault.
+    #[error("username already exists: {0}")]
+    UserAlreadyExists(String),
+    /// Username not found.
+    #[error("user not found: {0}")]
+    UserNotFound(String),
+    /// Operation requires Admin role.
+    #[error("insufficient permissions")]
+    InsufficientPermissions,
+    /// Cannot remove the last admin.
+    #[error("cannot remove the last admin")]
+    LastAdminCannotBeRemoved,
+    /// Username is empty or contains invalid characters.
+    #[error("invalid username: {0}")]
+    InvalidUsername(String),
+    /// Wrong password for this user.
+    #[error("invalid password for user")]
+    InvalidUserPassword,
 }

@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { runAsync } from "@/lib/runAsync";
 import { AuthForm } from "@/components/screens/AuthForm";
 import { WelcomeScreen } from "@/components/screens/WelcomeScreen";
 import { VaultWorkspace } from "@/components/VaultWorkspace";
+import { MigrateToV3Banner } from "@/components/MigrateToV3Banner";
 import type { ReachabilityState } from "@/types/reachability";
 import type { DashboardFilter } from "@/types/dashboardFilter";
 import type {
@@ -22,6 +26,15 @@ interface AppScreenContentProps {
   readonly vaultPath: string | null;
   readonly password: string;
   readonly vaultName: string;
+  readonly adminUsername?: string;
+  readonly onAdminUsernameChange?: (value: string) => void;
+  readonly isMultiUserAuth?: boolean;
+  readonly username?: string;
+  readonly onUsernameChange?: (value: string) => void;
+  readonly showMigrationBanner?: boolean;
+  readonly onDismissMigrationBanner?: () => void;
+  readonly onOpenMigrateModal?: () => void;
+  readonly migrationSuccess?: boolean;
   readonly error: string | null;
   readonly loading: boolean;
   readonly passwordRef: React.RefObject<HTMLInputElement | null>;
@@ -107,6 +120,8 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onPasswordChange={props.onPasswordChange}
           vaultName={props.vaultName}
           onVaultNameChange={props.onVaultNameChange}
+          adminUsername={props.adminUsername}
+          onAdminUsernameChange={props.onAdminUsernameChange}
           enforceMasterPolicy
           error={props.error}
           loading={props.loading}
@@ -120,10 +135,15 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
       return (
         <AuthForm
           titleKey="auth.openTitle"
-          descriptionKey="auth.openDescription"
+          descriptionKey={
+            props.isMultiUserAuth ? "auth.openDescriptionMultiUser" : "auth.openDescription"
+          }
           subtitle={props.vaultPath ?? undefined}
           password={props.password}
           onPasswordChange={props.onPasswordChange}
+          isMultiUser={props.isMultiUserAuth}
+          username={props.username}
+          onUsernameChange={props.onUsernameChange}
           mfaChallenge={props.mfaChallengeActive}
           mfaCode={props.mfaCode}
           mfaLockedOut={props.mfaLockedOut}
@@ -146,6 +166,9 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           subtitle={props.vaultInfo?.path ?? undefined}
           password={props.password}
           onPasswordChange={props.onPasswordChange}
+          isMultiUser={props.isMultiUserAuth}
+          username={props.username}
+          onUsernameChange={props.onUsernameChange}
           mfaChallenge={props.mfaChallengeActive}
           mfaCode={props.mfaCode}
           mfaLockedOut={props.mfaLockedOut}
@@ -166,7 +189,14 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
         return null;
       }
       return (
-        <VaultWorkspace
+        <>
+          {props.showMigrationBanner ? (
+            <MigrateToV3Banner
+              onMigrate={props.onOpenMigrateModal ?? (() => undefined)}
+              onDismiss={props.onDismissMigrationBanner ?? (() => undefined)}
+            />
+          ) : null}
+          <VaultWorkspace
           vaultMainView={props.vaultMainView}
           onVaultMainViewChange={props.onVaultMainViewChange}
           search={props.search}
@@ -214,6 +244,7 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onSshSessionActive={props.onSshSessionActive}
           onSshSessionEnded={props.onSshSessionEnded}
         />
+        </>
       );
     default:
       return null;

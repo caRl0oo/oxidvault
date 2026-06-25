@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsView } from "@/components/settings/SettingsView";
@@ -12,6 +15,7 @@ interface AppMainAreaProps {
   readonly onTriggerGitSync: () => void;
   readonly gitSyncing: boolean;
   readonly vaultLocked: boolean;
+  readonly isMultiUser?: boolean;
   readonly onGoToUnlock: () => void;
   readonly idleWarningSeconds: number | null;
   readonly vaultUnlocked: boolean;
@@ -26,6 +30,7 @@ export function AppMainArea({
   onTriggerGitSync,
   gitSyncing,
   vaultLocked,
+  isMultiUser = false,
   onGoToUnlock,
   idleWarningSeconds,
   vaultUnlocked,
@@ -38,6 +43,7 @@ export function AppMainArea({
       <SettingsView
         initialCategory={settingsCategory}
         vaultLocked={vaultLocked}
+        isMultiUser={isMultiUser}
         onBack={onCloseSettings}
         onGoToUnlock={onGoToUnlock}
         onGitSyncChange={onGitSyncChange}

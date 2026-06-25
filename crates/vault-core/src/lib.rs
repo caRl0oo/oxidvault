@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 pub mod audit;
 pub mod audit_export;
@@ -24,6 +22,7 @@ pub mod security_audit;
 pub mod unlock;
 pub mod url_match;
 pub mod vault;
+pub mod vault_user;
 
 pub use audit::{
     init as init_audit_log, log_event_for_vault, read_audit_logs, verify_audit_chain, AuditAction,
@@ -55,6 +54,7 @@ pub use probe::{resolve_probe_target, ProbeTarget};
 pub use unlock::{UnlockStep, UnlockVaultResponse};
 pub use url_match::{normalize_hostname, score_web_login_url_match, UrlMatchScore};
 pub use vault::{SshConnectCredentials, Vault, VaultInfo};
+pub use vault_user::{UnlockedUser, UserRole, VaultUser, VaultUserPublic};
 
 pub const VAULT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

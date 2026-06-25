@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import i18n from "@/lib/i18n";
 
 const AUDIT_ACTION_KEYS = [
@@ -17,6 +20,13 @@ const AUDIT_ACTION_KEYS = [
   "SyncEvent",
   "ConfigChanged",
   "SshHostTrusted",
+  "UserAdded",
+  "UserRemoved",
+  "UserPasswordChanged",
+  "UserRoleChanged",
+  "UserMfaEnabled",
+  "UserMfaDisabled",
+  "VaultMigratedToV3",
 ] as const;
 
 const LEGACY_ACTION_ALIASES: Record<string, (typeof AUDIT_ACTION_KEYS)[number]> = {

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 export type SecretKind =
   | "web_login"
   | "ssh_key"
@@ -134,11 +137,25 @@ export interface VaultInfo {
   entry_count: number;
   locked: boolean;
   initialized: boolean;
+  is_multi_user: boolean;
+}
+
+export type UserRole = "admin" | "member";
+
+export interface VaultUserPublic {
+  username: string;
+  role: UserRole;
+  mfaEnabled: boolean;
+  createdAt: number;
+  passwordChangedAt: number;
+  isCurrentUser: boolean;
 }
 
 export interface UnlockVaultResponse {
   unlocked: boolean;
   mfaRequired: boolean;
+  isMultiUser: boolean;
+  currentUsername: string | null;
   vault: VaultInfo;
 }
 

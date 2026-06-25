@@ -3,10 +3,12 @@ resolver = "2"
 members = ["crates/vault-core", "crates/vault-generator", "crates/vault-wasm", "src-tauri"]
 
 [workspace.package]
-version = "1.0.0"
+version = "2.0.0"
+authors = ["Pascal Kuhn <support@oxidvault.de>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/caRl0oo/oxidvault"
+homepage = "https://oxidvault.de"
 edition = "2021"
-license = "MIT OR Apache-2.0"
-authors = ["OxidVault Contributors"]
 rust-version = "1.85"
 
 [workspace.dependencies]

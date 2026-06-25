@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 //! Vault unlock outcomes and IPC response types.
 
@@ -24,22 +22,50 @@ pub enum UnlockStep {
 pub struct UnlockVaultResponse {
     pub unlocked: bool,
     pub mfa_required: bool,
+    pub is_multi_user: bool,
+    pub current_username: Option<String>,
     pub vault: VaultInfo,
 }
 
 impl UnlockVaultResponse {
     pub fn complete(vault: VaultInfo) -> Self {
+        let is_multi_user = vault.is_multi_user;
         Self {
             unlocked: true,
             mfa_required: false,
+            is_multi_user,
+            current_username: None,
             vault,
         }
     }
 
     pub fn mfa_pending(vault: VaultInfo) -> Self {
+        let is_multi_user = vault.is_multi_user;
         Self {
             unlocked: false,
             mfa_required: true,
+            is_multi_user,
+            current_username: None,
+            vault,
+        }
+    }
+
+    pub fn multi_user_pending(vault: VaultInfo) -> Self {
+        Self {
+            unlocked: false,
+            mfa_required: false,
+            is_multi_user: true,
+            current_username: None,
+            vault,
+        }
+    }
+
+    pub fn complete_as_user(vault: VaultInfo, username: String) -> Self {
+        Self {
+            unlocked: true,
+            mfa_required: false,
+            is_multi_user: true,
+            current_username: Some(username),
             vault,
         }
     }

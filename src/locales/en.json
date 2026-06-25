@@ -55,15 +55,20 @@
   },
   "auth": {
     "createTitle": "Create new vault",
-    "createDescription": "Set a master password. Then choose where to save the .oxid file.",
+    "createDescription": "Set admin username and master password. Then choose where to save the .oxid file.",
     "createSubmit": "Continue — choose location",
     "openTitle": "Open vault",
     "openDescription": "Enter the master password to decrypt the vault.",
+    "openDescriptionMultiUser": "Enter username and password to decrypt the vault.",
     "openSubmit": "Open vault",
     "unlockTitle": "Unlock vault",
     "unlockSubmit": "Unlock",
+    "username": "Username",
+    "invalidCredentials": "Username or password incorrect",
+    "usernamePlaceholder": "Select user",
+    "adminUsernamePlaceholder": "Admin username",
     "mfaChallengeTitle": "Two-factor authentication",
-    "mfaChallengeDescription": "Master password confirmed. Enter the 6-digit code from your authenticator app.",
+    "mfaChallengeDescription": "Password confirmed. Enter the 6-digit code from your authenticator app.",
     "mfaCodePlaceholder": "6-digit code",
     "mfaSubmit": "Verify code",
     "mfaCancel": "Cancel",
@@ -214,7 +219,14 @@
       "AuthFailed": "Unlock attempt failed",
       "SyncEvent": "Git synchronization",
       "ConfigChanged": "Security-relevant setting changed",
-      "SshHostTrusted": "SSH host key trusted"
+      "SshHostTrusted": "SSH host key trusted",
+      "UserAdded": "User added",
+      "UserRemoved": "User removed",
+      "UserPasswordChanged": "User password changed",
+      "UserRoleChanged": "User role changed",
+      "UserMfaEnabled": "2FA enabled for user",
+      "UserMfaDisabled": "2FA disabled for user",
+      "VaultMigratedToV3": "Vault migrated to multi-user"
     },
     "syncStatus": {
       "success": "Successful",
@@ -291,7 +303,13 @@
     "urlNoSpaces": "URL must not contain spaces.",
     "databaseIncomplete": "Please fill in all database fields.",
     "wifiIncomplete": "Please fill in all Wi-Fi fields.",
-    "secureNoteRequired": "Note content is required."
+    "secureNoteRequired": "Note content is required.",
+    "invalidUserPassword": "Password is incorrect for this user.",
+    "userAlreadyExists": "This username already exists.",
+    "userNotFound": "User not found.",
+    "insufficientPermissions": "Insufficient permissions — administrator role required.",
+    "lastAdminCannotBeRemoved": "The last administrator cannot be removed.",
+    "invalidUsername": "Invalid username."
   },
   "theme": {
     "selectAria": "Select theme",
@@ -401,7 +419,8 @@
     "nav": {
       "general": "General",
       "sync": "Synchronization",
-      "security": "Security"
+      "security": "Security",
+      "users": "Users"
     },
     "theme": "Theme",
     "language": "Language",
@@ -540,6 +559,36 @@
       "audit_chain_invalid": "Audit hash chain corrupted",
       "audit_not_present": "No audit log yet (directory writable)"
     }
+  },
+  "users": {
+    "title": "Manage users",
+    "addUser": "Add user",
+    "removeUser": "Remove user",
+    "username": "Username",
+    "role": "Role",
+    "roleAdmin": "Administrator",
+    "roleMember": "Member",
+    "currentUser": "You",
+    "mfaEnabled": "2FA active",
+    "addUserSuccess": "User added successfully",
+    "removeUserSuccess": "User removed",
+    "removeUserConfirm": "Really remove user {{username}}?",
+    "lastAdminError": "The last administrator cannot be removed",
+    "changePassword": "Change own password",
+    "changePasswordSuccess": "Password changed successfully",
+    "confirmPassword": "Confirm password",
+    "passwordMismatch": "Passwords do not match.",
+    "migrationBanner": "This vault uses a legacy format. Migrate to v3 for multi-user support.",
+    "migrateNow": "Migrate now",
+    "migrateLater": "Later",
+    "migrateTitle": "Migrate vault to multi-user",
+    "migrateWarning": "This action cannot be undone.",
+    "migrateSuccess": "Migration successful",
+    "migrateDescription": "The existing password becomes the first admin user's password.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "addUserTitle": "Add new user",
+    "addUserSubmit": "Add"
   },
   "rotation": {
     "title": "Rotate master password",

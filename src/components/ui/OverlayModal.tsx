@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { MODAL_PANEL_CLASS } from "@/lib/uiClasses";

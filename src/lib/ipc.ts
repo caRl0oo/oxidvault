@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { invoke } from "@tauri-apps/api/core";
 import type { SecurityAuditReport } from "@/types/audit";
 import type { AuditLogEntry } from "@/types/auditLog";
@@ -14,7 +17,9 @@ import type {
   SecretEntrySummary,
   SecretField,
   UnlockVaultResponse,
+  UserRole,
   VaultInfo,
+  VaultUserPublic,
 } from "@/types/vault";
 
 export async function healthCheck(): Promise<string> {
@@ -226,6 +231,70 @@ export async function disableMFA(): Promise<void> {
 
 export async function verifyMFACode(code: string): Promise<boolean> {
   return invoke<boolean>("verify_mfa_code", { code });
+}
+
+export async function attachVaultPath(path: string): Promise<VaultInfo> {
+  return invoke<VaultInfo>("attach_vault_path", { path });
+}
+
+export async function createVaultV3(
+  path: string,
+  vaultName: string,
+  adminUsername: string,
+  adminPassword: string,
+): Promise<VaultInfo> {
+  return invoke<VaultInfo>("create_vault_v3", {
+    path,
+    vaultName,
+    adminUsername,
+    adminPassword,
+  });
+}
+
+export async function unlockVaultAsUser(
+  username: string,
+  password: string,
+  mfaCode?: string,
+): Promise<UnlockVaultResponse> {
+  return invoke<UnlockVaultResponse>("unlock_vault_as_user", {
+    username,
+    password,
+    mfaCode: mfaCode ?? null,
+  });
+}
+
+export async function listVaultUsers(): Promise<VaultUserPublic[]> {
+  return invoke<VaultUserPublic[]>("list_vault_users");
+}
+
+export async function addVaultUser(
+  newUsername: string,
+  newPassword: string,
+  role: UserRole,
+): Promise<VaultUserPublic> {
+  return invoke<VaultUserPublic>("add_vault_user", { newUsername, newPassword, role });
+}
+
+export async function removeVaultUser(username: string): Promise<void> {
+  return invoke<void>("remove_vault_user", { username });
+}
+
+export async function changeUserPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return invoke<void>("change_user_password", { currentPassword, newPassword });
+}
+
+export async function migrateVaultToV3(
+  currentPassword: string,
+  adminUsername: string,
+): Promise<VaultInfo> {
+  return invoke<VaultInfo>("migrate_vault_to_v3", { currentPassword, adminUsername });
+}
+
+export async function getCurrentUser(): Promise<VaultUserPublic | null> {
+  return invoke<VaultUserPublic | null>("get_current_user");
 }
 
 export function isTauri(): boolean {

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 export type ThemeId = "oxid" | "oxid-light" | "dracula" | "nord";
 
 export const THEME_STORAGE_KEY = "oxidvault-theme";

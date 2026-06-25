@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { SecretEntrySummary } from "@/types/vault";
 import { getSecretTypeLabel } from "@/lib/vaultLabels";
 import { filterEntriesByTag } from "@/lib/tags";

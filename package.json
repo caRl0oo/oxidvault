@@ -1,8 +1,15 @@
 {
   "name": "oxidvault",
   "private": true,
-  "version": "1.0.0",
-  "description": "Ultra-fast, minimalist B2B password and secret manager",
+  "version": "2.0.0",
+  "description": "Hochsicherer, on-premise Passwortmanager für Enterprise-Umgebungen",
+  "author": "Pascal Kuhn <support@oxidvault.de>",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://oxidvault.de",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/caRl0oo/oxidvault"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

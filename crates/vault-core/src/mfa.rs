@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 //! TOTP / two-factor authentication (RFC 6238) — offline, local verification.
 
@@ -54,7 +52,6 @@ pub(crate) struct MfaEnrollment {
     pub info: MfaSetupInfo,
 }
 
-/// Generates a fresh TOTP secret, otpauth URI, and QR PNG for enrollment.
 pub(crate) fn create_enrollment(vault_name: &str) -> Result<MfaEnrollment, VaultError> {
     let secret = Secret::generate_secret();
     let secret_bytes = Zeroizing::new(
@@ -117,6 +114,96 @@ pub(crate) fn decrypt_mfa_secret(
     stored: &StoredMfaConfig,
 ) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     crypto::decrypt(payload_key, &stored.secret_nonce, &stored.secret_ciphertext)
+}
+
+/// Encrypts a TOTP secret with a user-specific KEK (format v3 per-user MFA).
+pub fn encrypt_mfa_secret_with_kek(
+    kek: &MasterKey,
+    secret_bytes: &[u8],
+) -> Result<(String, String), VaultError> {
+    let (nonce, ciphertext) = crypto::encrypt(kek, secret_bytes)?;
+    Ok((STANDARD.encode(nonce), STANDARD.encode(ciphertext)))
+}
+
+/// Decrypts a per-user MFA secret stored in a v3 [`VaultUser`](crate::vault_user::VaultUser).
+pub fn decrypt_mfa_secret_with_kek(
+    kek: &MasterKey,
+    nonce_b64: &str,
+    ciphertext_b64: &str,
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    let nonce_bytes = STANDARD
+        .decode(nonce_b64)
+        .map_err(|_| VaultError::InvalidFormat)?;
+    let ciphertext = STANDARD
+        .decode(ciphertext_b64)
+        .map_err(|_| VaultError::InvalidFormat)?;
+    if nonce_bytes.len() != NONCE_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
+    let mut nonce = [0u8; NONCE_LEN];
+    nonce.copy_from_slice(&nonce_bytes);
+    crypto::decrypt(kek, &nonce, &ciphertext)
+}
+
+/// TOTP account name for a v3 user (no colons — required by totp-rs).
+pub(crate) fn v3_user_totp_account(vault_name: &str, username: &str) -> String {
+    format!("{}/{}", account_name_for_vault(vault_name), username.trim())
+}
+
+/// Generates TOTP enrollment for a v3 vault user (`OxidVault:{vault}:{user}` label).
+pub(crate) fn create_enrollment_for_v3_user(
+    vault_name: &str,
+    username: &str,
+) -> Result<MfaEnrollment, VaultError> {
+    let account = v3_user_totp_account(vault_name, username);
+    let mut enrollment = create_enrollment_with_account(account)?;
+    enrollment.info.account_label = format!(
+        "{ISSUER}:{}:{}",
+        account_name_for_vault(vault_name),
+        username.trim()
+    );
+    Ok(enrollment)
+}
+
+fn create_enrollment_with_account(account: String) -> Result<MfaEnrollment, VaultError> {
+    let secret = Secret::generate_secret();
+    let secret_bytes = Zeroizing::new(
+        secret
+            .to_bytes()
+            .map_err(|e| VaultError::Crypto(e.to_string()))?,
+    );
+
+    let totp = build_totp(&secret_bytes, &account)?;
+    let otpauth_uri = totp.get_url();
+    let qr_code_png_base64 = encode_qr_png_base64(&otpauth_uri)?;
+
+    Ok(MfaEnrollment {
+        secret_bytes,
+        info: MfaSetupInfo {
+            account_label: format!("{ISSUER}:{account}"),
+            otpauth_uri,
+            qr_code_png_base64,
+        },
+    })
+}
+
+/// Validates a TOTP code using an explicit account label (v3 per-user MFA).
+pub(crate) fn verify_totp_code_for_account(
+    secret_bytes: &[u8],
+    account_name: &str,
+    code: &str,
+) -> Result<bool, VaultError> {
+    let trimmed = code.trim();
+    if trimmed.len() != TOTP_DIGITS || !trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return Ok(false);
+    }
+
+    let totp = build_totp(secret_bytes, account_name)?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| VaultError::Other(e.to_string()))?
+        .as_secs();
+    Ok(totp.check(trimmed, timestamp))
 }
 
 fn account_name_for_vault(vault_name: &str) -> String {

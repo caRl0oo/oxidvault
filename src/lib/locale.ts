@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 export type LocaleId = "de" | "en";
 
 export const LOCALE_STORAGE_KEY = "oxidvault-locale";

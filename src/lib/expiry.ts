@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 export const EXPIRY_WARN_DAYS = 14;
 
 export type ExpiryStatus =

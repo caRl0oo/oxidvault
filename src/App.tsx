@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MigrateToV3Modal } from "@/components/MigrateToV3Modal";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
 import { AppMainArea } from "@/components/app/AppMainArea";
@@ -17,7 +21,7 @@ import { useReachabilityPolling } from "@/hooks/useReachabilityPolling";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useVaultLockedListener } from "@/hooks/useVaultLockedListener";
 import { pickVaultOpenPath, pickVaultSavePath } from "@/lib/dialog";
-import { formatVaultError, isInvalidMfaError } from "@/lib/errors";
+import { formatVaultError, formatMultiUserAuthError, isInvalidMfaError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
 import { cancelSecureClipboardClear, notifyBackendSecureCopy } from "@/lib/secureClipboard";
 import { vaultLockMessage, resolveIdleLockSeconds } from "@/lib/vaultLockMessages";
@@ -33,9 +37,10 @@ import {
 } from "@/lib/ssh";
 import {
   addEntry,
+  attachVaultPath,
   bootstrapVault,
   copyToClipboard,
-  createVault,
+  createVaultV3,
   detachVault,
   getAppSettings,
   getEntry,
@@ -45,9 +50,11 @@ import {
   isTauri,
   listEntries,
   lockVault,
+  migrateVaultToV3,
   openVault,
   triggerGitSync,
   unlockVault,
+  unlockVaultAsUser,
   updateEntry,
   deleteEntry,
   takeExtensionNewSecret,
@@ -59,6 +66,7 @@ import type {
   SecretEntryInputFull,
   SecretEntryPublic,
   SecretEntrySummary,
+  UnlockVaultResponse,
   VaultInfo,
 } from "@/types/vault";
 import type {
@@ -77,6 +85,8 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState<string>(t("common.loading"));
   const [screen, setScreen] = useState<Screen>("welcome");
   const [password, setPassword] = useState("");
+  const [adminUsername, setAdminUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [vaultName, setVaultName] = useState(() => t("app.defaultVaultName"));
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +124,10 @@ export default function App() {
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
+  const [migrationBannerDismissed, setMigrationBannerDismissed] = useState(false);
+  const [migrateModalOpen, setMigrateModalOpen] = useState(false);
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [migrationSuccess, setMigrationSuccess] = useState(false);
   const {
     isLockedOut: mfaLockedOut,
     secondsRemaining: mfaLockoutSeconds,
@@ -206,7 +220,36 @@ export default function App() {
     }
   }, [vaultInfo?.initialized]);
 
-  const vaultLocked = !vaultInfo || vaultInfo.locked;
+  const handleMigrateToV3 = useCallback(
+    async (adminUser: string, currentPassword: string) => {
+      setMigrateLoading(true);
+      setError(null);
+      try {
+        const info = await migrateVaultToV3(currentPassword, adminUser);
+        setVaultInfo(info);
+        setMigrationBannerDismissed(true);
+        setMigrateModalOpen(false);
+        setMigrationSuccess(true);
+        globalThis.setTimeout(() => setMigrationSuccess(false), 4000);
+      } catch (e) {
+        setError(formatVaultError(e));
+      } finally {
+        setMigrateLoading(false);
+      }
+    },
+    [],
+  );
+
+  const showMigrationBanner = Boolean(
+    vaultInfo &&
+      !vaultInfo.locked &&
+      !vaultInfo.is_multi_user &&
+      !migrationBannerDismissed,
+  );
+
+  const isMultiUserAuth = Boolean(
+    vaultInfo?.is_multi_user || (screen === "open" && vaultInfo?.is_multi_user),
+  );
 
   const handleGitSyncChange = useCallback((settings: GitSyncSettings) => {
     setGitSyncSettings(settings);
@@ -241,10 +284,16 @@ export default function App() {
         setLoading(false);
         return;
       }
-      const info = await createVault(path, vaultName.trim() || t("app.defaultVaultName"), password);
+      const info = await createVaultV3(
+        path,
+        vaultName.trim() || t("app.defaultVaultName"),
+        adminUsername.trim() || "admin",
+        password,
+      );
       setVaultInfo(info);
       setVaultPath(path);
       setPassword("");
+      setAdminUsername("admin");
       setScreen("vault");
       await refreshEntries();
     } catch (e) {
@@ -252,7 +301,9 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [password, vaultName, refreshEntries, t]);
+  }, [password, adminUsername, vaultName, refreshEntries, t]);
+
+  const vaultLocked = !vaultInfo || vaultInfo.locked;
 
   const finishVaultUnlock = useCallback(
     async (info: VaultInfo) => {
@@ -267,24 +318,69 @@ export default function App() {
     [refreshEntries, resetMfaRateLimit],
   );
 
+  const processUnlockResponse = useCallback(
+    async (result: UnlockVaultResponse) => {
+      setVaultInfo(result.vault);
+      if (result.mfaRequired) {
+        setMfaChallengeActive(true);
+        setError(null);
+        return false;
+      }
+      if (result.unlocked) {
+        await finishVaultUnlock(result.vault);
+        return true;
+      }
+      return false;
+    },
+    [finishVaultUnlock],
+  );
+
+  const unlockWithCurrentCredentials = useCallback(
+    async (mfaCodeValue?: string) => {
+      const isMultiUser = vaultInfo?.is_multi_user ?? false;
+      if (isMultiUser) {
+        if (!username.trim()) {
+          throw new Error("username required");
+        }
+        return unlockVaultAsUser(username.trim(), password, mfaCodeValue);
+      }
+      if (screen === "open" && vaultPath) {
+        return openVault(vaultPath, password, mfaCodeValue);
+      }
+      return unlockVault(password, mfaCodeValue);
+    },
+    [vaultInfo?.is_multi_user, username, password, screen, vaultPath],
+  );
+
   const handleOpen = useCallback(async () => {
     if (!password.trim() || !vaultPath) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await openVault(vaultPath, password);
-      setVaultInfo(result.vault);
-      if (result.mfaRequired) {
-        setMfaChallengeActive(true);
+      if (vaultInfo?.is_multi_user) {
+        if (!username.trim()) {
+          return;
+        }
+        const result = await unlockVaultAsUser(username.trim(), password);
+        await processUnlockResponse(result);
         return;
       }
-      await finishVaultUnlock(result.vault);
+      const result = await openVault(vaultPath, password);
+      await processUnlockResponse(result);
     } catch (e) {
-      setError(formatVaultError(e));
+      setError(
+        vaultInfo?.is_multi_user ? formatMultiUserAuthError(e) : formatVaultError(e),
+      );
     } finally {
       setLoading(false);
     }
-  }, [password, vaultPath, finishVaultUnlock]);
+  }, [
+    password,
+    vaultPath,
+    vaultInfo?.is_multi_user,
+    username,
+    processUnlockResponse,
+  ]);
 
   const handleSwitchVault = useCallback(async () => {
     setLoading(true);
@@ -295,6 +391,9 @@ export default function App() {
       setVaultInfo(null);
       setVaultPath(null);
       setPassword("");
+      setUsername("");
+      setAdminUsername("admin");
+      setMigrationBannerDismissed(false);
       setMfaCode("");
       setMfaChallengeActive(false);
       setScreen("welcome");
@@ -307,22 +406,26 @@ export default function App() {
 
   const handleUnlock = useCallback(async () => {
     if (!password.trim()) return;
+    if (vaultInfo?.is_multi_user && !username.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await unlockVault(password);
-      setVaultInfo(result.vault);
-      if (result.mfaRequired) {
-        setMfaChallengeActive(true);
-        return;
-      }
-      await finishVaultUnlock(result.vault);
+      const result = await unlockWithCurrentCredentials();
+      await processUnlockResponse(result);
     } catch (e) {
-      setError(formatVaultError(e));
+      setError(
+        vaultInfo?.is_multi_user ? formatMultiUserAuthError(e) : formatVaultError(e),
+      );
     } finally {
       setLoading(false);
     }
-  }, [password, finishVaultUnlock]);
+  }, [
+    password,
+    username,
+    vaultInfo?.is_multi_user,
+    unlockWithCurrentCredentials,
+    processUnlockResponse,
+  ]);
 
   const handleCompleteMfa = useCallback(async (codeOverride?: string) => {
     const code = codeOverride ?? mfaCode;
@@ -330,16 +433,11 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const result =
-        screen === "open" && vaultPath
-          ? await openVault(vaultPath, password, code)
-          : await unlockVault(password, code);
-      setVaultInfo(result.vault);
-      if (result.mfaRequired) {
+      const result = await unlockWithCurrentCredentials(code);
+      const unlocked = await processUnlockResponse(result);
+      if (!unlocked && !result.mfaRequired) {
         setError(formatVaultError("MFA code required"));
-        return;
       }
-      await finishVaultUnlock(result.vault);
     } catch (e) {
       if (isInvalidMfaError(e)) {
         recordInvalidMfa();
@@ -355,8 +453,8 @@ export default function App() {
     loading,
     mfaLockedOut,
     password,
-    screen,
-    vaultPath,
+    unlockWithCurrentCredentials,
+    processUnlockResponse,
     recordInvalidMfa,
   ]);
 
@@ -623,9 +721,16 @@ export default function App() {
   const startOpen = useCallback(async () => {
     setError(null);
     setPassword("");
+    setUsername("");
     const path = await pickVaultOpenPath();
     if (path) {
       setVaultPath(path);
+      try {
+        const info = await attachVaultPath(path);
+        setVaultInfo(info);
+      } catch (e) {
+        setError(formatVaultError(e));
+      }
       setScreen("open");
     }
   }, []);
@@ -843,6 +948,7 @@ export default function App() {
           onTriggerGitSync={() => runAsync(handleGitSync)}
           gitSyncing={gitSyncing}
           vaultLocked={vaultLocked}
+          isMultiUser={vaultInfo?.is_multi_user ?? false}
           onGoToUnlock={handleGoToUnlockFromSettings}
           idleWarningSeconds={idleWarningSeconds}
           vaultUnlocked={vaultUnlocked}
@@ -860,6 +966,15 @@ export default function App() {
             searchRef={searchRef}
             onPasswordChange={setPassword}
             onVaultNameChange={setVaultName}
+            adminUsername={adminUsername}
+            onAdminUsernameChange={setAdminUsername}
+            isMultiUserAuth={isMultiUserAuth}
+            username={username}
+            onUsernameChange={setUsername}
+            showMigrationBanner={showMigrationBanner}
+            onDismissMigrationBanner={() => setMigrationBannerDismissed(true)}
+            onOpenMigrateModal={() => setMigrateModalOpen(true)}
+            migrationSuccess={migrationSuccess}
             onStartCreate={startCreate}
             onStartOpen={startOpen}
             onCreate={handleCreate}
@@ -935,6 +1050,14 @@ export default function App() {
           onClose={() => setSshHostKeyMismatch(null)}
         />
       ) : null}
+      <MigrateToV3Modal
+        open={migrateModalOpen}
+        loading={migrateLoading}
+        onClose={() => setMigrateModalOpen(false)}
+        onMigrate={(adminUser, currentPassword) => {
+          void handleMigrateToV3(adminUser, currentPassword);
+        }}
+      />
     </Layout>
   );
 }

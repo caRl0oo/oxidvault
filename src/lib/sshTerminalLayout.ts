@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** Sidebar width (`w-80`) in the vault workspace layout. */
 const SIDEBAR_WIDTH_PX = 320;
 const DIVIDER_WIDTH_PX = 4;

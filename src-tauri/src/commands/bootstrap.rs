@@ -1,7 +1,5 @@
-// Copyright (C) 2026 [Pascal Kuhn]
-// Dieses Programm ist freie Software: Sie können es unter den Bedingungen der
-// GNU Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-// weitergeben und/oder modifizieren.
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use tauri::{AppHandle, State};
 use vault_core::{Vault, VaultInfo};
@@ -18,6 +16,7 @@ pub fn bootstrap_vault(app: AppHandle, state: State<'_, AppState>) -> Result<Vau
 
     if let Some(path) = last_vault_path_if_exists(&app) {
         if vault.attach_locked(&path).is_ok() {
+            crate::commands::sync_vault_format_state(&state, &vault);
             return Ok(vault.info());
         }
     }
@@ -30,6 +29,9 @@ pub fn detach_vault(state: State<'_, AppState>) -> Result<(), String> {
     crate::commands::ssh::disconnect_all_ssh(&state);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     *vault = Vault::new();
+    if let Ok(mut version) = state.vault_format_version.lock() {
+        *version = 0;
+    }
     Ok(())
 }
 

@@ -244,6 +244,7 @@ Detailansicht / Sidebar
 | **IPC ohne Secrets (K4)** | `get_entry` → `SecretEntryPublic`; Secrets nur via `reveal_secret` / `copy_to_clipboard` |
 | **Known-Host-Fingerprint** | Teil von `SecretPayload` → AES-256-GCM im `.oxid`-Body; nie als Klartext über IPC (`has_known_host_fingerprint: bool` nur) |
 | **Eingehende Passwörter (K4)** | `Zeroizing<String>` in `create_vault`, `open_vault`, `unlock_vault` |
+| **session_kek (v3)** | `Zeroizing<[u8; 32]>` auf `Vault` — KEK des aktuellen Users; nur im RAM während der Session; bei `lock()` auf `None` gesetzt (ZeroizeOnDrop) |
 | **Atomic Writes** | Temp-Datei `.oxid.tmp` → `fsync` → `rename` (crash-safe) |
 | **Lock-on-Minimize** | Tauri `WindowEvent::Focused(false)` + `is_minimized()` → sofortiger Lock |
 | Kein Klartext in Logs | Kein `Debug`-Output für sensitive Structs (`MasterKey` ohne `Debug`) |
@@ -796,6 +797,13 @@ ReachabilityDot — Sidebar + Detailansicht
 7. **Mit MFA + Code:** erneuter Aufruf mit `password` + `mfaCode` — atomare Vollentsperrung in einem Schritt.
 8. Bei Fehler (`InvalidPassword`, `InvalidMfa`): sofortiger Abbruch, ephemerer Speicher wird zeroized.
 
+**v3-Unlock-Zusatz (`unlock_vault_as_user`):**
+
+1. Passwort → User-KEK ableiten → shared DEK unwrappen → `session_kek` in RAM speichern.
+2. MFA (falls im `VaultUser`-Header aktiv): TOTP-Secret mit KEK entschlüsseln → Code prüfen (TOTP-Account intern: `{vault_name}/{username}`; Anzeige-Label: `OxidVault:{vault}:{user}`).
+3. Bei MFA-Fehler vor Commit: KEK/DEK werden nicht auf `Vault` persistiert.
+4. MFA aktivieren/deaktivieren: TOTP-Secret KEK-verschlüsselt im Klartext-Header (`persist_v3_header` — Payload unverändert).
+
 ---
 
 ## 6. API-Schnittstellen (Tauri Commands)
@@ -857,7 +865,16 @@ ReachabilityDot — Sidebar + Detailansicht
 | `ssh_reject_host` | `session_id` | `()` | Pending-Session abbrechen | ✅ |
 | `ssh_clear_host_fingerprint` | `entry_id` | `()` | Gespeicherten Host-Key-Fingerprint löschen | ✅ |
 | `ssh_write` | `session_id`, `data: String` | `()` | Terminal-Stdin an SSH-Kanal senden | ✅ |
-| `ssh_disconnect` | `session_id: String` | `()`` | SSH-Session beenden | ✅ |
+| `ssh_disconnect` | `session_id: String` | `()` | SSH-Session beenden | ✅ |
+| `create_vault_v3` | `path`, `vault_name`, `admin_username`, `admin_password` | `VaultInfo` | Neuer v3-Vault mit erstem Admin-User; Passwörter → `Zeroizing<String>` | ✅ |
+| `attach_vault_path` | `path` | `VaultInfo` | Vault-Datei anhängen (gesperrt) — User-Liste für v3-Login | ✅ |
+| `unlock_vault_as_user` | `username`, `password`, `mfa_code?` | `UnlockVaultResponse` | v3-Entsperren als bestimmter User | ✅ |
+| `list_vault_users` | — | `VaultUserPublic[]` | Alle User (kein Secret) — funktioniert auch bei gesperrtem v3-Vault | ✅ |
+| `add_vault_user` | `new_username`, `new_password`, `role` | `VaultUserPublic` | User hinzufügen (Admin) — **Vault-Lock-Guard** | ✅ |
+| `remove_vault_user` | `username` | `()` | User entfernen (Admin) — **Vault-Lock-Guard** | ✅ |
+| `change_user_password` | `current_password`, `new_password` | `()` | Eigenes Passwort ändern — **Vault-Lock-Guard** | ✅ |
+| `migrate_vault_to_v3` | `current_password`, `admin_username` | `VaultInfo` | v1/v2 → v3 Migration — **Vault-Lock-Guard** | ✅ |
+| `get_current_user` | — | `VaultUserPublic?` | Aktuell eingeloggter User — **Vault-Lock-Guard** | ✅ |
 
 ### Typen
 
@@ -882,6 +899,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `entry_count` | `number` | Anzahl gespeicherter Einträge |
 | `locked` | `boolean` | `true` = Vault gesperrt |
 | `initialized` | `boolean` | `true` = Vault-Datei geladen/angelegt |
+| `is_multi_user` | `boolean` | `true` = Format v3 (Multi-User) |
 
 #### `UnlockVaultResponse` (Rust ↔ TypeScript)
 
@@ -889,6 +907,8 @@ ReachabilityDot — Sidebar + Detailansicht
 {
   "unlocked": false,
   "mfaRequired": true,
+  "isMultiUser": false,
+  "currentUsername": null,
   "vault": { "...": "VaultInfo" }
 }
 ```
@@ -897,7 +917,33 @@ ReachabilityDot — Sidebar + Detailansicht
 |---|---|---|
 | `unlocked` | `boolean` | `true` = Vault vollständig entsperrt |
 | `mfaRequired` | `boolean` | `true` = erneuter Aufruf mit `password` + `mfaCode` erforderlich |
+| `isMultiUser` | `boolean` | `true` = v3-Vault — bei `open_vault` ohne Username: Login-Form mit User-Auswahl |
+| `currentUsername` | `string \| null` | Eingeloggter v3-User nach erfolgreichem Unlock |
 | `vault` | `VaultInfo` | Aktueller Vault-Status (bei MFA-Pending weiterhin `locked: true`) |
+
+#### `VaultUserPublic` (Rust ↔ TypeScript)
+
+> Nur öffentliche Metadaten — **keine** `wrapped_dek_*`, `mfa_*` oder `kdf_salt` über IPC.
+
+```json
+{
+  "username": "alice",
+  "role": "admin",
+  "mfaEnabled": true,
+  "createdAt": 1719302400,
+  "passwordChangedAt": 1719302400,
+  "isCurrentUser": true
+}
+```
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `username` | `string` | Eindeutiger Login-Name |
+| `role` | `"admin" \| "member"` | Berechtigungsstufe |
+| `mfaEnabled` | `boolean` | TOTP für diesen User aktiv |
+| `createdAt` | `number` | Unix-Zeitstempel (Sekunden) |
+| `passwordChangedAt` | `number` | Letzte Passwortänderung |
+| `isCurrentUser` | `boolean` | `true` = aktuell eingeloggter User |
 
 #### Secret-Typen (`SecretPayload` — on-disk / Rust-RAM)
 
@@ -1215,7 +1261,7 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### `.oxid` — OxidVault-Dateiformat
 
-> **Status:** ✅ Implementiert in `crates/vault-core/src/format.rs` (Version **1** Legacy · Version **2** Enterprise mit wrapped DEK).
+> **Status:** ✅ Implementiert in `crates/vault-core/src/format.rs` (Version **1** Legacy · Version **2** Enterprise mit wrapped DEK · Version **3** Multi-User mit shared DEK).
 
 **Version 1 (Legacy):**
 
@@ -1248,6 +1294,40 @@ ReachabilityDot — Sidebar + Detailansicht
 │  bei Key-Rotation kopierbar)                 │
 └──────────────────────────────────────────────┘
 ```
+
+**Version 3 (Multi-User — shared DEK):**
+
+```
+┌──────────────────────────────────────────────────┐
+│  Header (Klartext)                               │
+│  ─ Magic: "OXID" (4 Byte)                        │
+│  ─ Format-Version: u16 LE (= 3)                  │
+│  ─ Vault name: u16 LE length + UTF-8 bytes       │
+│  ─ key_created_at: u64 LE (Unix)                 │
+│  ─ key_rotated_at: u64 LE (0 = nie)              │
+│  ─ users_json_len: u32 LE                        │
+│  ─ users_json: UTF-8 JSON array of VaultUser[]   │
+│    (Klartext — nur wrapped DEK + Metadaten,      │
+│     keine nutzbaren Secrets ohne User-Passwort)  │
+├──────────────────────────────────────────────────┤
+│  Payload-Nonce: 12 Byte                          │
+│  Payload-Ciphertext + GCM Tag                    │
+│  (verschlüsselt mit shared DEK — wie v2)          │
+└──────────────────────────────────────────────────┘
+```
+
+| Feld `VaultUser` (JSON) | Beschreibung |
+|---|---|
+| `username` | Eindeutiger Login-/Anzeigename (max. 64 Zeichen) |
+| `role` | `member` oder `admin` |
+| `kdf_*` / `kdf_salt` | Pro-User Argon2id-Parameter + Salt (base64) |
+| `wrapped_dek_nonce` / `wrapped_dek_ciphertext` | Shared DEK, mit User-KEK gewrappt (base64) |
+| `mfa_nonce` / `mfa_ciphertext` | Optional: TOTP-Secret, mit User-KEK verschlüsselt |
+| `created_at` / `password_changed_at` | Unix-Timestamps |
+
+**Schlüsselmodell v3:** Ein zufälliger **shared DEK** (32 Byte) verschlüsselt den Payload. Jeder User leitet mit eigenem Passwort einen **KEK** ab und wrappt denselben DEK in seinem `VaultUser`-Eintrag. Passwort-Rotation eines Users rewrapt nur dessen DEK-Eintrag — Payload bleibt unberührt.
+
+**Migration:** `Vault::migrate_to_v3` wandelt v1/v2-Tresore um; das bestehende Master-Passwort wird zum ersten Admin-User (konfigurierbarer Username, Standard `admin`).
 
 | Eigenschaft | Wert |
 |---|---|
@@ -1380,7 +1460,8 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | **Ablauf** | 1. `git pull --ff-only origin` → 2. bei lokalen Änderungen `git add -A` → `commit -m "Vault Sync"` → `push` |
 | **Repo-Wurzel** | Verzeichnis der `.oxid`-Datei (oder `git rev-parse --show-toplevel`) |
 | **Erst-Setup** | `git init -b main` + `remote add origin` falls noch kein Repository |
-| **Nach Pull** | `Vault::reload_from_disk()` — entsperrter Tresor wird neu eingelesen |
+| **Nach Pull** | `Vault::reload_from_disk()` — entsperrter Tresor wird neu eingelesen (bei gesperrtem Tresor: Reload übersprungen) |
+| **v3 Reload** | `reload_from_disk` erhält `current_user.dek` — nur Payload wird neu entschlüsselt; User-Liste wird aus dem aktualisierten Header gelesen |
 | **Implementierung** | In-Process via `git2` 0.19 (`vendored-libgit2`, `ssh`) — kein externes `git`-Binary |
 | **SSH-Auth** | 1. `ssh-agent` (`Cred::ssh_key_from_agent`) · 2. Schlüsseldatei + optional Keyring-Passphrase (`save_ssh_passphrase`) · expliziter `.pub`-Pfad |
 | **Sicherheit** | Nur die **verschlüsselte** `.oxid`-Datei wird übertragen; Klartext-Secrets verlassen nie den Prozess |
@@ -2110,6 +2191,10 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2025-06-20 | 1.0.0 | **Git SSH-Keyring:** `ssh_keyring.rs` + `keyring` 3; `save_ssh_passphrase` / `remove_ssh_passphrase`; Passphrase nur im OS-Store |
 | 2025-06-23 | 1.0.0 | **SSH Host-Key TOFU:** `known_host_fingerprint` im `ssh_key`-Payload; `SshConnectResponse`; `ssh_trust_host` / `ssh_reject_host` |
 | 2026-06-24 | 1.0.0 | **SSH Known-Hosts (TOFU):** `known_host_fingerprint` in `SecretPayload`, `SshConnectResponse` mit `Connected`/`UnknownHost`/`HostKeyMismatch`, `ssh_trust_host` / `ssh_reject_host` / `ssh_clear_host_fingerprint`, Pending-Session-Cleanup bei Lock |
+| 2026-06-25 | 1.0.0 | **Multi-User Vault Phase 1:** Format v3 (`VaultUser[]` im Klartext-Header, shared DEK), `vault_user.rs`, `create_v3` / `unlock_as_user` / User-Management / `migrate_to_v3`, neue Audit-Events |
+| 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
+| 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
+| 2026-06-25 | 2.0.0 | **MFA v3:** `session_kek` in Vault-RAM, enable/disable/verify per User-Eintrag (KEK-verschlüsselt im Header), `persist_v3_header` (kein Payload-Re-Encrypt), Unlock-MFA-Check in `unlock_as_user`, Routing in `enable_mfa`/`disable_mfa`/`verify_mfa_code`/`get_mfa_status` |
 | 2026-06-25 | 1.0.0 | **MSI Native Messaging Auto-Setup:** WiX-Fragment `src-tauri/wix/native_messaging.wxs` registriert Host-Manifest + Chrome/Edge-HKCU-Keys automatisch bei Installation (Cleanup bei Uninstall) |
 | 2025-06-23 | 1.0.0 | **Vault-Lock-Guard:** `commands/vault_guard.rs` — `ensure_vault_unlocked`; sensible Commands liefern `Err("Vault locked")` |
 | 2025-06-23 | 1.0.0 | **SettingsView Lock:** Sync/Sicherheit nur bei entsperrtem Tresor; `SettingsLockedView` mit Navigation zum Entsperren |

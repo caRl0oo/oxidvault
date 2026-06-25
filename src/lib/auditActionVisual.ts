@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -38,6 +41,13 @@ const ACTION_VISUALS: Record<string, AuditActionVisual> = {
   SyncEvent: { icon: GitBranch, tone: "accent" },
   ConfigChanged: { icon: Settings, tone: "config" },
   SshHostTrusted: { icon: ShieldAlert, tone: "success" },
+  UserAdded: { icon: FolderLock, tone: "success" },
+  UserRemoved: { icon: Trash2, tone: "danger" },
+  UserPasswordChanged: { icon: KeyRound, tone: "config" },
+  UserRoleChanged: { icon: Settings, tone: "config" },
+  UserMfaEnabled: { icon: ShieldAlert, tone: "success" },
+  UserMfaDisabled: { icon: ShieldAlert, tone: "neutral" },
+  VaultMigratedToV3: { icon: FolderLock, tone: "accent" },
 };
 
 const DEFAULT_VISUAL: AuditActionVisual = {

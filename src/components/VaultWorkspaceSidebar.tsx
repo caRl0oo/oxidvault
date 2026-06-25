@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { Activity, FolderLock, Shield } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DashboardFilterBar } from "@/components/DashboardFilterBar";

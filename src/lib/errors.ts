@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import i18n from "@/lib/i18n";
 
 const ERROR_PATTERNS: ReadonlyArray<{ pattern: string; key: string }> = [
@@ -21,7 +24,12 @@ const ERROR_PATTERNS: ReadonlyArray<{ pattern: string; key: string }> = [
   { pattern: "url darf keine leerzeichen enthalten", key: "errors.urlNoSpaces" },
   { pattern: "database fields are incomplete", key: "errors.databaseIncomplete" },
   { pattern: "network wifi fields are incomplete", key: "errors.wifiIncomplete" },
-  { pattern: "secure note content is required", key: "errors.secureNoteRequired" },
+  { pattern: "invalid password for user", key: "errors.invalidUserPassword" },
+  { pattern: "username already exists", key: "errors.userAlreadyExists" },
+  { pattern: "user not found", key: "errors.userNotFound" },
+  { pattern: "insufficient permissions", key: "errors.insufficientPermissions" },
+  { pattern: "cannot remove the last admin", key: "errors.lastAdminCannotBeRemoved" },
+  { pattern: "invalid username", key: "errors.invalidUsername" },
 ];
 
 const DIAGNOSTIC_STATUS_CODES: ReadonlyArray<{ code: string; key: string }> = [
@@ -61,4 +69,22 @@ export function formatVaultError(error: unknown): string {
 export function isInvalidMfaError(error: unknown): boolean {
   const lower = String(error).replace(/^Error:\s*/i, "").trim().toLowerCase();
   return lower.includes("invalid mfa code");
+}
+
+const MULTI_USER_AUTH_FAILURE_PATTERNS = [
+  "user not found",
+  "invalid password for user",
+  "invalid master password",
+] as const;
+
+/** Maps v3 login failures to a generic message — never reveals whether the username exists. */
+export function formatMultiUserAuthError(error: unknown): string {
+  if (isInvalidMfaError(error)) {
+    return formatVaultError(error);
+  }
+  const lower = String(error).replace(/^Error:\s*/i, "").trim().toLowerCase();
+  if (MULTI_USER_AUTH_FAILURE_PATTERNS.some((pattern) => lower.includes(pattern))) {
+    return i18n.t("auth.invalidCredentials");
+  }
+  return formatVaultError(error);
 }

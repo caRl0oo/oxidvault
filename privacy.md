@@ -17,4 +17,4 @@ OxidVault gibt keine Daten an Dritte weiter. Da keine Cloud-Synchronisation exis
 Da OxidVault keine Daten verarbeitet, speichert oder überträgt, sind keine personenbezogenen Daten betroffen.
 
 ## Kontakt
-Bei Fragen zum Datenschutz kannst du uns unter [p-kuhn@outlook.com] erreichen.
+Bei Fragen zum Datenschutz kannst du uns unter [support@oxidvault.de] erreichen.
