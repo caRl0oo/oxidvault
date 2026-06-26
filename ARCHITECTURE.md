@@ -1666,8 +1666,8 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 |---|---|
 | `{ "action": "ping" }` | `{ "status": "pong" }` |
 | `{ "action": "get_login", "url": "<hostname>" }` | siehe Phase 3 |
-| `{ "action": "vault_status" }` | siehe MFA (Phase 4) |
-| `{ "action": "request_unlock" }` | `{ "status": "ok", "success": true }` — fokussiert Desktop-App (kein Passwort/MFA über NM) |
+| `{ "action": "vault_status" }` | `{ "status": "ok"|"locked"|"mfa_failed", "locked": bool, "minimized": bool, … }` |
+| `{ "action": "request_unlock" }` | `{ "status": "ok", "success": true }` — fokussiert Desktop-App nur wenn **nicht** minimiert (kein Passwort/MFA über NM) |
 | `{ "action": "open_new_secret", "password": "…" }` | Öffnet Desktop **Neues Secret** mit vorbefülltem Passwort (One-Shot, `take_extension_new_secret`) |
 | Unbekannte `action` | `{ "status": "error", "error": "unknown action" }` |
 | Ungültiges JSON | `{ "status": "error", "error": "invalid json: …" }` |
@@ -1703,7 +1703,7 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 
 1. `get_login` liefert `{ "status": "locked", "mfa_required": true|false, "locked": true }`.
 2. `content.js` zeigt ein dezentes In-Page-Banner; bei MFA: Hinweis auf Desktop-Entsperrung (Passwort + MFA).
-3. `{ "action": "request_unlock" }` fokussiert das OxidVault-Hauptfenster (`nm_bridge/focus.rs`).
+3. `{ "action": "request_unlock" }` fokussiert das OxidVault-Hauptfenster (`nm_bridge/focus.rs`) — nur wenn nicht minimiert.
 4. Extension pollt `{ "action": "vault_status" }` bis `{ "success": true, "locked": false }` oder `{ "status": "mfa_failed" }`.
 5. Popup (`popup.html`) spiegelt denselben Status — ohne Eingabefelder für Secrets.
 
@@ -2199,6 +2199,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
+| 2026-06-25 | 2.0.0 | **NM Bridge Focus-Loop-Fix:** `vault_status.minimized`; `request_unlock` ohne Focus bei minimiertem Fenster; `AppState.nm_bridge_focusing` unterdrückt Lock-on-Minimize während NM-Focus |
 | 2026-06-25 | 2.0.0 | **License HMAC-Key:** extern via `OXIDVAULT_LICENSE_KEY` / `license_hmac.key` — nicht mehr im Quellcode (ersetzt durch Ed25519) |
 | 2026-06-25 | 2.0.0 | **License Feature-Gate:** `license.rs` HMAC-SHA256 offline Validierung, CE 5-User-Limit, `get_license_info` Command, Upgrade-Banner in `UserManagementPanel` |
 | 2026-06-25 | 2.0.0 | **MFA v3:** `session_kek` in Vault-RAM, enable/disable/verify per User-Eintrag (KEK-verschlüsselt im Header), `persist_v3_header` (kein Payload-Re-Encrypt), Unlock-MFA-Check in `unlock_as_user`, Routing in `enable_mfa`/`disable_mfa`/`verify_mfa_code`/`get_mfa_status` |

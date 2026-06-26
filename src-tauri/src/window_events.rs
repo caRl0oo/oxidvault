@@ -33,6 +33,10 @@ pub fn on_main_window_event(window: &Window, event: &WindowEvent, state: &State<
         return;
     }
 
+    if state.is_nm_bridge_focusing() {
+        return;
+    }
+
     let was_unlocked = state
         .vault
         .lock()

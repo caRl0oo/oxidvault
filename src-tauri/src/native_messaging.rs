@@ -34,6 +34,8 @@ struct OutgoingMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     locked: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    minimized: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     password: Option<String>,
@@ -48,6 +50,7 @@ impl From<BridgeResponse> for OutgoingMessage {
             success: value.success,
             mfa_required: value.mfa_required,
             locked: value.locked,
+            minimized: value.minimized,
             username: value.username,
             password: value.password,
             error: value.error,
@@ -76,6 +79,7 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
                 success: None,
                 mfa_required: None,
                 locked: None,
+                minimized: None,
                 username: None,
                 password: None,
                 error: None,
@@ -89,6 +93,7 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
                     success: None,
                     mfa_required: None,
                     locked: None,
+                    minimized: None,
                     username: None,
                     password: None,
                     error: Some("missing url".into()),
@@ -114,6 +119,7 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
                     success: None,
                     mfa_required: None,
                     locked: None,
+                    minimized: None,
                     username: None,
                     password: None,
                     error: Some("missing password".into()),
@@ -128,6 +134,7 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
             success: None,
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: Some("unknown action".into()),
@@ -137,6 +144,7 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
             success: None,
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: Some(format!("invalid json: {e}")),

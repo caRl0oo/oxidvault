@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
-use crate::nm_bridge::focus::focus_main_window;
+use crate::nm_bridge::focus::{focus_main_window, focus_main_window_for_unlock, main_window_minimized};
 use crate::nm_bridge::framing::{read_message, write_message};
 use crate::nm_bridge::protocol::{BridgeRequest, BridgeResponse};
 use crate::nm_bridge::session;
@@ -131,16 +131,19 @@ fn handle_vault_status(app: &tauri::AppHandle) -> BridgeResponse {
     let locked = vault.info().locked;
     let mfa_required = locked && locked_mfa_required(app, &vault);
 
-    BridgeResponse::vault_status(locked, mfa_required, mfa_failed)
+    let minimized = main_window_minimized(app);
+    BridgeResponse::vault_status(locked, mfa_required, mfa_failed, minimized)
 }
 
 fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
-    focus_main_window(app);
-
     let state = match app.try_state::<crate::state::AppState>() {
         Some(state) => state,
         None => return BridgeResponse::unavailable(),
     };
+
+    if !main_window_minimized(app) {
+        focus_main_window_for_unlock(app, &state);
+    }
 
     if state
         .bridge
@@ -148,7 +151,7 @@ fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
         .map(|bridge| bridge.mfa_failed())
         .unwrap_or(false)
     {
-        return BridgeResponse::mfa_failed();
+        return BridgeResponse::mfa_failed(main_window_minimized(app));
     }
 
     let vault = match state.vault.lock() {
@@ -194,7 +197,7 @@ fn handle_open_new_secret(app: &tauri::AppHandle, password: Option<&str>) -> Bri
         bridge.set_pending_new_secret(password.to_string());
     }
 
-    focus_main_window(app);
+    focus_main_window(app, Some(&state));
 
     let vault = match state.vault.lock() {
         Ok(guard) => guard,
@@ -203,7 +206,7 @@ fn handle_open_new_secret(app: &tauri::AppHandle, password: Option<&str>) -> Bri
 
     if vault.info().locked {
         let mfa_required = locked_mfa_required(app, &vault);
-        return BridgeResponse::locked(mfa_required);
+        return BridgeResponse::locked(mfa_required, main_window_minimized(app));
     }
 
     state.record_activity_for(&vault.info());
@@ -227,7 +230,7 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
         .map(|bridge| bridge.mfa_failed())
         .unwrap_or(false)
     {
-        return BridgeResponse::mfa_failed();
+        return BridgeResponse::mfa_failed(main_window_minimized(app));
     }
 
     let vault = match state.vault.lock() {
@@ -237,7 +240,7 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
 
     if vault.info().locked {
         let mfa_required = locked_mfa_required(app, &vault);
-        return BridgeResponse::locked(mfa_required);
+        return BridgeResponse::locked(mfa_required, main_window_minimized(app));
     }
 
     match vault.find_web_login_for_hostname(hostname) {
@@ -248,7 +251,7 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
         Ok(None) => BridgeResponse::not_found(),
         Err(vault_core::VaultError::Locked) => {
             let mfa_required = locked_mfa_required(app, &vault);
-            BridgeResponse::locked(mfa_required)
+            BridgeResponse::locked(mfa_required, main_window_minimized(app))
         }
         Err(e) => BridgeResponse::error(e.to_string()),
     }
@@ -260,15 +263,16 @@ mod tests {
 
     #[test]
     fn locked_response_includes_mfa_required_flag() {
-        let response = BridgeResponse::locked(true);
+        let response = BridgeResponse::locked(true, false);
         assert_eq!(response.status, "locked");
         assert_eq!(response.mfa_required, Some(true));
         assert_eq!(response.locked, Some(true));
+        assert_eq!(response.minimized, Some(false));
     }
 
     #[test]
     fn mfa_failed_response_has_expected_shape() {
-        let response = BridgeResponse::mfa_failed();
+        let response = BridgeResponse::mfa_failed(false);
         assert_eq!(response.status, "mfa_failed");
         assert_eq!(response.success, Some(false));
         assert_eq!(response.mfa_required, Some(true));

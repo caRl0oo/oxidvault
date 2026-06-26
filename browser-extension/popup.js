@@ -144,21 +144,36 @@ function renderStatus(response) {
   }
 
   if (response?.mfa_required) {
-    subtitleEl.textContent = "Zwei-Faktor-Authentifizierung aktiv";
+    subtitleEl.textContent = response?.minimized
+      ? "Zwei-Faktor-Authentifizierung aktiv (minimiert)"
+      : "Zwei-Faktor-Authentifizierung aktiv";
     setStatus(
       "status-mfa",
-      "Entsperre OxidVault in der Desktop-App mit Master-Passwort und MFA-Code."
+      response?.minimized
+        ? "Stelle das OxidVault-Fenster wieder her, um mit Passwort und MFA-Code zu entsperren."
+        : "Entsperre OxidVault in der Desktop-App mit Master-Passwort und MFA-Code."
     );
-    unlockBtn.hidden = false;
-    unlockBtn.textContent = "OxidVault öffnen";
+    unlockBtn.hidden = response?.minimized === true;
+    if (!unlockBtn.hidden) {
+      unlockBtn.textContent = "OxidVault öffnen";
+    }
     return;
   }
 
   if (response?.locked) {
-    subtitleEl.textContent = "Tresor gesperrt";
-    setStatus("status-locked", "Entsperre OxidVault in der Desktop-App, um Secrets zu speichern.");
-    unlockBtn.hidden = false;
-    unlockBtn.textContent = "OxidVault öffnen";
+    subtitleEl.textContent = response?.minimized
+      ? "Tresor gesperrt (minimiert)"
+      : "Tresor gesperrt";
+    setStatus(
+      "status-locked",
+      response?.minimized
+        ? "Stelle das OxidVault-Fenster wieder her, um zu entsperren."
+        : "Entsperre OxidVault in der Desktop-App, um Secrets zu speichern."
+    );
+    unlockBtn.hidden = response?.minimized === true;
+    if (!unlockBtn.hidden) {
+      unlockBtn.textContent = "OxidVault öffnen";
+    }
     return;
   }
 

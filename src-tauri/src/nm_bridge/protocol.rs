@@ -23,6 +23,8 @@ pub struct BridgeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locked: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimized: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
@@ -37,18 +39,20 @@ impl BridgeResponse {
             success: None,
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: None,
         }
     }
 
-    pub fn locked(mfa_required: bool) -> Self {
+    pub fn locked(mfa_required: bool, minimized: bool) -> Self {
         Self {
             status: "locked".into(),
             success: None,
             mfa_required: Some(mfa_required),
             locked: Some(true),
+            minimized: Some(minimized),
             username: None,
             password: None,
             error: None,
@@ -61,6 +65,7 @@ impl BridgeResponse {
             success: None,
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: Some("OxidVault desktop app is not running".into()),
@@ -73,6 +78,7 @@ impl BridgeResponse {
             success: None,
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: Some(message.into()),
@@ -85,6 +91,7 @@ impl BridgeResponse {
             success: Some(true),
             mfa_required: None,
             locked: Some(false),
+            minimized: None,
             username: Some(username),
             password: Some(password),
             error: None,
@@ -97,31 +104,33 @@ impl BridgeResponse {
             success: Some(true),
             mfa_required: None,
             locked: Some(false),
+            minimized: None,
             username: None,
             password: None,
             error: None,
         }
     }
 
-    pub fn mfa_failed() -> Self {
+    pub fn mfa_failed(minimized: bool) -> Self {
         Self {
             status: "mfa_failed".into(),
             success: Some(false),
             mfa_required: Some(true),
             locked: Some(true),
+            minimized: Some(minimized),
             username: None,
             password: None,
             error: Some("Ungültiger MFA-Code in der Desktop-App".into()),
         }
     }
 
-    pub fn vault_status(locked: bool, mfa_required: bool, mfa_failed: bool) -> Self {
+    pub fn vault_status(locked: bool, mfa_required: bool, mfa_failed: bool, minimized: bool) -> Self {
         if mfa_failed {
-            return Self::mfa_failed();
+            return Self::mfa_failed(minimized);
         }
 
         if locked {
-            return Self::locked(mfa_required);
+            return Self::locked(mfa_required, minimized);
         }
 
         Self {
@@ -129,6 +138,7 @@ impl BridgeResponse {
             success: Some(true),
             mfa_required: Some(false),
             locked: Some(false),
+            minimized: Some(minimized),
             username: None,
             password: None,
             error: None,
@@ -141,6 +151,7 @@ impl BridgeResponse {
             success: Some(true),
             mfa_required: None,
             locked: None,
+            minimized: None,
             username: None,
             password: None,
             error: None,

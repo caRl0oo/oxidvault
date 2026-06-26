@@ -17,6 +17,8 @@ pub struct AppState {
     pub ssh: SshManager,
     pub clipboard: SecureClipboard,
     pub bridge: Mutex<BridgeAuthState>,
+    /// Suppresses lock-on-minimize while the NM bridge restores window focus.
+    pub nm_bridge_focusing: Mutex<bool>,
     /// Format version of the currently loaded vault (1, 2, or 3).
     pub vault_format_version: Mutex<u8>,
     pub license: Mutex<ActiveLicense>,
@@ -36,6 +38,7 @@ impl AppState {
             ssh: SshManager::new(),
             clipboard: SecureClipboard::new(),
             bridge: Mutex::new(BridgeAuthState::default()),
+            nm_bridge_focusing: Mutex::new(false),
             vault_format_version: Mutex::new(0),
             license: Mutex::new(license),
             last_activity_secs: AtomicU64::new(unix_secs_now()),
@@ -95,6 +98,13 @@ impl AppState {
 
     pub fn clear_idle_warning(&self) {
         self.idle_warning_sent.store(false, Ordering::Relaxed);
+    }
+
+    pub fn is_nm_bridge_focusing(&self) -> bool {
+        self.nm_bridge_focusing
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(false)
     }
 }
 

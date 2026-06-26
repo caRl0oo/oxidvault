@@ -18,6 +18,16 @@ let usernameFillAttempted = false;
 let passwordFillAttempted = false;
 let getLoginInFlight = false;
 let unlockPollTimer = null;
+let bannerShown = false;
+
+const MINIMIZED_LOCKED_BANNER =
+  "OxidVault ist gesperrt und minimiert. Stelle das Desktop-Fenster wieder her, um zu entsperren.";
+
+const LOCKED_BANNER =
+  "OxidVault ist gesperrt. Entsperre den Tresor in der Desktop-App, um AutoFill zu nutzen.";
+
+const MFA_LOCKED_BANNER =
+  "OxidVault ist gesperrt (MFA aktiv). Entsperre den Tresor ausschließlich in der Desktop-App mit Passwort und MFA-Code.";
 
 const USERNAME_SELECTORS = [
   'input[type="email"]',
@@ -73,13 +83,40 @@ function removeBanner() {
   }
 }
 
-function showBanner(kind, message) {
+function dismissBanner() {
+  removeBanner();
+  bannerShown = false;
+  stopUnlockPolling();
+}
+
+function renderBanner(kind, message) {
   removeBanner();
 
   const banner = document.createElement("div");
   banner.id = BANNER_ID;
   banner.setAttribute("role", "status");
-  banner.textContent = message;
+
+  const text = document.createElement("span");
+  text.textContent = message;
+  text.style.flex = "1";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Schließen");
+  closeBtn.onclick = () => dismissBanner();
+  Object.assign(closeBtn.style, {
+    flexShrink: "0",
+    margin: "0",
+    padding: "0 0 0 8px",
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    fontSize: "18px",
+    lineHeight: "1",
+    cursor: "pointer",
+    opacity: "0.85",
+  });
 
   const styles = {
     mfa: {
@@ -113,11 +150,44 @@ function showBanner(kind, message) {
     fontFamily: "system-ui, sans-serif",
     fontSize: "13px",
     lineHeight: "1.45",
-    pointerEvents: "none",
+    pointerEvents: "auto",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "8px",
     ...palette,
   });
 
+  banner.appendChild(text);
+  banner.appendChild(closeBtn);
   document.documentElement.appendChild(banner);
+}
+
+function showLockedBanner(mfaRequired) {
+  if (bannerShown) {
+    return;
+  }
+  bannerShown = true;
+
+  const kind = mfaRequired ? "mfa" : "locked";
+  const message = mfaRequired ? MFA_LOCKED_BANNER : LOCKED_BANNER;
+  renderBanner(kind, message);
+  startVaultStatusPolling();
+}
+
+function showMinimizedLockedBanner() {
+  if (bannerShown) {
+    return;
+  }
+  bannerShown = true;
+  renderBanner("locked", MINIMIZED_LOCKED_BANNER);
+  startVaultStatusPolling();
+}
+
+function showErrorBanner(message) {
+  dismissBanner();
+  bannerShown = true;
+  renderBanner("error", message);
+  startVaultStatusPolling();
 }
 
 function stopUnlockPolling() {
@@ -127,7 +197,11 @@ function stopUnlockPolling() {
   }
 }
 
-function pollVaultUnlocked(onUnlocked) {
+function isVaultUnlocked(response) {
+  return response?.success === true && response?.locked === false;
+}
+
+function startVaultStatusPolling(onUnlocked, maxAttempts = null) {
   stopUnlockPolling();
 
   let attempts = 0;
@@ -140,51 +214,65 @@ function pollVaultUnlocked(onUnlocked) {
 
       if (response?.status === "mfa_failed") {
         stopUnlockPolling();
-        showBanner(
-          "error",
+        showErrorBanner(
           response.error ??
             "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
         );
         return;
       }
 
-      if (response?.success === true && response?.locked === false) {
+      if (isVaultUnlocked(response)) {
         stopUnlockPolling();
-        removeBanner();
-        onUnlocked();
+        dismissBanner();
+        onUnlocked?.();
         return;
       }
 
-      if (attempts >= UNLOCK_POLL_MAX_ATTEMPTS) {
+      if (maxAttempts !== null && attempts >= maxAttempts) {
         stopUnlockPolling();
       }
     });
   }, UNLOCK_POLL_INTERVAL_MS);
 }
 
+function pollVaultUnlocked(onUnlocked) {
+  startVaultStatusPolling(onUnlocked, UNLOCK_POLL_MAX_ATTEMPTS);
+}
+
 function beginDesktopUnlock(onUnlocked) {
-  chrome.runtime.sendMessage({ type: "REQUEST_UNLOCK" }, (response) => {
+  chrome.runtime.sendMessage({ type: "VAULT_STATUS" }, (statusResponse) => {
     if (chrome.runtime.lastError) {
-      console.warn(`${LOG_PREFIX} REQUEST_UNLOCK failed:`, chrome.runtime.lastError.message);
+      console.warn(`${LOG_PREFIX} VAULT_STATUS failed:`, chrome.runtime.lastError.message);
       return;
     }
 
-    if (response?.status === "mfa_failed") {
-      showBanner(
-        "error",
-        response.error ??
-          "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
-      );
+    if (statusResponse?.locked && statusResponse?.minimized) {
+      showMinimizedLockedBanner();
       return;
     }
 
-    if (response?.success === true && response?.locked === false) {
-      removeBanner();
-      onUnlocked();
-      return;
-    }
+    chrome.runtime.sendMessage({ type: "REQUEST_UNLOCK" }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn(`${LOG_PREFIX} REQUEST_UNLOCK failed:`, chrome.runtime.lastError.message);
+        return;
+      }
 
-    pollVaultUnlocked(onUnlocked);
+      if (response?.status === "mfa_failed") {
+        showErrorBanner(
+          response.error ??
+            "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
+        );
+        return;
+      }
+
+      if (isVaultUnlocked(response)) {
+        dismissBanner();
+        onUnlocked();
+        return;
+      }
+
+      pollVaultUnlocked(onUnlocked);
+    });
   });
 }
 
@@ -384,19 +472,20 @@ function applyCachedCredentialsIfPossible() {
 
 function handleLockedResponse(response) {
   if (response?.status === "mfa_failed") {
-    showBanner(
-      "error",
+    showErrorBanner(
       response.error ??
         "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
     );
     return;
   }
 
+  if (response?.minimized) {
+    showMinimizedLockedBanner();
+    return;
+  }
+
   if (response?.mfa_required) {
-    showBanner(
-      "mfa",
-      "OxidVault ist gesperrt (MFA aktiv). Entsperre den Tresor ausschließlich in der Desktop-App mit Passwort und MFA-Code."
-    );
+    showLockedBanner(true);
     beginDesktopUnlock(() => {
       getLoginInFlight = false;
       requestAutofill();
@@ -404,10 +493,7 @@ function handleLockedResponse(response) {
     return;
   }
 
-  showBanner(
-    "locked",
-    "OxidVault ist gesperrt. Entsperre den Tresor in der Desktop-App, um AutoFill zu nutzen."
-  );
+  showLockedBanner(false);
   beginDesktopUnlock(() => {
     getLoginInFlight = false;
     requestAutofill();
@@ -439,7 +525,7 @@ function requestAutofill() {
     }
 
     if (response?.status === "ok" && response?.success !== false) {
-      removeBanner();
+      dismissBanner();
       const credentials = credentialsForFill(response);
       cachedCredentials = credentials;
       storePendingCredentials(hostname, credentials);
