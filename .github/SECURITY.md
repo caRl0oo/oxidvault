@@ -4,7 +4,7 @@
 
 Please do **not** open public GitHub issues for security vulnerabilities.
 
-Report security issues confidentially to: **security@oxidvault.de**
+Report security issues confidentially to: **security@oxidvault.com**
 
 Please include:
 - Affected version and platform

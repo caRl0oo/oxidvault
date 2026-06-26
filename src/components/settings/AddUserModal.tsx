@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useState } from "react";
@@ -12,7 +12,7 @@ import { runAsync } from "@/lib/runAsync";
 import type { UserRole } from "@/types/vault";
 
 const ADD_USER_TITLE_ID = "add-user-title";
-const UPGRADE_URL = "https://oxidvault.de";
+const UPGRADE_URL = "https://oxidvault.com";
 
 const panelClass = `${MODAL_PANEL_CLASS} w-full max-w-md space-y-4`;
 const titleClass = "font-mono text-sm font-semibold text-vault-text";
@@ -82,7 +82,7 @@ export function AddUserModal({
             >
               {t("license.upgradeRequestButton")}
             </VaultButton>
-            <p className="font-mono text-[10px] text-vault-muted">oxidvault.de</p>
+            <p className="font-mono text-[10px] text-vault-muted">oxidvault.com</p>
           </div>
         ) : null}
         <label className="block space-y-1">

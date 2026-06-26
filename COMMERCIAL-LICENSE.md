@@ -22,8 +22,8 @@ You need a commercial license if:
 
 ## Contact
 
-Website: https://oxidvault.de
-Email:   support@oxidvault.de
+Website: https://oxidvault.com
+Email:   support@oxidvault.com
 
 ---
 

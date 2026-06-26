@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! `.oxid` on-disk format — v1 (direct key) and v2 (wrapped DEK header).

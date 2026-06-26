@@ -4,10 +4,10 @@ members = ["crates/vault-core", "crates/vault-generator", "crates/vault-wasm", "
 
 [workspace.package]
 version = "2.0.1"
-authors = ["Pascal Kuhn <support@oxidvault.de>"]
+authors = ["Pascal Kuhn <support@oxidvault.com>"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/caRl0oo/oxidvault"
-homepage = "https://oxidvault.de"
+homepage = "https://oxidvault.com"
 edition = "2021"
 rust-version = "1.85"
 

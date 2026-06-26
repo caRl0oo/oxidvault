@@ -22,7 +22,7 @@ If you do not agree, please do not submit contributions.
 
 Please do **not** open public GitHub issues for security vulnerabilities.
 
-Report security issues directly to: **security@oxidvault.de**
+Report security issues directly to: **security@oxidvault.com**
 
 We aim to respond within 48 hours and will coordinate a responsible
 disclosure timeline with you before any details are published.

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useCallback, useEffect, useState } from "react";
@@ -437,7 +437,7 @@ function GeneralSettingsPanel({
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-semibold text-vault-text">{APP_NAME}</span>
             <span className="text-xs text-vault-muted">
-              {t("about.version", { version: APP_VERSION_LABEL })} · oxidvault.de
+              {t("about.version", { version: APP_VERSION_LABEL })} · oxidvault.com
             </span>
           </div>
         </button>

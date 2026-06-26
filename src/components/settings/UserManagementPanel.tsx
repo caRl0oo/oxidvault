@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
+// SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useCallback, useEffect, useState } from "react";
@@ -38,7 +38,7 @@ const upgradeBannerClass = `${UI.card} mt-6 flex items-center justify-between ga
 const upgradeCtaClass = `${UI.btnSecondary} shrink-0 whitespace-nowrap text-xs text-vault-accent`;
 const limitWarningClass = "mt-2 text-xs text-vault-warning";
 
-const UPGRADE_URL = "https://oxidvault.de";
+const UPGRADE_URL = "https://oxidvault.com";
 
 function LicenseHeaderBadge({
   licenseInfo,

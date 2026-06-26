@@ -1,6 +1,6 @@
 # OxidVault
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Beta-green) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.de-purple)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Beta-green) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
 **Hochsicherer, on-premise Passwortmanager für Enterprise-Umgebungen.**
 
@@ -20,7 +20,7 @@ OxidVault ist ein **Offline-First**-Tresor für Passwörter, SSH-Zugänge und we
 | **Betriebssicher** | Atomare Schreibvorgänge, exklusives Datei-Locking, Key-Rotation ohne Payload-Re-Encrypt |
 | **MFA-geschützt** | TOTP (RFC 6238) als zweite Faktor-Hürde; atomare Entsperrung ohne Zwischenzustände im RAM |
 | **Multi-User** | Pro Vault bis zu 5 Benutzer (CE) — jeder mit eigenem Passwort und MFA; shared DEK-Architektur |
-| **Kommerzielle Lizenz** | Enterprise Edition für unbegrenzte User, LDAP, SSO — [oxidvault.de](https://oxidvault.de) |
+| **Kommerzielle Lizenz** | Enterprise Edition für unbegrenzte User, LDAP, SSO — [oxidvault.com](https://oxidvault.com) |
 
 Ausführliche technische Spezifikationen: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
@@ -53,7 +53,7 @@ OxidVault unterstützt gemeinsam genutzte Tresore mit mehreren Benutzern — ohn
 - **Migration** — bestehende v1/v2-Tresore per Einmalvorgang auf v3 migrierbar; das bisherige Master-Passwort wird zum ersten Admin-User
 
 Community Edition: bis zu **5 Benutzer** pro Vault.  
-Enterprise Edition: unbegrenzte Benutzer — [oxidvault.de](https://oxidvault.de)
+Enterprise Edition: unbegrenzte Benutzer — [oxidvault.com](https://oxidvault.com)
 
 ### Atomare Entsperrung
 
@@ -276,7 +276,7 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 | Lizenz | AGPLv3 (Open Source) | Kommerziell |
 | Preis | Kostenlos | Auf Anfrage |
 
-→ **[oxidvault.de](https://oxidvault.de)** · [support@oxidvault.de](mailto:support@oxidvault.de)
+→ **[oxidvault.com](https://oxidvault.com)** · [support@oxidvault.com](mailto:support@oxidvault.com)
 
 ## Download
 
@@ -286,7 +286,7 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 |---|---|
 | **Windows** | `OxidVault_2.0.0_x64_en-US.msi` |
 
-> **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.de](https://oxidvault.de)
+> **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.com](https://oxidvault.com)
 
 ---
 
@@ -341,7 +341,7 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 OxidVault steht unter der **[GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html)**. Die AGPL-3.0 verpflichtet jeden, der die Software (oder davon abgeleitete Werke) weiterverbreitet oder als Netzwerkdienst bereitstellt, den **vollständigen Quellcode** unter derselben Lizenz zugänglich zu machen. Für Enterprise-Umgebungen bedeutet das: Änderungen am Tresor-Kern, an der Kryptografie oder an sicherheitsrelevanten Komponenten bleiben nachvollziehbar und können nicht ohne Quellenoffenlegung als proprietäre Blackbox weitergegeben werden — ein zentraler Baustein für **Transparenz, Prüfbarkeit und langfristige Sicherheit**.
 
 Für kommerzielle Nutzung ohne AGPLv3-Pflichten steht eine **Enterprise-Lizenz** zur Verfügung.  
-Details: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) · [support@oxidvault.de](mailto:support@oxidvault.de)
+Details: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) · [support@oxidvault.com](mailto:support@oxidvault.com)
 
 ---
 
@@ -351,11 +351,11 @@ Wenn Sie eine Sicherheitslücke in OxidVault entdecken, melden Sie diese bitte *
 
 | Kanal | Adresse |
 |---|---|
-| **Security Contact** | [security@oxidvault.de](mailto:security@oxidvault.de) |
+| **Security Contact** | [security@oxidvault.com](mailto:security@oxidvault.com) |
 
 Bitte beschreiben Sie betroffene Version, Plattform, Reproduktionsschritte und — falls möglich — einen Proof of Concept. Wir bestätigen den Eingang in der Regel innerhalb von **72 Stunden** und koordinieren mit Ihnen einen verantwortungsvollen Disclosure-Zeitplan, bevor Details veröffentlicht werden.
 
-> **Hinweis:** Meldungen an `security@oxidvault.de` sind ausschließlich für Sicherheitsvorfälle gedacht. Für allgemeine Support- oder Feature-Anfragen nutzen Sie bitte die Projekt-Issues auf GitHub.
+> **Hinweis:** Meldungen an `security@oxidvault.com` sind ausschließlich für Sicherheitsvorfälle gedacht. Für allgemeine Support- oder Feature-Anfragen nutzen Sie bitte die Projekt-Issues auf GitHub.
 
 ---
 
