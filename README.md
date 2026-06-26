@@ -284,7 +284,7 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 | Plattform | Datei |
 |---|---|
-| **Windows** | `OxidVault_2.0.0_x64_en-US.msi` |
+| **Windows** | `OxidVault_2.0.1_x64_en-US.msi` |
 
 > **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.com](https://oxidvault.com)
 
