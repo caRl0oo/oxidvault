@@ -69,10 +69,10 @@ function TagBadge({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-2 py-0.5 font-mono text-[10px] transition ${
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition-all duration-100 ${
         active
-          ? "border-vault-tag bg-vault-tag/25 text-vault-tag"
-          : "border-vault-border text-vault-muted hover:border-vault-tag/50 hover:text-vault-tag"
+          ? "bg-vault-accent text-vault-on-accent"
+          : "border border-vault-border bg-vault-bg text-vault-muted hover:border-vault-border-focus hover:text-vault-text"
       }`}
     >
       {label}

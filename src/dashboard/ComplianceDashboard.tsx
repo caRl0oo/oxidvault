@@ -95,78 +95,68 @@ export function ComplianceDashboard() {
     return (
       <>
         <div
-          className={`mb-3 inline-flex items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs ${
+          className={`mb-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${
             complianceOk
-              ? "border-vault-success/40 bg-vault-success/10 text-vault-success"
-              : "border-vault-accent/40 bg-vault-accent/10 text-vault-accent"
+              ? "bg-vault-success-subtle text-vault-success"
+              : "bg-vault-danger-subtle text-vault-danger"
           }`}
         >
-          <span aria-hidden="true">{complianceOk ? "✓" : "!"}</span>
+          <span aria-hidden="true">{complianceOk ? "✓" : "✗"}</span>
           {complianceOk ? t("compliance.compliance_ok") : t("compliance.action_required")}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              {t("compliance.policy_status")}
-            </p>
-            <p className="mt-2 font-mono text-sm text-vault-text">{t("compliance.gpo_managed")}</p>
-            <p
-              className={`mt-1 font-mono text-sm font-semibold ${statusClass(status.policyManagedByGpo)}`}
+        <div className="mb-6 grid grid-cols-3 gap-3">
+          <div className="vault-card flex flex-col gap-2">
+            <span className="vault-field-label">{t("compliance.policy_status")}</span>
+            <span className="text-sm text-vault-text">{t("compliance.gpo_managed")}</span>
+            <span
+              className={`text-sm font-semibold ${statusClass(status.policyManagedByGpo)}`}
             >
               {statusLabel(status.policyManagedByGpo)}
-            </p>
-          </article>
+            </span>
+          </div>
 
-          <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              {t("compliance.audit_status")}
-            </p>
-            <p className="mt-2 font-mono text-sm text-vault-text">
-              {t("compliance.hash_chain_valid")}
-            </p>
-            <p
-              className={`mt-1 font-mono text-sm font-semibold ${statusClass(status.auditChainValid)}`}
-            >
+          <div className="vault-card flex flex-col gap-2">
+            <span className="vault-field-label">{t("compliance.audit_status")}</span>
+            <span className="text-sm text-vault-text">{t("compliance.hash_chain_valid")}</span>
+            <span className={`text-sm font-semibold ${statusClass(status.auditChainValid)}`}>
               {statusLabel(status.auditChainValid)}
-            </p>
-          </article>
+            </span>
+          </div>
 
-          <article className="rounded border border-vault-border bg-vault-bg px-4 py-3">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              {t("compliance.key_age")}
-            </p>
-            <p className="mt-2 font-mono text-sm text-vault-text">
+          <div className="vault-card flex flex-col gap-2">
+            <span className="vault-field-label">{t("compliance.key_age")}</span>
+            <span className="text-sm text-vault-text">
               {t("compliance.last_rotated", {
                 date: formatComplianceDate(status.keyRotatedAt, dash),
               })}
-            </p>
-            <p className="mt-1 font-mono text-xs text-vault-muted">
+            </span>
+            <span className="text-xs text-vault-muted">
               {t("compliance.created", {
                 date: formatComplianceDate(status.keyCreatedAt, dash),
               })}
-            </p>
-            <p
-              className={`mt-1 font-mono text-sm font-semibold ${keyAgeClass(status.keyRotationRecommended)}`}
+            </span>
+            <span
+              className={`text-sm font-semibold ${keyAgeClass(status.keyRotationRecommended)}`}
             >
               {t("compliance.key_age_days", { days: status.keyAgeDays })}
-            </p>
-          </article>
+            </span>
+          </div>
         </div>
 
         {status.keyRotationRecommended ? (
           <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
-            <p className="font-mono text-xs text-vault-accent">
+            <p className="text-sm text-vault-accent">
               {t("compliance.rotation_recommended", { days: KEY_ROTATION_THRESHOLD_DAYS })}
             </p>
             <button
               type="button"
               onClick={() => setRotationOpen(true)}
-              className="mt-3 rounded bg-vault-accent px-4 py-2 font-mono text-xs font-semibold text-vault-on-accent hover:bg-vault-accent-hover"
+              className="vault-btn-primary mt-3 text-sm"
             >
               {t("compliance.rotate_password")}
             </button>
-            <p className="mt-2 font-mono text-[10px] leading-relaxed text-vault-muted">
+            <p className="mt-2 text-xs leading-relaxed text-vault-muted">
               {t("compliance.rotation_hint")}
             </p>
           </div>
@@ -176,19 +166,17 @@ export function ComplianceDashboard() {
   };
 
   return (
-    <section className="relative shrink-0 border-b border-vault-border bg-vault-surface/30 px-6 py-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <section className="relative w-full shrink-0 border-b border-vault-border bg-vault-surface/30 px-6 py-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-text">
-            {t("compliance.title")}
-          </h2>
-          <p className="mt-1 font-mono text-[11px] text-vault-muted">{t("compliance.subtitle")}</p>
+          <h2 className="vault-title text-base">{t("compliance.title")}</h2>
+          <p className="vault-subtitle mt-0.5 text-xs">{t("compliance.subtitle")}</p>
         </div>
         <button
           type="button"
           onClick={() => runAsync(refresh)}
           disabled={loading}
-          className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
+          className="vault-btn-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50"
         >
           {t("common.refresh")}
         </button>
@@ -206,7 +194,7 @@ export function ComplianceDashboard() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 left-1/2 z-[100] max-w-md -translate-x-1/2 rounded-lg border border-vault-success/40 bg-vault-surface px-4 py-3 shadow-lg"
+          className="fixed bottom-10 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-vault-success/40 bg-vault-surface px-4 py-3 shadow-lg"
         >
           <p className="font-mono text-xs text-vault-success">
             {t("compliance.rotation_success_toast")}

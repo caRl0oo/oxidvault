@@ -5,7 +5,7 @@ export type ThemeId = "oxid" | "oxid-light" | "dracula" | "nord";
 
 export const THEME_STORAGE_KEY = "oxidvault-theme";
 
-export const DEFAULT_THEME: ThemeId = "oxid";
+export const DEFAULT_THEME: ThemeId = "oxid-light";
 
 export const THEME_IDS: ThemeId[] = ["oxid", "oxid-light", "dracula", "nord"];
 

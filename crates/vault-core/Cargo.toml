@@ -14,8 +14,7 @@ argon2 = "0.5"
 rand = "0.8"
 vault-generator = { path = "../vault-generator" }
 sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
+ed25519-dalek = { version = "2", features = ["std"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

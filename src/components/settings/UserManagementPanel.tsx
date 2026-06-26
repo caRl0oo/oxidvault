@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AddUserModal } from "@/components/settings/AddUserModal";
 import { VaultButton } from "@/components/ui/VaultButton";
-import { CONFIRM_PANEL_CLASS, STATUS_SUCCESS_CLASS } from "@/lib/uiClasses";
+import { CONFIRM_PANEL_CLASS, STATUS_SUCCESS_CLASS, UI } from "@/lib/uiClasses";
 import { addVaultUser, getLicenseInfo, listVaultUsers, removeVaultUser } from "@/lib/ipc";
 import { formatVaultError, isLicenseLimitError } from "@/lib/errors";
 import { openWebsiteUrl } from "@/lib/openWebsite";
@@ -13,34 +13,30 @@ import { runAsync } from "@/lib/runAsync";
 import type { LicenseInfo, UserRole, VaultUserPublic } from "@/types/vault";
 
 const containerClass = "max-w-xl space-y-4";
-const headingClass = "font-mono text-xs uppercase tracking-wider text-vault-muted";
-const loadingClass = "font-mono text-sm text-vault-muted";
-const userListClass =
-  "divide-y divide-vault-border rounded-lg border border-vault-border/60 bg-vault-surface/30";
-const userRowClass =
-  "flex items-center justify-between gap-3 px-4 py-3 font-mono text-sm";
+const headingClass = UI.sectionLabel;
+const loadingClass = "text-sm text-vault-muted";
+const userListClass = `${UI.card} divide-y divide-vault-border p-0`;
+const userRowClass = "flex items-center justify-between gap-3 px-4 py-3 text-sm";
 const usernameClass = "text-vault-text";
 const roleClass = "ml-2 text-xs text-vault-muted";
 const mfaBadgeClass = "ml-2 text-xs text-vault-accent";
 const currentUserClass = "text-xs text-vault-accent";
 const successClass = `${STATUS_SUCCESS_CLASS} px-3 py-2 text-xs`;
-const errorClass = "font-mono text-xs text-vault-danger";
+const errorClass = "text-xs text-vault-danger";
 const confirmPanelClass = `${CONFIRM_PANEL_CLASS} p-4`;
-const confirmTextClass = "font-mono text-xs leading-relaxed text-vault-muted";
+const confirmTextClass = "text-xs leading-relaxed text-vault-muted";
 const licenseHeaderClass = "mb-4 flex items-center gap-2";
-const enterprisePlanBadgeClass =
-  "rounded border border-green-700 bg-green-900 px-2 py-1 font-mono text-xs text-green-300";
-const communityPlanBadgeClass =
-  "rounded border border-vault-border bg-vault-surface/30 px-2 py-1 font-mono text-xs text-vault-muted";
-const licenseMetaClass = "font-mono text-xs text-vault-muted";
-const upgradeBannerClass =
-  "vault-elevated mt-6 flex items-center justify-between gap-4 rounded border border-vault-border bg-vault-surface/30 p-4";
+const licenseMetaClass = "text-xs text-vault-muted";
 const upgradeTextBlockClass = "flex flex-col gap-1";
-const upgradeTitleClass = "font-mono text-xs font-semibold text-vault-text";
-const upgradeDescClass = "font-mono text-xs text-vault-muted";
-const upgradeCtaClass =
-  "shrink-0 whitespace-nowrap rounded border border-vault-accent px-3 py-1.5 font-mono text-xs text-vault-accent transition-colors hover:bg-vault-accent hover:text-vault-on-accent";
-const limitWarningClass = "mt-2 font-mono text-xs text-amber-400";
+const upgradeTitleClass = "text-xs font-semibold text-vault-text";
+const upgradeDescClass = "text-xs text-vault-muted";
+const enterprisePlanBadgeClass =
+  "rounded-lg border border-vault-success/40 bg-vault-success-subtle px-2 py-1 text-xs text-vault-success";
+const communityPlanBadgeClass =
+  "rounded-lg border border-vault-border bg-vault-bg px-2 py-1 text-xs text-vault-muted";
+const upgradeBannerClass = `${UI.card} mt-6 flex items-center justify-between gap-4`;
+const upgradeCtaClass = `${UI.btnSecondary} shrink-0 whitespace-nowrap text-xs text-vault-accent`;
+const limitWarningClass = "mt-2 text-xs text-vault-warning";
 
 const UPGRADE_URL = "https://oxidvault.de";
 

@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { type ButtonHTMLAttributes } from "react";
-import {
-  BTN_GHOST_CLASS,
-  BTN_OUTLINE_CLASS,
-  BTN_OUTLINE_DANGER_CLASS,
-  BTN_PRIMARY_CLASS,
-} from "@/lib/uiClasses";
+import { UI } from "@/lib/uiClasses";
 
 export type VaultButtonVariant = "primary" | "outline" | "ghost";
 export type VaultButtonTone = "default" | "danger";
@@ -20,18 +15,18 @@ interface VaultButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const SIZE_CLASS = {
-  sm: "px-2 py-1.5 text-[10px]",
-  md: "px-3 py-1.5 text-xs",
+  sm: "px-3 py-1.5 text-xs",
+  md: "px-4 py-2 text-sm",
 } as const;
 
 function resolveVariantClass(variant: VaultButtonVariant, tone: VaultButtonTone): string {
   if (variant === "primary") {
-    return BTN_PRIMARY_CLASS;
+    return UI.btnPrimary;
   }
   if (variant === "ghost") {
-    return BTN_GHOST_CLASS;
+    return UI.btnGhost;
   }
-  return tone === "danger" ? BTN_OUTLINE_DANGER_CLASS : BTN_OUTLINE_CLASS;
+  return tone === "danger" ? UI.btnDanger : UI.btnSecondary;
 }
 
 /** Theme-aware button — colors follow active `[data-theme]` CSS variables. */

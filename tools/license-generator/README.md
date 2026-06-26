@@ -4,55 +4,48 @@
 
 ## Erstmalige Einrichtung (einmalig)
 
-1. Echten HMAC-Key generieren:
+### 1. Keypair generieren
 
 ```bash
-openssl rand -hex 32
+cargo run -p license-generator -- generate-keypair \
+  --output oxidvault_private.key
 ```
 
-2. Key bereitstellen (niemals in Git committen):
-   - **Generator (lokal):** `~/.oxidvault_license_key` oder `OXIDVAULT_LICENSE_KEY`
-   - **App (Runtime):** `C:\ProgramData\OxidVault\license_hmac.key` (Windows) bzw. `/etc/oxidvault/license_hmac.key` (Linux/macOS) oder `OXIDVAULT_LICENSE_KEY`
+Output zeigt den Public Key — für den nächsten Schritt kopieren.
 
-⚠️ Den echten Key niemals in Git committen.
+### 2. Private Key sicher aufbewahren
 
-## Verwendung
+- Niemals in Git committen
+- In OxidVault selbst speichern 😄
+- Backup erstellen
 
-Enterprise-Lizenz (1 Jahr, unbegrenzte User):
+### 3. Public Key als Build-Variable setzen
+
+```powershell
+# Windows — für diesen Build-Vorgang
+$env:OXIDVAULT_PUBLIC_KEY = "dein-public-key-base64"
+cargo build --release
+```
+
+Der Public Key wird in die Binary eingebettet.
+Er ist KEIN Secret — er kann nur verifizieren, nicht signieren.
+
+## Lizenz generieren
 
 ```bash
-cargo run -p license-generator -- \
-  --licensee "Musterfirma GmbH" \
+cargo run -p license-generator -- generate \
+  --licensee "Kunde GmbH" \
   --plan enterprise \
   --max-users 0 \
-  --valid-until 2027-06-25 \
-  --output musterfirma-gmbh.license
-```
-
-Community-Lizenz (5 User):
-
-```bash
-cargo run -p license-generator -- \
-  --licensee "Kleine GmbH" \
-  --plan community \
-  --max-users 5 \
-  --valid-until 2027-06-25 \
-  --output kleine-gmbh.license
+  --valid-until 2027-12-31 \
+  --private-key oxidvault_private.key \
+  --output kunde-gmbh.license
 ```
 
 ## Lieferung an Kunden
 
-1. Generierte `.license` Datei per Email senden
-2. Kunde legt sie ab:
+1. `kunde-gmbh.license` per Email senden
+2. Kunde legt ab unter:
    - Windows: `C:\ProgramData\OxidVault\oxidvault.license`
    - Linux: `/etc/oxidvault/oxidvault.license`
-3. OxidVault neu starten → Enterprise Edition aktiv
-
-## Preismodell (Referenz)
-
-| Plan | User | Preis |
-|---|---|---|
-| Community | bis 5 | kostenlos |
-| Enterprise | unbegrenzt | auf Anfrage |
-
-Kontakt: support@oxidvault.de
+3. OxidVault neu starten → Enterprise aktiv

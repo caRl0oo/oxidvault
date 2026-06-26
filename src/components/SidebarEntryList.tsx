@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { SidebarEntryItem } from "@/components/SidebarEntryItem";
 import { groupEntriesByFolder, shouldGroupByFolder } from "@/lib/tags";
+import { UI } from "@/lib/uiClasses";
 import type { ReachabilityState } from "@/types/reachability";
 import type { SecretEntrySummary } from "@/types/vault";
 
@@ -85,16 +86,18 @@ function FolderSection({
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="mb-2">
+    <div className="mb-1">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="mb-1 flex w-full items-center gap-1 px-2 font-mono text-[10px] uppercase tracking-wider text-vault-muted hover:text-vault-text"
+        className="mb-1 flex w-full items-center gap-1"
       >
-        <span className="text-[9px]">{open ? "▾" : "▸"}</span>
-        <span className="truncate">{folder}</span>
+        <span className="text-[9px] text-vault-muted" aria-hidden>
+          {open ? "▾" : "▸"}
+        </span>
+        <span className={`${UI.sectionLabel} flex-1 truncate text-left normal-case`}>{folder}</span>
       </button>
-      {open && <div className="pl-1">{children}</div>}
+      {open ? <div>{children}</div> : null}
     </div>
   );
 }

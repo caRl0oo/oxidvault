@@ -2,10 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 fn main() {
-    let profile = std::env::var("PROFILE").unwrap_or_default();
-    if profile == "debug" && std::env::var("OXIDVAULT_LICENSE_KEY").is_err() {
-        println!(
-            "cargo:warning=OxidVault: set OXIDVAULT_LICENSE_KEY or deploy license_hmac.key for license validation"
-        );
+    // Public key injected at build time via environment variable
+    // Never hardcoded in source — safe for open source repository
+    if let Ok(key) = std::env::var("OXIDVAULT_PUBLIC_KEY") {
+        if !key.is_empty() {
+            println!("cargo:rustc-env=OXIDVAULT_PUBLIC_KEY={key}");
+            return;
+        }
     }
+
+    // No key set — license validation will always fail gracefully
+    // App falls back to Community Edition
+    println!("cargo:rustc-env=OXIDVAULT_PUBLIC_KEY=");
+    println!(
+        "cargo:warning=OXIDVAULT_PUBLIC_KEY not set \
+         — license validation disabled, CE mode only"
+    );
 }

@@ -14,15 +14,18 @@ import {
 import { copyDiagnosticsReport } from "@/lib/diagnosticsReport";
 import { getSystemDiagnostics } from "@/lib/ipc";
 import { runAsync } from "@/lib/runAsync";
+import { UI } from "@/lib/uiClasses";
 import type { DiagnosticRow, SystemDiagnostics } from "@/types/diagnostics";
 import { deriveSummaryOutcome, toDiagnosticRows } from "@/types/diagnostics";
 
 type CopyFeedbackState = "idle" | "copied" | "failed";
 
+const DIAGNOSTIC_GRID_CLASS = "grid grid-cols-[180px_160px_1fr] items-center gap-4";
+
 function StatusIcon({ ok }: Readonly<{ ok: boolean }>) {
   const toneClass = ok
-    ? "bg-vault-success/15 text-vault-success"
-    : "bg-vault-danger/15 text-vault-danger";
+    ? "bg-vault-success-subtle text-vault-success"
+    : "bg-vault-danger-subtle text-vault-danger";
 
   return (
     <span
@@ -41,21 +44,21 @@ function DiagnosticRowItem({
   row: DiagnosticRow;
   translate: (key: string) => string;
 }>) {
+  const label = translate(row.labelKey);
+  const status = formatDiagnosticStatus(row.statusCode);
+  const detail = row.detail ?? translate("common.dash");
+
   return (
-    <tr className="border-t border-vault-border/60 first:border-t-0">
-      <td className="py-2.5 pr-3 align-top">
-        <div className="flex items-start gap-2">
-          <StatusIcon ok={row.ok} />
-          <span className="font-mono text-xs text-vault-text">{translate(row.labelKey)}</span>
-        </div>
-      </td>
-      <td className="py-2.5 pr-3 align-top font-mono text-xs text-vault-muted">
-        {formatDiagnosticStatus(row.statusCode)}
-      </td>
-      <td className="py-2.5 align-top font-mono text-[11px] text-vault-muted">
-        {row.detail ?? translate("common.dash")}
-      </td>
-    </tr>
+    <div
+      className={`${DIAGNOSTIC_GRID_CLASS} border-b border-vault-border px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover`}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <StatusIcon ok={row.ok} />
+        <span className="text-sm whitespace-nowrap text-vault-text">{label}</span>
+      </div>
+      <span className="text-sm text-vault-muted">{status}</span>
+      <span className="truncate font-mono text-xs text-vault-muted">{detail}</span>
+    </div>
   );
 }
 
@@ -135,21 +138,19 @@ function DiagnosticsPanelHeader({
           className="flex items-center gap-2 text-left"
           aria-expanded={open}
         >
-          <span className="font-mono text-[10px] text-vault-muted" aria-hidden="true">
+          <span className="text-[10px] text-vault-muted" aria-hidden="true">
             {open ? "▾" : "▸"}
           </span>
-          <span className="font-mono text-sm font-semibold">{translate("diagnostics.title")}</span>
+          <span className="text-sm font-semibold text-vault-text">{translate("diagnostics.title")}</span>
         </button>
-        <p className="mt-1 pl-5 font-mono text-[11px] text-vault-muted">
-          {translate("diagnostics.subtitle")}
-        </p>
+        <p className={`${UI.muted} mt-1 pl-5`}>{translate("diagnostics.subtitle")}</p>
       </div>
       <div className="flex shrink-0 gap-2">
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="rounded border border-vault-border px-2.5 py-1 font-mono text-[11px] text-vault-muted hover:text-vault-text disabled:opacity-50"
+          className={`${UI.btnSecondary} px-2.5 py-1 text-[11px] disabled:opacity-50`}
         >
           {loading ? translate("common.loading") : translate("common.refresh")}
         </button>
@@ -157,7 +158,7 @@ function DiagnosticsPanelHeader({
           type="button"
           onClick={onCopy}
           disabled={!hasDiagnostics || loading}
-          className="rounded border border-vault-border px-2.5 py-1 font-mono text-[11px] text-vault-accent hover:border-vault-accent disabled:opacity-50"
+          className={`${UI.btnSecondary} px-2.5 py-1 text-[11px] text-vault-accent disabled:opacity-50`}
         >
           {copyLabel}
         </button>
@@ -167,7 +168,7 @@ function DiagnosticsPanelHeader({
 }
 
 function DiagnosticsLoadingState({ translate }: Readonly<{ translate: (key: string) => string }>) {
-  return <p className="font-mono text-xs text-vault-muted">{translate("diagnostics.loading")}</p>;
+  return <p className={UI.muted}>{translate("diagnostics.loading")}</p>;
 }
 
 function DiagnosticsErrorState({
@@ -175,10 +176,10 @@ function DiagnosticsErrorState({
 }: Readonly<{
   message: string;
 }>) {
-  return <p className="font-mono text-xs text-vault-danger">{message}</p>;
+  return <p className="text-sm text-vault-danger">{message}</p>;
 }
 
-function DiagnosticsResultsTable({
+function DiagnosticsResultsList({
   rows,
   summaryOutcome,
   translate,
@@ -196,24 +197,19 @@ function DiagnosticsResultsTable({
         {summaryHeadlineForOutcome(summaryOutcome, translate)}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[32rem] border-collapse">
-          <thead>
-            <tr className="font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-              <th className="pb-2 text-left font-medium">{translate("diagnostics.columnCheck")}</th>
-              <th className="pb-2 text-left font-medium">{translate("diagnostics.columnStatus")}</th>
-              <th className="pb-2 text-left font-medium">{translate("diagnostics.columnDetail")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <DiagnosticRowItem key={row.id} row={row} translate={translate} />
-            ))}
-          </tbody>
-        </table>
+      <div className={`${DIAGNOSTIC_GRID_CLASS} border-b border-vault-border px-4 py-2`}>
+        <span className={UI.fieldLabel}>{translate("diagnostics.columnCheck")}</span>
+        <span className={UI.fieldLabel}>{translate("diagnostics.columnStatus")}</span>
+        <span className={UI.fieldLabel}>{translate("diagnostics.columnDetail")}</span>
       </div>
 
-      <p className="mt-3 font-mono text-[10px] text-vault-muted">
+      <div className="flex flex-col">
+        {rows.map((row) => (
+          <DiagnosticRowItem key={row.id} row={row} translate={translate} />
+        ))}
+      </div>
+
+      <p className={`${UI.muted} mt-3 text-[10px]`}>
         {translate("diagnostics.overall")}: {diagnosticOutcomeLabel(summaryOutcome)}
       </p>
     </>
@@ -247,7 +243,7 @@ function DiagnosticsPanelBody({
     return null;
   }
 
-  return <DiagnosticsResultsTable rows={rows} summaryOutcome={summaryOutcome} translate={translate} />;
+  return <DiagnosticsResultsList rows={rows} summaryOutcome={summaryOutcome} translate={translate} />;
 }
 
 export function SystemDiagnosticsPanel() {
@@ -278,7 +274,7 @@ export function SystemDiagnosticsPanel() {
   const copyLabel = getCopyButtonLabel(copyState, t);
 
   return (
-    <section className="rounded-lg border border-vault-border bg-vault-surface">
+    <section className={UI.card}>
       <DiagnosticsPanelHeader
         open={open}
         loading={loading}

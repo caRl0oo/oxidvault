@@ -4,19 +4,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MasterPasswordInput, evaluateMasterPassword } from "@/components/MasterPasswordInput";
-import { VaultButton } from "@/components/ui/VaultButton";
 import { STATUS_SUCCESS_CLASS } from "@/lib/uiClasses";
 import { changeUserPassword } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
-
-const sectionClass = "space-y-3 border-t border-vault-border/60 pt-6";
-const headingClass = "font-mono text-xs uppercase tracking-wider text-vault-muted";
-const labelClass = "font-mono text-xs text-vault-muted";
-const inputClass =
-  "w-full max-w-xl rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm";
-const mismatchClass = "font-mono text-xs text-vault-danger";
-const errorClass = "font-mono text-xs text-vault-danger";
-const successClass = `${STATUS_SUCCESS_CLASS} px-3 py-2 text-xs`;
 
 export function ChangeUserPasswordPanel() {
   const { t } = useTranslation();
@@ -56,52 +46,68 @@ export function ChangeUserPasswordPanel() {
   };
 
   return (
-    <section className={sectionClass}>
-      <h2 className={headingClass}>{t("users.changePassword")}</h2>
-      <label className="block space-y-1">
-        <span className={labelClass}>{t("users.currentPassword")}</span>
+    <div className="vault-card mt-4 flex flex-col gap-4">
+      <div className="vault-section-label">{t("users.changePassword")}</div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="vault-field-label" htmlFor="change-user-password-current">
+          {t("users.currentPassword")}
+        </label>
         <input
+          id="change-user-password-current"
           type="password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           autoComplete="current-password"
-          className={inputClass}
+          className="vault-input"
         />
-      </label>
-      <div className="max-w-xl">
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="vault-field-label" htmlFor="change-user-password-new">
+          {t("users.newPassword")}
+        </label>
         <MasterPasswordInput
+          id="change-user-password-new"
           value={newPassword}
           onChange={setNewPassword}
           placeholder={t("users.newPassword")}
         />
       </div>
-      <label className="block space-y-1">
-        <span className={labelClass}>{t("users.confirmPassword")}</span>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="vault-field-label" htmlFor="change-user-password-confirm">
+          {t("users.confirmPassword")}
+        </label>
         <input
+          id="change-user-password-confirm"
           type="password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           autoComplete="new-password"
-          className={inputClass}
+          className="vault-input"
         />
-      </label>
+      </div>
+
       {confirmPassword.length > 0 && newPassword !== confirmPassword ? (
-        <p className={mismatchClass}>{t("users.passwordMismatch")}</p>
+        <p className="text-xs text-vault-danger">{t("users.passwordMismatch")}</p>
       ) : null}
-      <VaultButton
-        variant="primary"
-        size="sm"
+
+      <button
+        type="button"
         onClick={() => void handleSubmit()}
         disabled={!canSubmit}
+        className="vault-btn-primary self-start px-4 py-2 text-sm disabled:opacity-50"
       >
         {loading ? t("common.pleaseWait") : t("users.changePassword")}
-      </VaultButton>
-      {success ? <p className={successClass}>{t("users.changePasswordSuccess")}</p> : null}
+      </button>
+
+      {success ? <p className={`${STATUS_SUCCESS_CLASS} text-xs`}>{t("users.changePasswordSuccess")}</p> : null}
       {error ? (
-        <p className={errorClass} role="alert">
+        <p className="text-xs text-vault-danger" role="alert">
           {error}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }

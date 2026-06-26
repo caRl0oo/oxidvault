@@ -5,7 +5,11 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLogo } from "@/components/AppLogo";
 import { MasterPasswordInput, evaluateMasterPassword } from "@/components/MasterPasswordInput";
-import { INPUT_FIELD_CLASS, INPUT_FIELD_DISABLED_CLASS, MFA_LOCKOUT_BANNER_CLASS } from "@/lib/uiClasses";
+import {
+  INPUT_FIELD_DISABLED_CLASS,
+  MFA_LOCKOUT_BANNER_CLASS,
+  UI,
+} from "@/lib/uiClasses";
 
 const MFA_CODE_LENGTH = 6;
 const MFA_DIGITS_ONLY = /\D/g;
@@ -14,10 +18,8 @@ function normalizeMfaCode(value: string): string {
   return value.replace(MFA_DIGITS_ONLY, "").slice(0, MFA_CODE_LENGTH);
 }
 
-const PASSWORD_INPUT_CLASS =
-  "w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted focus:border-vault-accent";
-const MFA_INPUT_CLASS = `${INPUT_FIELD_CLASS} ${INPUT_FIELD_DISABLED_CLASS}`;
-const SUBMIT_BUTTON_CLASS = `w-full rounded bg-vault-accent py-2 text-sm font-medium text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50 ${INPUT_FIELD_DISABLED_CLASS}`;
+const MFA_INPUT_CLASS = `${UI.input} ${INPUT_FIELD_DISABLED_CLASS}`;
+const SUBMIT_BUTTON_CLASS = `${UI.btnPrimary} w-full py-2.5 ${INPUT_FIELD_DISABLED_CLASS}`;
 
 interface SubmitEnabledOptions {
   readonly loading: boolean;
@@ -110,15 +112,15 @@ function AuthFormHeader({
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col items-center space-y-3 text-center">
-      <AppLogo size="md" />
-      <div className="space-y-1">
-        <h1 className="text-lg font-semibold">{t(titleKey)}</h1>
+    <div className="flex flex-col items-center gap-3">
+      <AppLogo size="md" className="h-12 w-12 rounded-xl" />
+      <div className="flex flex-col items-center gap-1 text-center">
+        <h1 className="text-lg font-semibold text-vault-text">{t(titleKey)}</h1>
         {descriptionKey ? (
           <p className="text-sm text-vault-muted">{t(descriptionKey)}</p>
         ) : null}
         {subtitle ? (
-          <p className="truncate font-mono text-[11px] text-vault-muted">{subtitle}</p>
+          <p className="truncate font-mono text-xs text-vault-muted">{subtitle}</p>
         ) : null}
       </div>
     </div>
@@ -142,7 +144,7 @@ function UsernameField({
       placeholder={t("auth.username")}
       autoComplete="username"
       autoFocus
-      className={PASSWORD_INPUT_CLASS}
+      className={UI.input}
       aria-label={t("auth.username")}
     />
   );
@@ -163,7 +165,7 @@ function AdminUsernameField({
       onChange={(e) => onAdminUsernameChange(e.target.value)}
       placeholder={t("auth.adminUsernamePlaceholder")}
       autoComplete="username"
-      className={PASSWORD_INPUT_CLASS}
+      className={UI.input}
     />
   );
 }
@@ -180,7 +182,7 @@ function VaultNameField({
       value={vaultName}
       onChange={(e) => onVaultNameChange(e.target.value)}
       placeholder={t("auth.vaultNamePlaceholder")}
-      className={PASSWORD_INPUT_CLASS}
+      className={UI.input}
     />
   );
 }
@@ -190,14 +192,22 @@ function PasswordField({
   onPasswordChange,
   enforceMasterPolicy,
   passwordRef,
+  autoFocus,
 }: Readonly<
-  Pick<AuthFormProps, "password" | "onPasswordChange" | "enforceMasterPolicy" | "passwordRef">
+  Pick<AuthFormProps, "password" | "onPasswordChange" | "enforceMasterPolicy" | "passwordRef"> & {
+    autoFocus?: boolean;
+  }
 >) {
   const { t } = useTranslation();
 
   if (enforceMasterPolicy) {
     return (
-      <MasterPasswordInput value={password} onChange={onPasswordChange} inputRef={passwordRef} />
+      <MasterPasswordInput
+        value={password}
+        onChange={onPasswordChange}
+        inputRef={passwordRef}
+        autoFocus={autoFocus}
+      />
     );
   }
 
@@ -209,7 +219,8 @@ function PasswordField({
       onChange={(e) => onPasswordChange(e.target.value)}
       placeholder={t("auth.masterPasswordPlaceholder")}
       autoComplete="current-password"
-      className={PASSWORD_INPUT_CLASS}
+      autoFocus={autoFocus}
+      className={UI.input}
     />
   );
 }
@@ -340,6 +351,7 @@ function AuthFormFields(props: Readonly<AuthFormProps>) {
         onPasswordChange={props.onPasswordChange}
         enforceMasterPolicy={props.enforceMasterPolicy}
         passwordRef={props.passwordRef}
+        autoFocus={!showUsername}
       />
     </>
   );
@@ -354,36 +366,26 @@ function AuthFormFooter(props: Readonly<AuthFormProps>) {
         type="button"
         onClick={props.onCancelMfaChallenge}
         disabled={props.loading}
-        className="w-full py-1 text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
+        className={`${UI.btnGhost} w-full py-1 text-xs text-vault-muted hover:text-vault-text disabled:opacity-50`}
       >
         {t("auth.mfaCancel")}
       </button>
     );
   }
 
-  return (
-    <>
-      {props.onBack ? (
-        <button
-          type="button"
-          onClick={props.onBack}
-          className="w-full py-1 text-xs text-vault-muted hover:text-vault-text"
-        >
-          {t("auth.back")}
-        </button>
-      ) : null}
-      {props.onSwitchVault ? (
-        <button
-          type="button"
-          onClick={props.onSwitchVault}
-          disabled={props.loading}
-          className="w-full py-1 text-xs text-vault-muted/80 hover:text-vault-muted disabled:opacity-50"
-        >
-          {t("auth.switchVault")}
-        </button>
-      ) : null}
-    </>
-  );
+  if (props.onBack) {
+    return (
+      <button
+        type="button"
+        onClick={props.onBack}
+        className={`${UI.btnGhost} w-full py-1 text-xs text-vault-muted hover:text-vault-text`}
+      >
+        {t("auth.back")}
+      </button>
+    );
+  }
+
+  return null;
 }
 
 export function AuthForm(props: Readonly<AuthFormProps>) {
@@ -410,11 +412,11 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
   });
 
   return (
-    <section className="flex flex-1 items-center justify-center p-8">
-      <div className="w-full max-w-sm space-y-4">
-        <AuthFormHeader {...labels} subtitle={props.subtitle} />
+    <section className="flex min-h-full flex-1 flex-col items-center justify-center gap-8 bg-vault-bg p-8">
+      <AuthFormHeader {...labels} subtitle={props.subtitle} />
+      <div className="w-full max-w-sm" style={{ boxShadow: "var(--shadow-md)" }}>
         <form
-          className="space-y-3"
+          className={`${UI.card} flex flex-col gap-3 p-6`}
           onSubmit={(e) => {
             e.preventDefault();
             props.onSubmit();
@@ -431,6 +433,19 @@ export function AuthForm(props: Readonly<AuthFormProps>) {
           >
             {props.loading ? t("common.pleaseWait") : t(labels.submitLabelKey)}
           </button>
+          {props.onSwitchVault && !mfaChallenge ? (
+            <>
+              <div className="border-t border-vault-border" />
+              <button
+                type="button"
+                onClick={props.onSwitchVault}
+                disabled={props.loading}
+                className={`${UI.btnGhost} w-full py-1 text-xs text-vault-muted hover:text-vault-text disabled:opacity-50`}
+              >
+                {t("auth.switchVault")}
+              </button>
+            </>
+          ) : null}
           <AuthFormFooter {...props} mfaChallenge={mfaChallenge} />
         </form>
       </div>

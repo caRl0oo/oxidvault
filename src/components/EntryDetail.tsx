@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useCallback, useState } from "react";
+import { Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
@@ -20,6 +21,7 @@ import type { ReachabilityState } from "@/types/reachability";
 import type { SshSessionStatus } from "@/types/ssh";
 import type { SecretEntryPublic, SecretField } from "@/types/vault";
 import { isProbeableEntryType } from "@/types/vault";
+import { UI } from "@/lib/uiClasses";
 
 interface EntryDetailProps {
   readonly entry: SecretEntryPublic;
@@ -81,37 +83,40 @@ export function EntryDetail({
 
   return (
     <div className="vault-main-panel">
-      <div className="vault-main-scroll p-6">
-      <div className="mx-auto w-full max-w-lg space-y-5">
-        <header className="flex items-start gap-3">
-          <div className="mt-0.5 rounded bg-vault-border/60 p-2 text-vault-accent">
-            <SecretTypeIcon kind={entry.type} className="h-5 w-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate font-mono text-lg font-semibold">{entry.title}</h2>
-              {isProbeableEntryType(entry.type) && (
-                <ReachabilityDot state={reachability} size="md" />
-              )}
+      <div className="vault-main-scroll">
+      <div className="mx-auto w-full max-w-lg">
+        <header className="flex items-start justify-between border-b border-vault-border p-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-vault-accent-subtle text-vault-accent">
+              <SecretTypeIcon kind={entry.type} className="h-[18px] w-[18px]" />
             </div>
-            <ExpiryBadge expiresAt={entry.expires_at} />
+            <div className="min-w-0">
+              <h1 className={UI.title}>{entry.title}</h1>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {entry.folder ? (
+                  <span className="text-xs text-vault-muted">{entry.folder}</span>
+                ) : null}
+                {isProbeableEntryType(entry.type) ? (
+                  <ReachabilityDot state={reachability} size="md" />
+                ) : null}
+                <ExpiryBadge expiresAt={entry.expires_at} />
+              </div>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-accent hover:text-vault-accent"
-          >
-            {t("common.edit")}
-          </button>
-          <VaultButton
-            variant="outline"
-            tone="danger"
-            size="sm"
-            onClick={() => setDeleteModalOpen(true)}
-            disabled={deleteLoading}
-          >
-            {t("entry.delete")}
-          </VaultButton>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={onEdit} className={`${UI.btnSecondary} px-3 py-1.5 text-sm`}>
+              {t("common.edit")}
+            </button>
+            <VaultButton
+              variant="outline"
+              tone="danger"
+              size="sm"
+              onClick={() => setDeleteModalOpen(true)}
+              disabled={deleteLoading}
+            >
+              {t("entry.delete")}
+            </VaultButton>
+          </div>
         </header>
 
         <DeleteConfirmationModal
@@ -125,13 +130,9 @@ export function EntryDetail({
           }}
         />
 
-        {(entry.folder || (entry.tags && entry.tags.length > 0)) && (
+        <div className="flex flex-col gap-5 p-6">
+        {(entry.tags && entry.tags.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
-            {entry.folder && (
-              <span className="rounded border border-vault-border px-2 py-0.5 font-mono text-[10px] text-vault-muted">
-                {entry.folder}
-              </span>
-            )}
             {(entry.tags ?? []).map((tag) => (
               <span
                 key={tag}
@@ -145,27 +146,25 @@ export function EntryDetail({
 
         {entry.type === "web_login" && (
           <>
-            <div className="space-y-1">
-              <span className="font-mono text-[11px] text-vault-muted">{t("entry.url")}</span>
+            <div className="flex flex-col gap-1.5">
+              <span className={UI.fieldLabel}>{t("entry.url")}</span>
               <div className="flex items-start gap-2">
-                <code className="flex-1 truncate rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm">
-                  {entry.url}
-                </code>
+                <div className={`${UI.input} flex-1 truncate bg-vault-bg`}>{entry.url}</div>
                 <button
                   type="button"
                   onClick={() => runAsync(handleOpenWebsite)}
                   disabled={openingWebsite || !canOpenWebsite}
                   title={t("entry.openWebsite")}
                   aria-label={t("entry.openWebsite")}
-                  className="flex shrink-0 items-center gap-1 rounded border border-vault-border px-2.5 py-2 font-mono text-xs text-vault-accent transition hover:border-vault-accent hover:bg-vault-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={`${UI.btnSecondary} shrink-0 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-40`}
                 >
                   <span aria-hidden="true">{openingWebsite ? "…" : "↗"}</span>
                   <span className="hidden sm:inline">{t("entry.openWebsite")}</span>
                 </button>
               </div>
-              {websiteError && (
+              {websiteError ? (
                 <p className="font-mono text-xs text-vault-danger">{websiteError}</p>
-              )}
+              ) : null}
             </div>
             <PlainField
               label={t("entry.username")}
@@ -205,16 +204,18 @@ export function EntryDetail({
 
         {entry.type === "ssh_key" && (
           <>
-            <div className="flex items-center gap-2">
+            <div className="px-0">
               <button
                 type="button"
                 disabled={sshConnecting || !onQuickConnect}
                 onClick={() => onQuickConnect?.(entry.id)}
-                className="flex flex-1 items-center justify-center gap-2 rounded bg-vault-accent py-2 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
+                className={`${UI.btnPrimary} gap-2`}
               >
                 {sshSessionStatus ? (
                   <SshSessionStatusDot status={sshSessionStatus} size="md" />
-                ) : null}
+                ) : (
+                  <Terminal className="h-3.5 w-3.5" aria-hidden />
+                )}
                 {sshConnecting ? t("entry.connecting") : t("entry.quickConnect")}
               </button>
             </div>
@@ -356,6 +357,7 @@ export function EntryDetail({
           />
         )}
 
+        </div>
       </div>
     </div>
     </div>
@@ -380,25 +382,21 @@ function PlainField({
   const { t } = useTranslation();
 
   return (
-    <div className="space-y-1">
-      <span className="font-mono text-[11px] text-vault-muted">{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <span className={UI.fieldLabel}>{label}</span>
       <div className="flex items-start gap-2">
-        <code className="flex-1 truncate rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm">
-          {value}
-        </code>
-        {copyable && onCopy && (
+        <div className={`${UI.input} flex-1 cursor-default bg-vault-bg`}>{value}</div>
+        {copyable && onCopy ? (
           <button
             type="button"
             onClick={onCopy}
-            className={`shrink-0 rounded border px-2 py-1.5 font-mono text-[10px] transition ${
-              copied
-                ? "border-vault-success text-vault-success"
-                : "border-vault-border text-vault-muted hover:border-vault-accent hover:text-vault-accent"
+            className={`${UI.btnGhost} px-3 ${
+              copied ? "text-vault-success" : ""
             }`}
           >
             {copyLabel ?? t("copy.copy")}
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -458,43 +456,37 @@ function SecureField({
   );
 
   return (
-    <div className="space-y-1">
-      <span className="font-mono text-[11px] text-vault-muted">{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <span className={UI.fieldLabel}>{label}</span>
       <div className="flex items-start gap-2">
         {multiline ? (
-          <pre className="max-h-96 flex-1 overflow-auto rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all">
+          <pre className={`${UI.input} max-h-96 flex-1 overflow-auto whitespace-pre-wrap break-all bg-vault-bg`}>
             {display}
           </pre>
         ) : (
-          <code className="flex-1 truncate rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm">
-            {display}
-          </code>
+          <div className={`${UI.input} flex-1 truncate bg-vault-bg font-mono`}>{display}</div>
         )}
-        <div className="flex shrink-0 flex-col gap-1">
+        <div className="flex shrink-0 gap-1">
           <button
             type="button"
             onClick={() => runAsync(handleReveal)}
             disabled={loading}
-            className="rounded border border-vault-border px-2 py-1.5 font-mono text-[10px] text-vault-muted hover:text-vault-text disabled:opacity-50"
+            className={`${UI.btnGhost} px-3 disabled:opacity-50`}
           >
             {toggleLabel}
           </button>
-          {onCopy && copyFieldId && !revealOnly && (
+          {onCopy && copyFieldId && !revealOnly ? (
             <button
               type="button"
               onClick={onCopy}
-              className={`rounded border px-2 py-1.5 font-mono text-[10px] transition ${
-                copied
-                  ? "border-vault-success text-vault-success"
-                  : "border-vault-border text-vault-muted hover:border-vault-accent hover:text-vault-accent"
-              }`}
+              className={`${UI.btnGhost} px-3 ${copied ? "text-vault-success" : ""}`}
             >
               {copyLabel ?? t("copy.copy")}
             </button>
-          )}
+          ) : null}
         </div>
       </div>
-      {error && <p className="font-mono text-xs text-vault-danger">{error}</p>}
+      {error ? <p className="font-mono text-xs text-vault-danger">{error}</p> : null}
     </div>
   );
 }

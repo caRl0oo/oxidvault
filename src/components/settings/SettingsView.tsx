@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AboutModal } from "@/components/AboutModal";
+import { AppLogo } from "@/components/AppLogo";
 import { MfaSetupModal } from "@/components/MfaSetupModal";
 import { VaultButton } from "@/components/ui/VaultButton";
 import { ThemeSwatch } from "@/components/ui/ThemeSwatch";
@@ -21,7 +22,8 @@ import {
 import { LOCALE_OPTIONS, isLocaleId } from "@/lib/locale";
 import { runAsync } from "@/lib/runAsync";
 import { THEME_IDS, isThemeId, type ThemeId } from "@/lib/theme";
-import { CONFIRM_PANEL_CLASS, NOTE_PANEL_CLASS, STATUS_SUCCESS_CLASS } from "@/lib/uiClasses";
+import { STATUS_SUCCESS_CLASS, UI } from "@/lib/uiClasses";
+import { APP_NAME, APP_VERSION_LABEL } from "@/lib/appMeta";
 import type { GitSyncSettings } from "@/types/settings";
 import type { ResolvedConfig } from "@/types/policy";
 import type { SettingsCategory } from "@/components/settings/types";
@@ -32,8 +34,9 @@ import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 
 const SETTINGS_NAV: SettingsCategory[] = ["general", "sync", "security", "users"];
 
-const inputClass =
-  "mt-1.5 w-full max-w-xl rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm text-vault-text placeholder:text-vault-muted focus:border-vault-accent disabled:opacity-50";
+const inputClass = `${UI.input} mt-1.5 max-w-xl text-sm`;
+
+const settingsDividerClass = "border-t border-vault-border";
 
 interface SettingsViewProps {
   readonly initialCategory?: SettingsCategory;
@@ -86,8 +89,12 @@ export function SettingsView({
   const mfaControlsDisabled = mfaVaultLocked || mfaLoading || mfaDisabling;
 
   useEffect(() => {
+    if (vaultLocked) {
+      setCategory("general");
+      return;
+    }
     setCategory(initialCategory);
-  }, [initialCategory]);
+  }, [initialCategory, vaultLocked]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -145,7 +152,12 @@ export function SettingsView({
     });
   }, [onGitSyncChange, isMultiUser, vaultLocked]);
 
-  const visibleNav = SETTINGS_NAV.filter((id) => id !== "users" || (isMultiUser && isCurrentUserAdmin));
+  const visibleNav = SETTINGS_NAV.filter((id) => {
+    if (vaultLocked) {
+      return id === "general";
+    }
+    return id !== "users" || (isMultiUser && isCurrentUserAdmin);
+  });
 
   const saveGitSettings = useCallback(async () => {
     setGitSaving(true);
@@ -284,26 +296,28 @@ export function SettingsView({
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-vault-bg">
-      <nav
-        aria-label={t("settings.title")}
-        className="flex w-48 shrink-0 flex-col border-r border-vault-border bg-vault-surface/50 py-4"
-      >
-        {visibleNav.map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setCategory(id)}
-            aria-current={category === id ? "page" : undefined}
-            className={`px-4 py-2.5 text-left font-mono text-xs transition ${
-              category === id
-                ? "border-r-2 border-vault-accent bg-vault-bg text-vault-accent"
-                : "text-vault-muted hover:bg-vault-bg hover:text-vault-text"
-            }`}
-          >
-            {navLabel(id)}
-          </button>
-        ))}
-      </nav>
+      {visibleNav.length > 1 ? (
+        <nav
+          aria-label={t("settings.title")}
+          className="flex w-48 shrink-0 flex-col border-r border-vault-border bg-vault-surface/50 py-4"
+        >
+          {visibleNav.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setCategory(id)}
+              aria-current={category === id ? "page" : undefined}
+              className={`px-4 py-2.5 text-left font-mono text-xs transition ${
+                category === id
+                  ? "border-r-2 border-vault-accent bg-vault-bg text-vault-accent"
+                  : "text-vault-muted hover:bg-vault-bg hover:text-vault-text"
+              }`}
+            >
+              {navLabel(id)}
+            </button>
+          ))}
+        </nav>
+      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex shrink-0 items-center gap-3 border-b border-vault-border/60 px-6 py-4">
@@ -352,68 +366,81 @@ function GeneralSettingsPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="max-w-xl space-y-8">
-      <section>
-        <h2 className="font-mono text-xs uppercase tracking-wider text-vault-muted">
-          {t("settings.theme")}
-        </h2>
-        <div className="mt-3 flex items-center gap-3">
-          <ThemeSwatch themeId={theme} />
-          <select
-            id="settings-theme-select"
-            value={theme}
-            onChange={(e) => {
-              const next = e.target.value;
-              if (isThemeId(next)) {
-                setTheme(next);
-              }
-            }}
-            className={inputClass}
-          >
-            {THEME_IDS.map((themeId) => (
-              <option key={themeId} value={themeId}>
-                {t(`theme.${themeId}.label`)}
-              </option>
-            ))}
-          </select>
+    <div className="flex max-w-xl flex-col gap-8">
+      <section className="flex flex-col gap-4">
+        <div className={UI.sectionLabel}>{t("settings.theme")}</div>
+        <div className={`${UI.card} flex flex-col gap-4`}>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-vault-text">{t("settings.theme")}</span>
+              {isThemeId(theme) ? (
+                <span className="text-xs text-vault-muted">{t(`theme.${theme}.description`)}</span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
+              <ThemeSwatch themeId={theme} />
+              <select
+                id="settings-theme-select"
+                value={theme}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (isThemeId(next)) {
+                    setTheme(next);
+                  }
+                }}
+                className={`${UI.input} w-48 text-sm`}
+              >
+                {THEME_IDS.map((themeId) => (
+                  <option key={themeId} value={themeId}>
+                    {t(`theme.${themeId}.label`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className={settingsDividerClass} />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-vault-text">{t("settings.language")}</span>
+            </div>
+            <select
+              id="settings-locale-select"
+              value={currentLocale}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (isLocaleId(next)) {
+                  changeAppLocale(next);
+                }
+              }}
+              className={`${UI.input} w-48 text-sm`}
+            >
+              {LOCALE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {t(`locale.${option.id}`)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        {isThemeId(theme) && (
-          <p className="mt-2 font-mono text-xs text-vault-muted">
-            {t(`theme.${theme}.description`)}
-          </p>
-        )}
       </section>
 
-      <section>
-        <h2 className="font-mono text-xs uppercase tracking-wider text-vault-muted">
-          {t("settings.language")}
-        </h2>
-        <select
-          id="settings-locale-select"
-          value={currentLocale}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (isLocaleId(next)) {
-              changeAppLocale(next);
-            }
-          }}
-          className={inputClass}
+      <section className="flex flex-col gap-4">
+        <div className={UI.sectionLabel}>{t("about.menuItem")}</div>
+        <button
+          type="button"
+          onClick={onOpenAbout}
+          className={`${UI.card} flex w-full items-center gap-4 p-4 text-left transition-shadow duration-150 hover:shadow-md`}
         >
-          {LOCALE_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {t(`locale.${option.id}`)}
-            </option>
-          ))}
-        </select>
-      </section>
-
-      <section>
-        <h2 className="font-mono text-xs uppercase tracking-wider text-vault-muted">
-          {t("about.menuItem")}
-        </h2>
-        <VaultButton variant="outline" size="sm" className="mt-3" onClick={onOpenAbout}>
-          {t("about.menuItem")}
-        </VaultButton>
+          <AppLogo size="md" className="h-10 w-10 rounded-xl" />
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-semibold text-vault-text">{APP_NAME}</span>
+            <span className="text-xs text-vault-muted">
+              {t("about.version", { version: APP_VERSION_LABEL })} · oxidvault.de
+            </span>
+          </div>
+        </button>
       </section>
     </div>
   );
@@ -465,102 +492,104 @@ function SyncSettingsPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="max-w-xl space-y-6">
-      <p className="font-mono text-xs leading-relaxed text-vault-muted">{t("settings.gitSyncHint")}</p>
-      {resolvedConfig?.adminPolicyActive && (
-        <p className="font-mono text-xs text-vault-accent">{t("settings.adminPolicyActive")}</p>
-      )}
+    <div className="flex max-w-xl flex-col gap-6">
+      <p className={UI.muted}>{t("settings.gitSyncHint")}</p>
+      {resolvedConfig?.adminPolicyActive ? (
+        <p className="text-xs text-vault-accent">{t("settings.adminPolicyActive")}</p>
+      ) : null}
 
-      <label className="flex cursor-pointer items-center gap-2">
-        <input
-          type="checkbox"
-          checked={gitEnabled}
-          onChange={(e) => setGitEnabled(e.target.checked)}
-          disabled={resolvedConfig?.gitSyncEnabled.disabled ?? false}
-          className="rounded border-vault-border bg-vault-bg text-vault-accent focus:ring-vault-accent disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <span className="font-mono text-sm text-vault-text">
-          {t("settings.syncEnabled")}
-          {resolvedConfig?.gitSyncEnabled.disabled && (
-            <span className="ml-1 text-xs text-vault-muted">{t("common.admin")}</span>
-          )}
-        </span>
-      </label>
-
-      <label htmlFor="settings-git-remote-url" className="block">
-        <span className="font-mono text-xs text-vault-muted">{t("settings.remoteRepository")}</span>
-        <input
-          id="settings-git-remote-url"
-          type="text"
-          value={remoteUrl}
-          onChange={(e) => setRemoteUrl(e.target.value)}
-          placeholder={t("settings.remotePlaceholder")}
-          disabled={!gitEnabled}
-          className={inputClass}
-        />
-      </label>
-
-      <section className="space-y-4 rounded-lg border border-vault-border/60 bg-vault-surface/30 p-4">
-        <p className="font-mono text-xs leading-relaxed text-vault-muted">
-          {t("settings.gitAdvancedHint")}
-        </p>
-
-        <label htmlFor="settings-git-ssh-key-path" className="block">
-          <span className="font-mono text-xs text-vault-muted">{t("settings.sshKeyPath")}</span>
+      <div className={`${UI.card} flex flex-col gap-4`}>
+        <label className="flex cursor-pointer items-center gap-2">
           <input
-            id="settings-git-ssh-key-path"
+            type="checkbox"
+            checked={gitEnabled}
+            onChange={(e) => setGitEnabled(e.target.checked)}
+            disabled={resolvedConfig?.gitSyncEnabled.disabled ?? false}
+            className="rounded border-vault-border bg-vault-bg text-vault-accent focus:ring-vault-accent disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <span className="text-sm text-vault-text">
+            {t("settings.syncEnabled")}
+            {resolvedConfig?.gitSyncEnabled.disabled ? (
+              <span className="ml-1 text-xs text-vault-muted">{t("common.admin")}</span>
+            ) : null}
+          </span>
+        </label>
+
+        <div className={settingsDividerClass} />
+
+        <label htmlFor="settings-git-remote-url" className="block">
+          <span className={UI.fieldLabel}>{t("settings.remoteRepository")}</span>
+          <input
+            id="settings-git-remote-url"
             type="text"
-            value={sshKeyPath}
-            onChange={(e) => setSshKeyPath(e.target.value)}
-            placeholder={t("settings.sshKeyPathPlaceholder")}
+            value={remoteUrl}
+            onChange={(e) => setRemoteUrl(e.target.value)}
+            placeholder={t("settings.remotePlaceholder")}
             disabled={!gitEnabled}
             className={inputClass}
           />
         </label>
 
-        <div>
-          <label htmlFor="settings-git-ssh-passphrase" className="block">
-            <span className="font-mono text-xs text-vault-muted">{t("settings.sshPassphrase")}</span>
+        <div className={settingsDividerClass} />
+
+        <div className="flex flex-col gap-4">
+          <p className={UI.muted}>{t("settings.gitAdvancedHint")}</p>
+
+          <label htmlFor="settings-git-ssh-key-path" className="block">
+            <span className={UI.fieldLabel}>{t("settings.sshKeyPath")}</span>
             <input
-              id="settings-git-ssh-passphrase"
-              type="password"
-              value={sshPassphrase}
-              onChange={(e) => setSshPassphrase(e.target.value)}
-              autoComplete="new-password"
+              id="settings-git-ssh-key-path"
+              type="text"
+              value={sshKeyPath}
+              onChange={(e) => setSshKeyPath(e.target.value)}
+              placeholder={t("settings.sshKeyPathPlaceholder")}
               disabled={!gitEnabled}
               className={inputClass}
             />
           </label>
-          <p className="mt-1.5 font-mono text-xs leading-relaxed text-vault-muted">
-            {t("settings.sshPassphraseHint")}
-          </p>
-          {sshPassphraseSaved && (
-            <p className={`${STATUS_SUCCESS_CLASS} mt-2 px-2 py-1 text-xs`}>
-              {t("settings.sshPassphraseSaved")}
-            </p>
-          )}
-          {sshPassphraseError && (
-            <p className="mt-2 font-mono text-xs text-vault-danger" role="alert">
-              {sshPassphraseError}
-            </p>
-          )}
-          <VaultButton
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={onSavePassphrase}
-            disabled={!gitEnabled || sshPassphraseSaving}
-          >
-            {sshPassphraseSaveButtonLabel(sshPassphraseSaving, sshPassphraseSaved, t)}
-          </VaultButton>
-        </div>
-      </section>
 
-      {gitError && (
-        <p className="font-mono text-xs text-vault-danger" role="alert">
+          <div>
+            <label htmlFor="settings-git-ssh-passphrase" className="block">
+              <span className={UI.fieldLabel}>{t("settings.sshPassphrase")}</span>
+              <input
+                id="settings-git-ssh-passphrase"
+                type="password"
+                value={sshPassphrase}
+                onChange={(e) => setSshPassphrase(e.target.value)}
+                autoComplete="new-password"
+                disabled={!gitEnabled}
+                className={inputClass}
+              />
+            </label>
+            <p className={`${UI.muted} mt-1.5`}>{t("settings.sshPassphraseHint")}</p>
+            {sshPassphraseSaved ? (
+              <p className={`${STATUS_SUCCESS_CLASS} mt-2 px-2 py-1 text-xs`}>
+                {t("settings.sshPassphraseSaved")}
+              </p>
+            ) : null}
+            {sshPassphraseError ? (
+              <p className="mt-2 text-xs text-vault-danger" role="alert">
+                {sshPassphraseError}
+              </p>
+            ) : null}
+            <VaultButton
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={onSavePassphrase}
+              disabled={!gitEnabled || sshPassphraseSaving}
+            >
+              {sshPassphraseSaveButtonLabel(sshPassphraseSaving, sshPassphraseSaved, t)}
+            </VaultButton>
+          </div>
+        </div>
+      </div>
+
+      {gitError ? (
+        <p className="text-xs text-vault-danger" role="alert">
           {gitError}
         </p>
-      )}
+      ) : null}
 
       <div className="flex flex-wrap gap-3">
         <VaultButton
@@ -609,63 +638,79 @@ function SecuritySettingsPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="max-w-xl space-y-4">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-vault-muted">
-        {t("settings.mfa.title")}
-      </h2>
-
-      {mfaEnabled && (
-        <p className={`${STATUS_SUCCESS_CLASS} px-3 py-2 text-xs`}>
-          {t("settings.mfa.statusEnabled")}
-        </p>
-      )}
-
-      {!mfaEnabled && (
-        <p className={`${NOTE_PANEL_CLASS} px-3 py-2 text-xs leading-relaxed`} role="note">
-          {t("settings.mfa.recoveryHint")}
-        </p>
-      )}
-
-      {mfaVaultLocked && (
-        <p className="font-mono text-xs text-vault-muted">{t("settings.mfa.vaultLockedHint")}</p>
-      )}
-
-      {mfaDisableConfirm ? (
-        <div className={`${CONFIRM_PANEL_CLASS} p-4`}>
-          <p className="font-mono text-xs leading-relaxed text-vault-muted">
-            {t("settings.mfa.disableConfirm")}
-          </p>
-          <div className="mt-3 flex gap-2">
-            <VaultButton variant="ghost" size="sm" onClick={onCancelDisable} disabled={mfaDisabling}>
-              {t("common.cancel")}
-            </VaultButton>
-            <VaultButton
-              variant="outline"
-              tone="danger"
-              size="sm"
-              onClick={onConfirmDisable}
-              disabled={mfaDisabling}
-            >
-              {mfaDisabling ? t("settings.mfa.disabling") : t("settings.mfa.disableConfirmAction")}
-            </VaultButton>
+    <div className="flex max-w-xl flex-col gap-4">
+      <div className="vault-card flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-vault-text">{t("settings.mfa.title")}</span>
+            <span className="text-xs text-vault-muted">{t("settings.mfa.modalHint")}</span>
           </div>
+          <span
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+              mfaEnabled
+                ? "bg-vault-success-subtle text-vault-success"
+                : "border border-vault-border bg-vault-bg text-vault-muted"
+            }`}
+          >
+            {mfaEnabled ? `✓ ${t("settings.mfa.statusEnabled")}` : t("common.no")}
+          </span>
         </div>
-      ) : (
-        <VaultButton
-          variant={mfaEnabled ? "outline" : "primary"}
-          size="sm"
-          onClick={onMfaPrimaryAction}
-          disabled={mfaControlsDisabled}
-        >
-          {mfaButtonLabel(mfaLoading, mfaEnabled, t)}
-        </VaultButton>
-      )}
 
-      {mfaError && (
-        <p className="font-mono text-xs text-vault-danger" role="alert">
-          {mfaError}
-        </p>
-      )}
+        <div className="border-t border-vault-border" />
+
+        {mfaEnabled ? null : (
+          <p className="text-xs leading-relaxed text-vault-muted" role="note">
+            {t("settings.mfa.recoveryHint")}
+          </p>
+        )}
+
+        {mfaVaultLocked ? (
+          <p className="text-xs text-vault-muted">{t("settings.mfa.vaultLockedHint")}</p>
+        ) : null}
+
+        {mfaDisableConfirm ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs leading-relaxed text-vault-muted">
+              {t("settings.mfa.disableConfirm")}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onCancelDisable}
+                disabled={mfaDisabling}
+                className="vault-btn-ghost px-3 py-1.5 text-sm disabled:opacity-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmDisable}
+                disabled={mfaDisabling}
+                className="vault-btn-danger px-3 py-1.5 text-sm disabled:opacity-50"
+              >
+                {mfaDisabling ? t("settings.mfa.disabling") : t("settings.mfa.disableConfirmAction")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onMfaPrimaryAction}
+            disabled={mfaControlsDisabled}
+            className={`self-start px-3 py-1.5 text-sm disabled:opacity-50 ${
+              mfaEnabled ? "vault-btn-danger" : "vault-btn-primary"
+            }`}
+          >
+            {mfaButtonLabel(mfaLoading, mfaEnabled, t)}
+          </button>
+        )}
+
+        {mfaError ? (
+          <p className="text-xs text-vault-danger" role="alert">
+            {mfaError}
+          </p>
+        ) : null}
+      </div>
 
       {isMultiUser ? <ChangeUserPasswordPanel /> : null}
     </div>

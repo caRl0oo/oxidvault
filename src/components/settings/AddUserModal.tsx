@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { MasterPasswordInput, evaluateMasterPassword } from "@/components/MasterPasswordInput";
 import { ModalDialog } from "@/components/ui/ModalDialog";
 import { VaultButton } from "@/components/ui/VaultButton";
-import { CONFIRM_PANEL_CLASS, MODAL_PANEL_CLASS } from "@/lib/uiClasses";
+import { CONFIRM_PANEL_CLASS, MODAL_PANEL_CLASS, UI } from "@/lib/uiClasses";
 import { openWebsiteUrl } from "@/lib/openWebsite";
 import { runAsync } from "@/lib/runAsync";
 import type { UserRole } from "@/types/vault";
@@ -16,9 +16,8 @@ const UPGRADE_URL = "https://oxidvault.de";
 
 const panelClass = `${MODAL_PANEL_CLASS} w-full max-w-md space-y-4`;
 const titleClass = "font-mono text-sm font-semibold text-vault-text";
-const labelClass = "font-mono text-xs text-vault-muted";
-const inputClass =
-  "w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm";
+const labelClass = UI.fieldLabel;
+const inputClass = UI.input;
 const mismatchClass = "font-mono text-xs text-vault-danger";
 const licenseBannerClass = `${CONFIRM_PANEL_CLASS} space-y-2 p-4`;
 const licenseTitleClass = "font-mono text-sm font-semibold text-vault-text";

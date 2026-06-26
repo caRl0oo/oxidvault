@@ -18,6 +18,7 @@ interface MasterPasswordInputProps {
   readonly placeholder?: string;
   readonly autoComplete?: string;
   readonly showPolicyHints?: boolean;
+  readonly autoFocus?: boolean;
 }
 
 function passwordBorderClass(value: string, valid: boolean): string {
@@ -106,6 +107,7 @@ export function MasterPasswordInput({
   placeholder,
   autoComplete = "new-password",
   showPolicyHints = true,
+  autoFocus,
 }: Readonly<MasterPasswordInputProps>) {
   const { t, i18n } = useTranslation();
   const resolvedPlaceholder = placeholder ?? t("auth.masterPasswordPlaceholder");
@@ -124,6 +126,7 @@ export function MasterPasswordInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={resolvedPlaceholder}
         autoComplete={autoComplete}
+        autoFocus={autoFocus}
         minLength={minLength}
         className={`w-full rounded border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted outline-none transition-colors ${passwordBorderClass(value, policy.valid)}`}
       />

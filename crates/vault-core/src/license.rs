@@ -3,11 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Public key injected at build time via OXIDVAULT_PUBLIC_KEY env var.
+/// Never hardcoded — safe for open source repository.
+/// Empty string = license validation disabled (CE mode only).
+const LICENSE_PUBLIC_KEY: &str = env!("OXIDVAULT_PUBLIC_KEY");
+
 pub const CE_MAX_USERS: usize = 5;
 
-const PLACEHOLDER_HMAC_KEY: &[u8] = b"OXIDVAULT_LICENSE_KEY_REPLACE_ME";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Plan {
     Community,
     Enterprise,
@@ -27,14 +30,11 @@ pub struct LicenseFile {
 pub struct ActiveLicense {
     pub plan: Plan,
     pub licensee: String,
-    /// 0 = unlimited
     pub max_users: usize,
     pub valid_until: String,
 }
 
 impl ActiveLicense {
-    /// Returns true if this license allows adding another user
-    /// given the current user count.
     pub fn can_add_user(&self, current_user_count: usize) -> bool {
         match self.plan {
             Plan::Enterprise => true,
@@ -47,10 +47,28 @@ impl ActiveLicense {
     }
 }
 
-/// Load and validate the license file.
-/// Returns Community license if no file exists.
-/// Returns Err if file exists but is invalid/tampered.
+pub fn community_license() -> ActiveLicense {
+    ActiveLicense {
+        plan: Plan::Community,
+        licensee: "Community Edition".to_string(),
+        max_users: CE_MAX_USERS,
+        valid_until: "unlimited".to_string(),
+    }
+}
+
+/// Load and validate license file.
+/// Returns Community Edition if:
+/// - No license file exists
+/// - Public key not set at build time
+/// - Signature invalid
+/// - License expired
+///
+/// Returns Err only if file exists but is malformed JSON.
 pub fn load_license() -> Result<ActiveLicense, LicenseError> {
+    if LICENSE_PUBLIC_KEY.is_empty() {
+        return Ok(community_license());
+    }
+
     let path = license_path();
 
     if !path.exists() {
@@ -65,7 +83,7 @@ pub fn load_license() -> Result<ActiveLicense, LicenseError> {
     verify_signature(&file)?;
 
     let today = today_iso();
-    if file.valid_until < today {
+    if file.valid_until != "unlimited" && file.valid_until < today {
         return Err(LicenseError::Expired {
             valid_until: file.valid_until,
         });
@@ -85,60 +103,39 @@ pub fn load_license() -> Result<ActiveLicense, LicenseError> {
     })
 }
 
-pub fn community_license() -> ActiveLicense {
-    ActiveLicense {
-        plan: Plan::Community,
-        licensee: "Community Edition".to_string(),
-        max_users: CE_MAX_USERS,
-        valid_until: "unlimited".to_string(),
-    }
-}
-
-fn get_hmac_key() -> Vec<u8> {
-    if let Ok(key) = std::env::var("OXIDVAULT_LICENSE_KEY") {
-        return key.into_bytes();
-    }
-
-    let key_path = hmac_key_path();
-    if let Ok(key) = std::fs::read_to_string(&key_path) {
-        return key.trim().as_bytes().to_vec();
-    }
-
-    PLACEHOLDER_HMAC_KEY.to_vec()
-}
-
-fn hmac_key_path() -> std::path::PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        std::path::PathBuf::from(r"C:\ProgramData\OxidVault\license_hmac.key")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::path::PathBuf::from("/etc/oxidvault/license_hmac.key")
-    }
-}
-
 fn verify_signature(file: &LicenseFile) -> Result<(), LicenseError> {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
+    use base64::Engine;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let public_bytes = base64::engine::general_purpose::STANDARD
+        .decode(LICENSE_PUBLIC_KEY)
+        .map_err(|_| LicenseError::SignatureInvalid)?;
+
+    let public_key = VerifyingKey::from_bytes(
+        &public_bytes
+            .try_into()
+            .map_err(|_| LicenseError::SignatureInvalid)?,
+    )
+    .map_err(|_| LicenseError::SignatureInvalid)?;
+
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&file.signature)
+        .map_err(|_| LicenseError::SignatureInvalid)?;
+
+    let signature = Signature::from_bytes(
+        &sig_bytes
+            .try_into()
+            .map_err(|_| LicenseError::SignatureInvalid)?,
+    );
 
     let payload = format!(
         "{}|{}|{}|{}|{}",
         file.licensee, file.plan, file.max_users, file.valid_until, file.issued_at,
     );
 
-    let hmac_key = get_hmac_key();
-    let mut mac = Hmac::<Sha256>::new_from_slice(&hmac_key)
-        .map_err(|_| LicenseError::SignatureInvalid)?;
-    mac.update(payload.as_bytes());
-
-    let expected = hex::encode(mac.finalize().into_bytes());
-
-    if expected != file.signature {
-        return Err(LicenseError::SignatureInvalid);
-    }
-
-    Ok(())
+    public_key
+        .verify(payload.as_bytes(), &signature)
+        .map_err(|_| LicenseError::SignatureInvalid)
 }
 
 fn license_path() -> std::path::PathBuf {
@@ -162,7 +159,7 @@ pub enum LicenseError {
     ReadFailed,
     #[error("License file has invalid format")]
     InvalidFormat,
-    #[error("License signature is invalid — file may be tampered")]
+    #[error("License signature is invalid")]
     SignatureInvalid,
     #[error("License expired on {valid_until}")]
     Expired { valid_until: String },

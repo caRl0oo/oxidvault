@@ -3,6 +3,7 @@
 
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { UI } from "@/lib/uiClasses";
 
 interface TagInputProps {
   readonly tags: string[];
@@ -77,7 +78,7 @@ export function TagInput({ tags, onChange, disabled }: Readonly<TagInputProps>) 
           if (draft.trim()) addTag(draft);
         }}
         placeholder={t("tags.inputPlaceholder")}
-        className="w-full rounded border border-vault-border bg-vault-bg px-3 py-2 font-mono text-sm placeholder:text-vault-muted focus:border-vault-accent outline-none disabled:opacity-50"
+        className={UI.input}
       />
     </div>
   );

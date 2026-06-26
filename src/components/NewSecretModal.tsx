@@ -11,6 +11,7 @@ import {
   type ReactElement,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { PasswordGenerateButton } from "@/components/PasswordGenerateButton";
 import { TagInput } from "@/components/TagInput";
 import { OverlayModal } from "@/components/ui/OverlayModal";
@@ -25,7 +26,7 @@ import {
 } from "@/lib/vaultLabels";
 import { runAsync } from "@/lib/runAsync";
 import { secretFormSubmitLabel } from "@/lib/secretFormLabels";
-import { INPUT_FIELD_CLASS, MODAL_FOOTER_CLASS } from "@/lib/uiClasses";
+import { UI } from "@/lib/uiClasses";
 import type {
   SecretEntryInputFull,
   SecretEntryPublic,
@@ -240,7 +241,19 @@ export function NewSecretModal({
     }
   };
 
-  const inputClass = INPUT_FIELD_CLASS;
+  const inputClass = UI.input;
+
+  const typeButtonClass = (kindOption: SecretKind) =>
+    `flex cursor-pointer flex-col gap-0.5 rounded-xl border p-3 text-left transition-all duration-150 ${
+      kind === kindOption
+        ? "border-vault-accent bg-vault-accent-subtle"
+        : "border-vault-border bg-vault-bg hover:bg-vault-sidebar-item-hover"
+    }`;
+
+  const typeLabelClass = (kindOption: SecretKind) =>
+    `text-sm font-medium ${
+      kind === kindOption ? "text-vault-accent" : "text-vault-text"
+    }`;
 
   const openGenerator = (apply: (pwd: string) => void) => {
     onOpenGenerator?.(apply);
@@ -256,52 +269,64 @@ export function NewSecretModal({
       ariaLabelledBy="secret-form-title"
       closeDisabled={loading || loadingSecrets}
       closeLabel={t("common.closeDialog")}
-      panelClassName="max-w-lg"
+      panelClassName="max-h-[85vh] w-full max-w-[520px] gap-0 overflow-hidden rounded-2xl border border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]"
     >
-        <header className="border-b border-vault-border px-5 py-4">
-          <h2 id="secret-form-title" className="font-mono text-sm font-semibold">
+      <header className="flex items-center justify-between border-b border-vault-border px-6 py-4">
+        <div>
+          <h2 id="secret-form-title" className={`${UI.title} text-base`}>
             {isEdit ? t("secretForm.editTitle") : t("secretForm.createTitle")}
           </h2>
-          <p className="mt-1 text-xs text-vault-muted">
+          <p className={`${UI.muted} mt-0.5 text-xs`}>
             {isEdit
               ? t("secretForm.editSubtitle", { type: getSecretTypeLabel(kind) })
               : t("secretForm.createSubtitle")}
           </p>
-        </header>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading || loadingSecrets}
+          className={`${UI.btnGhost} rounded-lg p-1.5 disabled:opacity-50`}
+          aria-label={t("common.closeDialog")}
+        >
+          <X size={16} aria-hidden />
+        </button>
+      </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {!isEdit && (
-            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {SECRET_KINDS.map((kindOption) => (
-                <button
-                  key={kindOption}
-                  type="button"
-                  onClick={() => setKind(kindOption)}
-                  className={`rounded border px-2 py-2 text-left transition ${
-                    kind === kindOption
-                      ? "border-vault-accent bg-vault-accent/15 text-vault-text"
-                      : "border-vault-border text-vault-muted hover:border-vault-accent/50"
-                  }`}
-                >
-                  <span className="block font-mono text-[11px] font-medium">
-                    {getSecretTypeLabel(kindOption)}
-                  </span>
-                  <span className="mt-0.5 block text-[10px] opacity-70">
-                    {getSecretTypeDescription(kindOption)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+      {isEdit ? null : (
+        <div className="px-6 pt-4 pb-2">
+          <div className={`${UI.fieldLabel} mb-2`}>
+            {t("secretForm.typeLabel", { defaultValue: "Type" })}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {SECRET_KINDS.map((kindOption) => (
+              <button
+                key={kindOption}
+                type="button"
+                onClick={() => setKind(kindOption)}
+                className={typeButtonClass(kindOption)}
+              >
+                <span className={typeLabelClass(kindOption)}>
+                  {getSecretTypeLabel(kindOption)}
+                </span>
+                <span className="text-xs text-vault-muted">
+                  {getSecretTypeDescription(kindOption)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
-          <form
-            id="secret-form"
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }}
-          >
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+        <form
+          id="secret-form"
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+        >
             <Field label={t("secretForm.title")} required>
               <input
                 ref={titleRef}
@@ -326,7 +351,7 @@ export function NewSecretModal({
               <TagInput tags={tags} onChange={setTags} disabled={loading} />
             </Field>
 
-            <Field label={t("secretForm.expiresAt")}>
+            <Field label={t("secretForm.expiresAt")} optional>
               <input
                 type="date"
                 value={expiresAt}
@@ -607,25 +632,26 @@ export function NewSecretModal({
               </Field>
             )}
           </form>
-        </div>
+      </div>
 
-        <footer className={MODAL_FOOTER_CLASS}>
-          <button
-            type="submit"
-            form="secret-form"
-            disabled={loading || loadingSecrets || !canSubmit}
-            className="flex-1 rounded bg-vault-accent py-2 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover disabled:opacity-50"
-          >
-            {submitLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-vault-border px-4 py-2 font-mono text-xs text-vault-muted hover:text-vault-text"
-          >
-            {t("common.cancel")}
-          </button>
-        </footer>
+      <footer className="flex items-center justify-end gap-2 border-t border-vault-border bg-vault-bg px-6 py-4">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading || loadingSecrets}
+          className={`${UI.btnSecondary} px-4 py-2`}
+        >
+          {t("common.cancel")}
+        </button>
+        <button
+          type="submit"
+          form="secret-form"
+          disabled={loading || loadingSecrets || !canSubmit}
+          className={`${UI.btnPrimary} px-4 py-2 disabled:opacity-50`}
+        >
+          {submitLabel}
+        </button>
+      </footer>
     </OverlayModal>
   );
 }
@@ -633,10 +659,12 @@ export function NewSecretModal({
 function Field({
   label,
   required,
+  optional,
   children,
 }: Readonly<{
   label: string;
   required?: boolean;
+  optional?: boolean;
   children: React.ReactNode;
 }>) {
   const { t } = useTranslation();
@@ -651,18 +679,29 @@ function Field({
     ? cloneElement(children as ReactElement<{ id?: string }>, { id: fieldId })
     : children;
 
+  const labelContent = (
+    <>
+      {label}
+      {required ? (
+        <span className="text-vault-danger"> {t("common.requiredMark")}</span>
+      ) : null}
+      {optional ? (
+        <span className="normal-case text-vault-muted">
+          {" "}
+          ({t("common.optional", { defaultValue: "optional" })})
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
-    <div className="block space-y-1">
+    <div className="flex flex-col gap-1.5">
       {isDirectControl ? (
-        <label htmlFor={fieldId} className="font-mono text-[11px] text-vault-muted">
-          {label}
-          {required ? t("common.requiredMark") : null}
+        <label htmlFor={fieldId} className={UI.fieldLabel}>
+          {labelContent}
         </label>
       ) : (
-        <span className="font-mono text-[11px] text-vault-muted">
-          {label}
-          {required ? t("common.requiredMark") : null}
-        </span>
+        <span className={UI.fieldLabel}>{labelContent}</span>
       )}
       {child}
     </div>

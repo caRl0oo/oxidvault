@@ -7,7 +7,6 @@ import { VaultWorkspaceModals } from "@/components/VaultWorkspaceModals";
 import { VaultWorkspaceSidebar } from "@/components/VaultWorkspaceSidebar";
 import {
   buildTerminalLayoutKey,
-  formatEntryCountLabel,
   isSshSplitActive,
 } from "@/components/vaultWorkspaceHelpers";
 import { useResizableSplit } from "@/hooks/useResizableSplit";
@@ -76,11 +75,6 @@ export function VaultWorkspace(props: Readonly<VaultWorkspaceProps>) {
     enabled: sshSplitActive,
   });
 
-  const entryCountLabel = formatEntryCountLabel(
-    props.hasSidebarFilter,
-    props.filteredEntries.length,
-    props.entries.length,
-  );
   const terminalLayoutKey = buildTerminalLayoutKey(
     props.sshFocusMode,
     vaultWidthPx ?? "init",
@@ -118,7 +112,8 @@ export function VaultWorkspace(props: Readonly<VaultWorkspaceProps>) {
         searchRef={props.searchRef}
         entries={props.entries}
         filteredEntries={props.filteredEntries}
-        entryCountLabel={entryCountLabel}
+        filteredCount={props.filteredEntries.length}
+        totalCount={props.entries.length}
         hasSidebarFilter={props.hasSidebarFilter}
         activeTag={props.activeTag}
         onTagChange={props.onTagChange}

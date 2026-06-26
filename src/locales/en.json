@@ -81,6 +81,9 @@
   "vault": {
     "searchPlaceholder": "Title, URL, user…",
     "entriesCount": "Entries · {{count}}",
+    "entryCount_one": "{{count}} entry",
+    "entryCount_other": "{{count}} entries",
+    "entryCountFiltered": "{{filtered}} of {{total}} entries",
     "noMatches": "No matches",
     "noEntries": "No entries",
     "addSecret": "+ New secret",

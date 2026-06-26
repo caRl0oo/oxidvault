@@ -1,55 +1,50 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.de>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use clap::Parser;
-use hmac::{Hmac, Mac};
+use base64::Engine;
+use clap::{Parser, Subcommand};
+use ed25519_dalek::{Signer, SigningKey};
+use rand::rngs::OsRng;
 use serde::Serialize;
-use sha2::Sha256;
-
-fn get_hmac_key() -> Vec<u8> {
-    if let Ok(key) = std::env::var("OXIDVAULT_LICENSE_KEY") {
-        return key.into_bytes();
-    }
-
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let key_path = std::path::Path::new(&home).join(".oxidvault_license_key");
-
-    if let Ok(key) = std::fs::read_to_string(&key_path) {
-        return key.trim().as_bytes().to_vec();
-    }
-
-    eprintln!("❌ HMAC key not found!");
-    eprintln!("   Set OXIDVAULT_LICENSE_KEY environment variable");
-    eprintln!("   or create ~/.oxidvault_license_key");
-    std::process::exit(1);
-}
 
 #[derive(Parser)]
 #[command(
     name = "license-generator",
-    about = "OxidVault License Generator — internal use only",
-    long_about = None
+    about = "OxidVault License Generator — internal use only"
 )]
-struct Args {
-    /// Company name (licensee)
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Generate a new Ed25519 keypair (run once)
+    GenerateKeypair {
+        #[arg(short, long, default_value = "oxidvault_private.key")]
+        output: String,
+    },
+    /// Generate a signed license file
+    Generate(GenerateArgs),
+}
+
+#[derive(Parser)]
+struct GenerateArgs {
     #[arg(short, long)]
     licensee: String,
 
-    /// License plan: community or enterprise
     #[arg(short, long, default_value = "enterprise")]
     plan: String,
 
-    /// Max users (0 = unlimited, 5 = CE limit)
     #[arg(short, long, default_value = "0")]
     max_users: u32,
 
-    /// Valid until date (YYYY-MM-DD)
     #[arg(short, long)]
     valid_until: String,
 
-    /// Output file path
+    #[arg(long, default_value = "oxidvault_private.key")]
+    private_key: String,
+
     #[arg(short, long, default_value = "oxidvault.license")]
     output: String,
 }
@@ -65,19 +60,74 @@ struct LicenseFile {
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
+    match cli.command {
+        Commands::GenerateKeypair { output } => {
+            generate_keypair(&output);
+        }
+        Commands::Generate(args) => {
+            generate_license(&args);
+        }
+    }
+}
+
+fn generate_keypair(output: &str) {
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let verifying_key = signing_key.verifying_key();
+
+    let private_b64 = base64::engine::general_purpose::STANDARD.encode(signing_key.to_bytes());
+    std::fs::write(output, &private_b64).expect("Could not write private key file");
+
+    let public_b64 = base64::engine::general_purpose::STANDARD.encode(verifying_key.to_bytes());
+
+    println!("✅ Ed25519 keypair generated");
+    println!();
+    println!("🔑 Private key saved to: {output}");
+    println!("   Keep this SECRET — never commit, never share");
+    println!("   Store in your password manager (OxidVault 😄)");
+    println!();
+    println!("📋 Public key — set as build environment variable:");
+    println!();
+    println!("   $env:OXIDVAULT_PUBLIC_KEY = \"{public_b64}\"");
+    println!("   cargo build --release");
+    println!();
+    println!("   The public key will be embedded in the binary.");
+    println!("   It is NOT a secret — safe to embed.");
+    println!();
+    println!("⚠️  Add private key to .gitignore: {output}");
+}
+
+fn generate_license(args: &GenerateArgs) {
     if args.plan != "community" && args.plan != "enterprise" {
         eprintln!("❌ Error: plan must be 'community' or 'enterprise'");
         std::process::exit(1);
     }
 
     if chrono::NaiveDate::parse_from_str(&args.valid_until, "%Y-%m-%d").is_err() {
-        eprintln!("❌ Error: valid_until must be YYYY-MM-DD (e.g. 2027-06-25)");
+        eprintln!("❌ Error: valid_until must be YYYY-MM-DD");
         std::process::exit(1);
     }
 
-    let hmac_key = get_hmac_key();
+    let private_b64 = std::fs::read_to_string(&args.private_key).unwrap_or_else(|_| {
+        eprintln!("❌ Could not read private key: {}", args.private_key);
+        eprintln!("   Run 'generate-keypair' first");
+        std::process::exit(1);
+    });
+
+    let private_bytes = base64::engine::general_purpose::STANDARD
+        .decode(private_b64.trim())
+        .unwrap_or_else(|_| {
+            eprintln!("❌ Invalid base64 in private key file");
+            std::process::exit(1);
+        });
+
+    let private_array: [u8; 32] = private_bytes.try_into().unwrap_or_else(|_| {
+        eprintln!("❌ Invalid key length — expected 32 bytes");
+        std::process::exit(1);
+    });
+
+    let signing_key = SigningKey::from_bytes(&private_array);
     let issued_at = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
     let payload = format!(
@@ -85,17 +135,16 @@ fn main() {
         args.licensee, args.plan, args.max_users, args.valid_until, issued_at,
     );
 
-    let mut mac = Hmac::<Sha256>::new_from_slice(&hmac_key).expect("HMAC key error");
-    mac.update(payload.as_bytes());
-    let signature = hex::encode(mac.finalize().into_bytes());
+    let signature = signing_key.sign(payload.as_bytes());
+    let signature_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
 
     let license = LicenseFile {
         licensee: args.licensee.clone(),
         plan: args.plan.clone(),
         max_users: args.max_users,
         valid_until: args.valid_until.clone(),
-        issued_at: issued_at.clone(),
-        signature,
+        issued_at,
+        signature: signature_b64,
     };
 
     let json = serde_json::to_string_pretty(&license).expect("Serialization error");
@@ -114,7 +163,6 @@ fn main() {
         }
     );
     println!("   Valid until: {}", args.valid_until);
-    println!("   Issued at:   {}", issued_at);
     println!("   Output:      {}", args.output);
     println!();
     println!("📋 Customer deployment:");

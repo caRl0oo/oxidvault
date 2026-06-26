@@ -947,6 +947,11 @@ export default function App() {
   return (
     <Layout
       vaultStatus={vaultStatus}
+      vaultLocked={vaultLocked}
+      gitSyncEnabled={Boolean(vaultInfo?.initialized && gitSyncSettings.enabled)}
+      gitSyncing={gitSyncing}
+      gitSyncError={gitSyncError}
+      onOpenGitSettings={openGitSettings}
       onOpenSettings={() => openSettings("general")}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

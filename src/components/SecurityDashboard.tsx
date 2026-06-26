@@ -10,6 +10,7 @@ import type { DuplicatePasswordGroup, ExpiringPasswordEntry, SecurityAuditReport
 import type { DashboardFilter, DashboardFilterKind } from "@/types/dashboardFilter";
 import { buildDashboardFilter } from "@/types/dashboardFilter";
 import { formatExpiryDate } from "@/lib/expiry";
+import { UI } from "@/lib/uiClasses";
 
 function scoreTextClass(percent: number): string {
   if (percent >= 80) {
@@ -55,15 +56,15 @@ type MetricTileTone = "neutral" | "danger" | "success" | "warning";
 
 function metricTileToneClass(tone: MetricTileTone): string {
   if (tone === "danger") {
-    return "border-vault-danger/40 bg-vault-danger/10 text-vault-danger";
+    return "border-vault-danger/40 bg-vault-danger-subtle text-vault-danger";
   }
   if (tone === "warning") {
-    return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+    return "border-vault-warning/40 bg-vault-warning-subtle text-vault-warning";
   }
   if (tone === "success") {
-    return "border-vault-success/40 bg-vault-success/10 text-vault-success";
+    return "border-vault-success/40 bg-vault-success-subtle text-vault-success";
   }
-  return "border-vault-border bg-vault-bg text-vault-text";
+  return "";
 }
 
 interface SecurityDashboardProps {
@@ -131,7 +132,7 @@ export function SecurityDashboard({
         <button
           type="button"
           onClick={handleRunAudit}
-          className="rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text"
+          className={`${UI.btnSecondary} text-xs`}
         >
           {t("common.retry")}
         </button>
@@ -199,8 +200,8 @@ function SecurityAuditReportView({
   };
 
   return (
-    <div className="flex flex-col p-6">
-      <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="flex w-full flex-col p-6">
+      <div className="w-full space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h2 className="font-mono text-lg font-semibold">{translate("security.title")}</h2>
@@ -210,7 +211,7 @@ function SecurityAuditReportView({
             type="button"
             onClick={onRunAudit}
             disabled={loading}
-            className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:border-vault-accent hover:text-vault-accent disabled:opacity-50"
+            className={`${UI.btnSecondary} shrink-0 text-xs disabled:opacity-50`}
           >
             {loading ? translate("common.loading") : translate("common.refresh")}
           </button>
@@ -218,10 +219,8 @@ function SecurityAuditReportView({
 
         {diagnosticsPanel ? <div className="mb-6">{diagnosticsPanel}</div> : null}
 
-        <div className="rounded-lg border border-vault-border bg-vault-surface p-5">
-          <p className="font-mono text-[11px] uppercase tracking-wider text-vault-muted">
-            {translate("security.vault_security_score")}
-          </p>
+        <div className={`${UI.card} p-5`}>
+          <span className={UI.fieldLabel}>{translate("security.vault_security_score")}</span>
           <p
             className={`mt-1 font-mono text-4xl font-semibold tabular-nums ${scoreTextClass(report.scorePercent)}`}
           >
@@ -238,7 +237,7 @@ function SecurityAuditReportView({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mb-6 grid grid-cols-3 gap-3">
           <MetricTile
             label={translate("security.weak_passwords")}
             value={report.weakCount}
@@ -280,9 +279,7 @@ function SecurityAuditReportView({
 
         {report.duplicateGroups.length > 0 && (
           <section className="space-y-3">
-            <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-muted">
-              {translate("security.duplicate_section")}
-            </h3>
+            <h3 className={UI.sectionLabel}>{translate("security.duplicate_section")}</h3>
             {report.duplicateGroups.map((group) => (
               <div
                 key={duplicateGroupKey(group)}
@@ -299,12 +296,13 @@ function SecurityAuditReportView({
 
         {report.weakEntries.length > 0 && (
           <section className="space-y-3">
-            <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-muted">
-              {translate("security.weak_section")}
-            </h3>
-            <div className="divide-y divide-vault-border rounded border border-vault-border">
+            <h3 className={UI.sectionLabel}>{translate("security.weak_section")}</h3>
+            <div className={`${UI.card} divide-y divide-vault-border p-0`}>
               {report.weakEntries.map((entry) => (
-                <div key={entry.entryId} className="flex items-start justify-between gap-3 p-3">
+                <div
+                  key={entry.entryId}
+                  className="flex items-start justify-between gap-3 px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover"
+                >
                   <button
                     type="button"
                     onClick={() => onSelectEntry?.(entry.entryId)}
@@ -330,17 +328,15 @@ function SecurityAuditReportView({
 
         {report.expiringEntries.length > 0 && (
           <section className="space-y-3">
-            <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-vault-muted">
-              {translate("security.expiring_section")}
-            </h3>
-            <div className="divide-y divide-vault-border rounded border border-vault-border">
+            <h3 className={UI.sectionLabel}>{translate("security.expiring_section")}</h3>
+            <div className={`${UI.card} divide-y divide-vault-border p-0`}>
               {report.expiringEntries.map((entry) => {
                 const isExpired = entry.status === "expired";
                 return (
                   <div
                     key={entry.entryId}
-                    className={`flex items-start justify-between gap-3 p-3 ${
-                      isExpired ? "bg-vault-danger/5" : "bg-amber-500/5"
+                    className={`flex items-start justify-between gap-3 px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover ${
+                      isExpired ? "bg-vault-danger-subtle/50" : "bg-vault-warning-subtle/50"
                     }`}
                   >
                     <button
@@ -354,8 +350,8 @@ function SecurityAuditReportView({
                       <span
                         className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
                           isExpired
-                            ? "border-vault-danger/40 bg-vault-danger/10 text-vault-danger"
-                            : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                            ? "border-vault-danger/40 bg-vault-danger-subtle text-vault-danger"
+                            : "border-vault-warning/40 bg-vault-warning-subtle text-vault-warning"
                         }`}
                       >
                         {expiryStatusLabel(entry.status)}
@@ -432,18 +428,20 @@ function MetricTile({
   const toneClass = metricTileToneClass(tone);
 
   const interactiveClass = clickable
-    ? "cursor-pointer transition hover:brightness-110 hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-vault-accent"
+    ? "cursor-pointer transition-shadow duration-150 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-vault-accent"
     : "";
 
   const activeClass = active ? "ring-1 ring-vault-accent/60" : "";
 
   const content = (
     <>
-      <p className="font-mono text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 font-mono text-[10px] opacity-80">{label}</p>
+      <span className={UI.fieldLabel}>{label}</span>
       {clickable && filterHint ? (
-        <p className="mt-1.5 font-mono text-[9px] uppercase tracking-wider opacity-60">{filterHint}</p>
+        <span className="text-sm font-medium text-vault-text">{filterHint}</span>
       ) : null}
+      <span className={`text-sm font-semibold tabular-nums ${toneClass || "text-vault-text"}`}>
+        {value}
+      </span>
     </>
   );
 
@@ -454,12 +452,12 @@ function MetricTile({
         onClick={onClick}
         aria-label={filterAria ?? label}
         aria-pressed={active}
-        className={`rounded border p-3 text-left ${toneClass} ${interactiveClass} ${activeClass}`}
+        className={`${UI.card} flex flex-col gap-2 text-left ${toneClass} ${interactiveClass} ${activeClass}`}
       >
         {content}
       </button>
     );
   }
 
-  return <div className={`rounded border p-3 ${toneClass}`}>{content}</div>;
+  return <div className={`${UI.card} flex flex-col gap-2 ${toneClass}`}>{content}</div>;
 }

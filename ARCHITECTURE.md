@@ -493,7 +493,7 @@ OxidVault/
 │           ├── lib.rs       ← Re-Exports
 │           ├── crypto.rs    ← Argon2id KDF, AES-256-GCM
 │           ├── format.rs    ← .oxid Lesen/Schreiben
-│           ├── license.rs   ← CE/EE Lizenz (HMAC-SHA256, offline)
+│           ├── license.rs   ← CE/EE Lizenz (Ed25519, offline)
 │           ├── lock.rs      ← exklusiver Vault-Datei-Lock
 │           ├── policy/      ← Master-Passwort-Regeln + Admin-GPO (`policy.json`)
 │           ├── entry.rs     ← SecretEntry, SecretEntryPublic, SecretField
@@ -2198,7 +2198,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 1.0.0 | **Multi-User Vault Phase 1:** Format v3 (`VaultUser[]` im Klartext-Header, shared DEK), `vault_user.rs`, `create_v3` / `unlock_as_user` / User-Management / `migrate_to_v3`, neue Audit-Events |
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
-| 2026-06-25 | 2.0.0 | **License HMAC-Key:** extern via `OXIDVAULT_LICENSE_KEY` / `license_hmac.key` — nicht mehr im Quellcode |
+| 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
+| 2026-06-25 | 2.0.0 | **License HMAC-Key:** extern via `OXIDVAULT_LICENSE_KEY` / `license_hmac.key` — nicht mehr im Quellcode (ersetzt durch Ed25519) |
 | 2026-06-25 | 2.0.0 | **License Feature-Gate:** `license.rs` HMAC-SHA256 offline Validierung, CE 5-User-Limit, `get_license_info` Command, Upgrade-Banner in `UserManagementPanel` |
 | 2026-06-25 | 2.0.0 | **MFA v3:** `session_kek` in Vault-RAM, enable/disable/verify per User-Eintrag (KEK-verschlüsselt im Header), `persist_v3_header` (kein Payload-Re-Encrypt), Unlock-MFA-Check in `unlock_as_user`, Routing in `enable_mfa`/`disable_mfa`/`verify_mfa_code`/`get_mfa_status` |
 | 2026-06-25 | 1.0.0 | **MSI Native Messaging Auto-Setup:** WiX-Fragment `src-tauri/wix/native_messaging.wxs` registriert Host-Manifest + Chrome/Edge-HKCU-Keys automatisch bei Installation (Cleanup bei Uninstall) |
@@ -2445,17 +2446,19 @@ sudo chmod 644 /etc/oxidvault/policy.json
 - Fehlt die Datei → Community Edition (kein Fehler, kein Absturz)
 - Ungültige Signatur → Community Edition (silent fallback, Log-Warnung)
 - Abgelaufen → Community Edition (silent fallback)
-- Validierung: HMAC-SHA256, vollständig offline
+- Validierung: Ed25519, vollständig offline
 
-### HMAC-Schlüssel (nicht im Quellcode)
+### Lizenz-Signierung
 
-| Priorität | Quelle |
+| Aspekt | Detail |
 |---|---|
-| 1 | Umgebungsvariable `OXIDVAULT_LICENSE_KEY` |
-| 2 | Datei neben Policy: `C:\ProgramData\OxidVault\license_hmac.key` (Windows) · `/etc/oxidvault/license_hmac.key` (Linux/macOS) |
-| 3 | Fallback-Placeholder → ungültige Signaturen (CE) |
-
-**License-Generator (intern):** `OXIDVAULT_LICENSE_KEY` oder `~/.oxidvault_license_key` (Pflicht — kein Placeholder-Fallback).
+| **Algorithmus** | Ed25519 (asymmetrisch) |
+| **Private Key** | Nur beim Entwickler lokal — signiert Lizenzen |
+| **Public Key** | Build-Time Injection via `OXIDVAULT_PUBLIC_KEY` env var — in Binary eingebettet, nie im Quellcode |
+| **Fälschungssicher** | Public Key kann nur verifizieren, nicht signieren |
+| **Open Source Safe** | Kein Key-Material im Repository — sicher für AGPLv3 |
+| **Key-Generierung** | `cargo run -p license-generator -- generate-keypair` |
+| **Fallback** | `OXIDVAULT_PUBLIC_KEY` nicht gesetzt → CE-Modus (kein Fehler) |
 
 **JSON-Format (`oxidvault.license`):**
 
@@ -2466,7 +2469,7 @@ sudo chmod 644 /etc/oxidvault/policy.json
 | `max_users` | `0` = unbegrenzt (EE), `5` = CE-Limit |
 | `valid_until` | ISO-Datum `YYYY-MM-DD` |
 | `issued_at` | ISO-Datum `YYYY-MM-DD` |
-| `signature` | HMAC-SHA256 über alle anderen Felder (pipe-separiert) |
+| `signature` | Ed25519-Signatur (Base64) über alle anderen Felder (pipe-separiert) |
 
 ### Feature-Gates
 

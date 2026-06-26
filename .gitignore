@@ -33,10 +33,10 @@ npm-debug.log*
 *.vault
 *.oxid
 
-# License files — never commit customer licenses or HMAC key
+# License files — never commit customer licenses or private signing keys
 *.license
-license_hmac.key
-.oxidvault_license_key
+oxidvault_private.key
+*.key
 tools/license-generator/target/
 
 # Cursor-Einstellungen (Regeln für die KI)

@@ -16,10 +16,10 @@ export function SidebarNavTab({ label, icon: Icon, active, onClick }: Readonly<S
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-0.5 py-2 font-mono text-xs font-medium transition ${
+      className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-all duration-150 ${
         active
-          ? "border-vault-accent text-vault-accent"
-          : "border-transparent text-vault-muted hover:border-vault-border hover:text-vault-text"
+          ? "border-vault-accent font-medium text-vault-accent"
+          : "border-transparent text-vault-muted hover:text-vault-text"
       }`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />

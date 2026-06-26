@@ -11,16 +11,31 @@ import {
   formatAuditEntryId,
   formatAuditTimestampUtc,
 } from "@/lib/auditLogLabels";
-import {
-  auditActionBadgeClass,
-  auditActionToneClass,
-  getAuditActionVisual,
-} from "@/lib/auditActionVisual";
+import { getAuditActionVisual } from "@/lib/auditActionVisual";
 import { runAsync } from "@/lib/runAsync";
-import { BTN_SECONDARY_CLASS } from "@/lib/uiClasses";
+import { UI } from "@/lib/uiClasses";
 import type { AuditLogEntry } from "@/types/auditLog";
 
 const DEFAULT_LIMIT = 200;
+
+const AUDIT_GRID_CLASS =
+  "grid grid-cols-[160px_1fr_180px_100px] items-center gap-4";
+
+function getActionStyle(action: string): string {
+  if (action.includes("Unlocked") || action.includes("Created")) {
+    return "bg-vault-success-subtle text-vault-success";
+  }
+  if (action.includes("Locked")) {
+    return "bg-vault-bg text-vault-muted border border-vault-border";
+  }
+  if (action.includes("Revealed") || action.includes("Copied")) {
+    return "bg-vault-warning-subtle text-vault-warning";
+  }
+  if (action.includes("Deleted") || action.includes("Failed")) {
+    return "bg-vault-danger-subtle text-vault-danger";
+  }
+  return "bg-vault-accent-subtle text-vault-accent";
+}
 
 interface AuditLogTableProps {
   readonly limit?: number;
@@ -93,23 +108,30 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
     });
   }, [entries, search]);
 
+  const columnHeaders = [
+    t("audit.colTime"),
+    t("audit.colAction"),
+    t("audit.colEntry"),
+    t("audit.colChecksum"),
+  ];
+
   const renderBody = () => {
     if (loading && entries.length === 0) {
       return (
-        <div className="vault-main-scroll flex items-center justify-center p-8">
-          <p className="font-mono text-sm text-vault-muted">{t("audit.loading")}</p>
+        <div className="flex flex-1 items-center justify-center p-8">
+          <p className={UI.muted}>{t("audit.loading")}</p>
         </div>
       );
     }
 
     if (error && entries.length === 0) {
       return (
-        <div className="vault-main-scroll flex flex-col items-center justify-center gap-3 p-8">
-          <p className="font-mono text-sm text-vault-danger">{error}</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
+          <p className="text-sm text-vault-danger">{error}</p>
           <button
             type="button"
             onClick={() => runAsync(loadLogs)}
-            className="rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text"
+            className={`${UI.btnSecondary} text-xs`}
           >
             {t("common.retry")}
           </button>
@@ -117,102 +139,76 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
       );
     }
 
-    return (
-      <div className="vault-main-scroll px-6 py-4">
-        {filteredEntries.length === 0 ? (
-          <p className="py-8 text-center font-mono text-xs text-vault-muted">
+    if (filteredEntries.length === 0) {
+      return (
+        <div className="flex flex-1 items-center justify-center p-8">
+          <p className={UI.muted}>
             {search.trim() ? t("audit.noSearchResults") : t("audit.empty")}
           </p>
-        ) : (
-          <table className="w-full min-w-[640px] border-collapse font-mono text-xs">
-            <thead>
-              <tr className="border-b border-vault-border text-left text-vault-muted">
-                <th scope="col" className="pb-2 pr-4 font-normal">
-                  {t("audit.colTime")}
-                </th>
-                <th scope="col" className="pb-2 pr-4 font-normal">
-                  {t("audit.colAction")}
-                </th>
-                <th scope="col" className="pb-2 pr-4 font-normal">
-                  {t("audit.colEntry")}
-                </th>
-                <th scope="col" className="pb-2 font-normal">
-                  {t("audit.colChecksum")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.map((entry) => {
-                const visual = getAuditActionVisual(entry.action);
-                const Icon = visual.icon;
-                const label = formatAuditAction(entry.action);
-                return (
-                <tr
-                  key={`${entry.timestampUtc}-${entry.entryHash}`}
-                  className="border-b border-vault-border/60 text-vault-text"
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 overflow-y-auto">
+        {filteredEntries.map((entry) => {
+          const visual = getAuditActionVisual(entry.action);
+          const Icon = visual.icon;
+          const label = formatAuditAction(entry.action);
+          return (
+            <div
+              key={`${entry.timestampUtc}-${entry.entryHash}`}
+              className={`${AUDIT_GRID_CLASS} border-b border-vault-border px-6 py-2 transition-colors duration-100 hover:bg-vault-sidebar-item-hover`}
+            >
+              <span className="self-center font-mono text-xs text-vault-muted">
+                {formatAuditTimestampUtc(entry.timestampUtc)}
+              </span>
+              <div className="self-center">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getActionStyle(entry.action)}`}
                 >
-                  <td className="py-2 pr-4 align-top whitespace-nowrap text-vault-muted">
-                    {formatAuditTimestampUtc(entry.timestampUtc)}
-                  </td>
-                  <td className="py-2 pr-4 align-top">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 ${auditActionBadgeClass(visual.tone)}`}
-                    >
-                      <Icon
-                        className={`h-3.5 w-3.5 shrink-0 ${auditActionToneClass(visual.tone)}`}
-                        strokeWidth={2}
-                        aria-hidden
-                      />
-                      <span>{label}</span>
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4 align-top break-all text-vault-muted">
-                    {formatAuditEntryId(entry.action, entry.entryId)}
-                  </td>
-                  <td className="py-2 align-top break-all text-vault-muted/80">
-                    {entry.entryHash.slice(0, 12)}…
-                  </td>
-                </tr>
-              );
-              })}
-            </tbody>
-          </table>
-        )}
-        {error && entries.length > 0 ? (
-          <p className="mt-4 font-mono text-xs text-vault-danger">{error}</p>
-        ) : null}
-        <p className="mt-4 font-mono text-[10px] text-vault-muted">
-          {t("audit.entryCount", { filtered: filteredEntries.length, total: entries.length })}
-          {search.trim() ? t("audit.entryCountFiltered") : ""}
-        </p>
+                  <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                  <span>{label}</span>
+                </span>
+              </div>
+              <span className="self-center truncate font-mono text-xs text-vault-muted">
+                {formatAuditEntryId(entry.action, entry.entryId)}
+              </span>
+              <span className="self-center truncate font-mono text-xs text-vault-muted">
+                {entry.entryHash.slice(0, 8)}…
+              </span>
+            </div>
+          );
+        })}
       </div>
     );
   };
 
   return (
     <div className="vault-main-panel">
-      <header className="shrink-0 border-b border-vault-border px-6 py-4">
-        <h1 className="font-mono text-sm font-semibold text-vault-text">{t("audit.title")}</h1>
-        <p className="mt-1 font-mono text-xs text-vault-muted">{t("audit.subtitle")}</p>
+      <header className="shrink-0 border-b border-vault-border p-6">
+        <h1 className={`${UI.title} text-base`}>{t("audit.title")}</h1>
+        <p className={`${UI.muted} mt-1 text-xs`}>{t("audit.subtitle")}</p>
+        <div
+          className={`${UI.card} mt-3 rounded-lg border-vault-accent bg-vault-accent-subtle p-3 text-xs text-vault-accent`}
+        >
+          {t("audit.privacyHint")}
+        </div>
       </header>
 
-      <div className="shrink-0 border-b border-vault-border bg-vault-surface/40 px-6 py-3">
-        <p className="font-mono text-xs text-vault-muted">{t("audit.privacyHint")}</p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-3 border-b border-vault-border px-6 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b border-vault-border px-6 py-3">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("audit.searchPlaceholder")}
-          className="min-w-0 flex-1 rounded border border-vault-border bg-vault-bg px-3 py-1.5 font-mono text-xs placeholder:text-vault-muted focus:border-vault-accent outline-none"
+          className={`${UI.input} flex-1 text-sm`}
         />
         <button
           type="button"
           onClick={() => runAsync(handleExport)}
           disabled={exporting || loading}
-          className={BTN_SECONDARY_CLASS}
+          className="vault-btn-secondary px-3 py-1.5 text-sm disabled:opacity-50"
         >
           {exporting ? t("audit.exporting") : t("common.export")}
         </button>
@@ -222,7 +218,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
             runAsync(loadLogs);
           }}
           disabled={loading}
-          className="shrink-0 rounded border border-vault-border px-3 py-1.5 font-mono text-xs text-vault-muted hover:text-vault-text disabled:opacity-50"
+          className={`${UI.btnGhost} px-3 py-1.5 text-sm disabled:opacity-50`}
         >
           {t("common.refresh")}
         </button>
@@ -230,17 +226,33 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
 
       {exportMessage ? (
         <div className="shrink-0 border-b border-vault-border px-6 py-2">
-          <p
-            className={`font-mono text-xs ${
-              exportSuccess ? "text-vault-success" : "text-vault-danger"
-            }`}
-          >
+          <p className={`text-xs ${exportSuccess ? "text-vault-success" : "text-vault-danger"}`}>
             {exportMessage}
           </p>
         </div>
       ) : null}
 
+      <div className={`${AUDIT_GRID_CLASS} shrink-0 border-b border-vault-border px-6 py-2`}>
+        {columnHeaders.map((col) => (
+          <span key={col} className={UI.fieldLabel}>
+            {col}
+          </span>
+        ))}
+      </div>
+
       {renderBody()}
+
+      {!loading || entries.length > 0 ? (
+        <div className="shrink-0 border-t border-vault-border px-6 py-3">
+          <p className="text-[10px] text-vault-muted">
+            {t("audit.entryCount", { filtered: filteredEntries.length, total: entries.length })}
+            {search.trim() ? t("audit.entryCountFiltered") : ""}
+          </p>
+          {error && entries.length > 0 ? (
+            <p className="mt-2 text-xs text-vault-danger">{error}</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

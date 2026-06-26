@@ -8,6 +8,7 @@ import { SidebarEntryList } from "@/components/SidebarEntryList";
 import { SidebarNavTab } from "@/components/SidebarNavTab";
 import { SidebarTagFilter } from "@/components/SidebarTagFilter";
 import type { VaultMainView } from "@/components/VaultMainPanel";
+import { UI } from "@/lib/uiClasses";
 import type { ReachabilityState } from "@/types/reachability";
 import type { DashboardFilter } from "@/types/dashboardFilter";
 import type { SecretEntrySummary } from "@/types/vault";
@@ -20,7 +21,8 @@ export interface VaultWorkspaceSidebarProps {
   readonly searchRef: React.RefObject<HTMLInputElement | null>;
   readonly entries: SecretEntrySummary[];
   readonly filteredEntries: SecretEntrySummary[];
-  readonly entryCountLabel: string;
+  readonly filteredCount: number;
+  readonly totalCount: number;
   readonly hasSidebarFilter: boolean;
   readonly activeTag: string | null;
   readonly onTagChange: (tag: string | null) => void;
@@ -45,7 +47,8 @@ export function VaultWorkspaceSidebar({
   searchRef,
   entries,
   filteredEntries,
-  entryCountLabel,
+  filteredCount,
+  totalCount,
   hasSidebarFilter,
   activeTag,
   onTagChange,
@@ -64,7 +67,7 @@ export function VaultWorkspaceSidebar({
   const { t } = useTranslation();
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-vault-border bg-vault-surface">
+    <aside className="flex w-80 shrink-0 flex-col border-r border-vault-border bg-vault-sidebar-bg">
       <VaultSidebarNav vaultMainView={vaultMainView} onVaultMainViewChange={onVaultMainViewChange} />
       <div className="border-b border-vault-border p-3">
         <input
@@ -74,7 +77,7 @@ export function VaultWorkspaceSidebar({
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={t("vault.searchPlaceholder")}
-          className="w-full rounded border border-vault-border bg-vault-bg px-2 py-1.5 font-mono text-xs placeholder:text-vault-muted focus:border-vault-accent outline-none"
+          className={UI.input}
         />
       </div>
       <SidebarTagFilter entries={entries} activeTag={activeTag} onTagChange={onTagChange} />
@@ -86,7 +89,8 @@ export function VaultWorkspaceSidebar({
         />
       ) : null}
       <SidebarEntryNav
-        entryCountLabel={entryCountLabel}
+        filteredCount={filteredCount}
+        totalCount={totalCount}
         hasSidebarFilter={hasSidebarFilter}
         filteredEntries={filteredEntries}
         selectedId={selectedId}
@@ -102,7 +106,7 @@ export function VaultWorkspaceSidebar({
         <button
           type="button"
           onClick={onShowAddForm}
-          className="w-full rounded bg-vault-accent py-1.5 font-mono text-xs text-vault-on-accent hover:bg-vault-accent-hover"
+          className={`${UI.btnPrimary} w-full text-xs`}
         >
           {t("vault.addSecret")}
         </button>
@@ -123,7 +127,7 @@ function VaultSidebarNav({
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-full flex-nowrap items-center gap-0.5 border-b border-vault-border bg-vault-bg px-1 pt-1">
+    <div className="flex border-b border-vault-border bg-vault-elevated px-2">
       <SidebarNavTab
         icon={FolderLock}
         label={t("nav.secrets")}
@@ -147,7 +151,8 @@ function VaultSidebarNav({
 }
 
 interface SidebarEntryNavProps {
-  readonly entryCountLabel: string;
+  readonly filteredCount: number;
+  readonly totalCount: number;
   readonly hasSidebarFilter: boolean;
   readonly filteredEntries: SecretEntrySummary[];
   readonly selectedId: string | null;
@@ -161,7 +166,8 @@ interface SidebarEntryNavProps {
 }
 
 function SidebarEntryNav({
-  entryCountLabel,
+  filteredCount,
+  totalCount,
   hasSidebarFilter,
   filteredEntries,
   selectedId,
@@ -175,12 +181,15 @@ function SidebarEntryNav({
 }: Readonly<SidebarEntryNavProps>) {
   const { t } = useTranslation();
   const emptyMessage = hasSidebarFilter ? t("vault.noMatches") : t("vault.noEntries");
+  const countLabel = hasSidebarFilter
+    ? t("vault.entryCountFiltered", { filtered: filteredCount, total: totalCount })
+    : t("vault.entryCount", { count: totalCount });
 
   return (
-    <nav className="flex-1 overflow-y-auto p-2">
-      <p className="mb-2 px-2 font-mono text-[10px] uppercase tracking-wider text-vault-muted">
-        {t("vault.entriesCount", { count: entryCountLabel })}
-      </p>
+    <nav className="flex-1 overflow-y-auto p-1">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs text-vault-muted">{countLabel}</span>
+      </div>
       {filteredEntries.length === 0 ? (
         <p className="px-2 py-4 text-center font-mono text-xs text-vault-muted">{emptyMessage}</p>
       ) : (
