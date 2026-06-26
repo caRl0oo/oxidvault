@@ -1,0 +1,7 @@
+{
+  "name": "com.oxidvault.app",
+  "description": "OxidVault Native Messaging Host",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_oxidvault-nmh.exe",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://belagnpfebgljfamjihdoinbcehingjd/"]
+}

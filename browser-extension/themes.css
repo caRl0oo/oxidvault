@@ -1,0 +1,59 @@
+/* Mirrors src/styles/globals.css — OxidVault extension themes */
+
+:root,
+[data-theme="oxid"] {
+  --color-vault-bg: #0a0b0d;
+  --color-vault-surface: #12141a;
+  --color-vault-border: #1e222b;
+  --color-vault-muted: #6b7280;
+  --color-vault-text: #e5e7eb;
+  --color-vault-accent: #3b82f6;
+  --color-vault-accent-hover: #2563eb;
+  --color-vault-success: #22c55e;
+  --color-vault-danger: #ef4444;
+  --color-vault-tag: #a78bfa;
+  --color-vault-on-accent: #ffffff;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+[data-theme="oxid-light"] {
+  --color-vault-bg: #f3f4f6;
+  --color-vault-surface: #ffffff;
+  --color-vault-border: #e5e7eb;
+  --color-vault-muted: #6b7280;
+  --color-vault-text: #1f2937;
+  --color-vault-accent: #2563eb;
+  --color-vault-accent-hover: #1d4ed8;
+  --color-vault-success: #15803d;
+  --color-vault-danger: #dc2626;
+  --color-vault-tag: #7c3aed;
+  --color-vault-on-accent: #ffffff;
+}
+
+[data-theme="dracula"] {
+  --color-vault-bg: #282a36;
+  --color-vault-surface: #21222c;
+  --color-vault-border: #44475a;
+  --color-vault-muted: #6272a4;
+  --color-vault-text: #f8f8f2;
+  --color-vault-accent: #bd93f9;
+  --color-vault-accent-hover: #a77ff6;
+  --color-vault-success: #50fa7b;
+  --color-vault-danger: #ff5555;
+  --color-vault-tag: #ff79c6;
+  --color-vault-on-accent: #282a36;
+}
+
+[data-theme="nord"] {
+  --color-vault-bg: #2e3440;
+  --color-vault-surface: #3b4252;
+  --color-vault-border: #4c566a;
+  --color-vault-muted: #81a1c1;
+  --color-vault-text: #eceff4;
+  --color-vault-accent: #88c0d0;
+  --color-vault-accent-hover: #5e81ac;
+  --color-vault-success: #a3be8c;
+  --color-vault-danger: #bf616a;
+  --color-vault-tag: #b48ead;
+  --color-vault-on-accent: #2e3440;
+}

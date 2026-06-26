@@ -1,0 +1,49 @@
+{
+  "name": "oxidvault",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Hochsicherer, on-premise Passwortmanager für Enterprise-Umgebungen",
+  "author": "Pascal Kuhn <support@oxidvault.de>",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://oxidvault.de",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/caRl0oo/oxidvault"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-dev.ps1",
+    "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-build.ps1",
+    "extension:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-browser-extension.ps1",
+    "icons": "tauri icon logo.png"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.6.0",
+    "@tauri-apps/plugin-dialog": "^2.3.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@zxcvbn-ts/core": "^3.0.4",
+    "@zxcvbn-ts/language-common": "^3.0.4",
+    "@zxcvbn-ts/language-en": "^3.0.2",
+    "i18next": "^26.3.1",
+    "lucide-react": "^1.21.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@tauri-apps/cli": "^2.6.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.0"
+  }
+}

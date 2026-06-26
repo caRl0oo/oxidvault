@@ -1,0 +1,43 @@
+[package]
+name = "vault-core"
+description = "Memory-safe cryptographic core for OxidVault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+vault-generator = { path = "../vault-generator" }
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize.workspace = true
+totp-rs = { version = "5.5", features = ["gen_secret", "otpauth", "zeroize"] }
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+sysinfo = "0.33"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"

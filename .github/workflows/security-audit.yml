@@ -1,0 +1,141 @@
+name: OxidVault Security & Quality Audit
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  audit:
+    name: Security and Code Verification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Workaround for intermittent crates.io HTTP/2 framing errors in CI.
+      CARGO_HTTP_MULTIPLEXING: false
+
+    steps:
+      # 1. Quellcode von GitHub auschecken
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Rust-Toolchain installieren (wird aus deiner rust-toolchain.toml gelesen)
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # 2b. Tauri-v2-Linux-Abhängigkeiten (glib-sys, webkit2gtk, …)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      # 3. Cache einrichten, damit zukünftige Überprüfungen blitzschnell gehen
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-v0.22.2-${{ runner.os }}
+
+      - name: Install cargo-audit
+        run: |
+          if command -v cargo-audit >/dev/null 2>&1; then
+            cargo-audit --version
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if cargo +stable install cargo-audit --locked --version 0.22.2; then
+              cargo-audit --version
+              exit 0
+            fi
+            echo "cargo install attempt ${attempt} failed; retrying..."
+            sleep $((attempt * 15))
+          done
+          exit 1
+
+      - name: Run Cargo Audit (Vulnerability Scan)
+        run: cargo audit
+
+      # 5. PRÜFUNG 2: Code-Formatierung erzwingen (Verhindert unsauberen KI-Code)
+      - name: Check Rust Code Formatting
+        run: cargo fmt --check
+
+      # 6. PRÜFUNG 3: Code-Qualität & Memory-Leaks scannen (Clippy fängt unerlaubte Klone ab)
+      - name: Run Cargo Clippy (Linter)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # 7. PRÜFUNG 4: Automatisierte Krypto- und Funktionstests ausführen
+      - name: Run Cargo Tests
+        run: cargo test
+
+  frontend-audit:
+    name: Frontend Dependency Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect package manager
+        id: pm
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: ${{ steps.pm.outputs.manager }}
+
+      - name: Install frontend dependencies
+        run: |
+          case "${{ steps.pm.outputs.manager }}" in
+            pnpm)
+              corepack enable
+              pnpm install --frozen-lockfile
+              ;;
+            yarn)
+              yarn install --frozen-lockfile
+              ;;
+            npm)
+              npm ci
+              ;;
+          esac
+
+      - name: Run frontend dependency audit (high severity)
+        run: |
+          case "${{ steps.pm.outputs.manager }}" in
+            pnpm)
+              pnpm audit --audit-level high
+              ;;
+            yarn)
+              yarn audit --level high
+              ;;
+            npm)
+              npm audit --audit-level=high
+              ;;
+          esac

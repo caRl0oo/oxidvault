@@ -1,0 +1,40 @@
+[package]
+name = "oxidvault"
+description = "OxidVault desktop shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+default-run = "oxidvault"
+
+[lib]
+name = "oxidvault_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "oxidvault-nmh"
+path = "src/bin/native_messaging_main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+vault-core = { path = "../crates/vault-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde.workspace = true
+serde_json.workspace = true
+open = "5"
+url = "2"
+russh = { version = "0.61", default-features = false, features = ["flate2", "ring"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "time"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+zeroize.workspace = true
+arboard = "3"
+data-encoding = "2.6"
+git2 = { version = "0.19", features = ["vendored-libgit2", "vendored-openssl", "ssh"] }
+keyring = "3"
+log = "0.4"
+env_logger = "0.11"
