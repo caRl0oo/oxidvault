@@ -140,6 +140,7 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 
 - **Zwei-Faktor-Authentifizierung (TOTP)** — MFA-Enrollment, atomare Entsperrung, UI-Rate-Limiting
 - **Multi-User Vaults (v3)** — bis 5 User CE, unbegrenzt EE; pro User Passwort + MFA
+- **Ed25519 Lizenz-Validierung** — offline, fälschungssicher, kein Lizenzserver nötig
 - **SSH Known-Hosts Verifikation** — TOFU + gespeicherter Fingerprint; MITM-Warnung bei Abweichung
 - **reveal_secret Rate-Limiting** — Sliding Window (5 Anfragen / 60s) gegen Bulk-Extraktion
 - **Security Dashboard** — Offline-Schwachstellenanalyse (Duplikate, Entropie, Ablaufdaten)
@@ -277,6 +278,16 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 → **[oxidvault.de](https://oxidvault.de)** · [support@oxidvault.de](mailto:support@oxidvault.de)
 
+## Download
+
+→ **[Neueste Version auf GitHub Releases](https://github.com/caRl0oo/oxidvault/releases/latest)**
+
+| Plattform | Datei |
+|---|---|
+| **Windows** | `OxidVault_2.0.0_x64_en-US.msi` |
+
+> **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.de](https://oxidvault.de)
+
 ---
 
 ## Changelog
@@ -297,6 +308,8 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 - **SSH Known-Hosts** — TOFU + gespeicherter SHA-256-Fingerprint; MITM-Warnung bei Abweichung
 - **reveal_secret Rate-Limiting** — Sliding Window (5/60s), Reset bei Lock, Audit-Event
 - **reload_from_disk v3** — DEK bleibt nach Git-Sync-Pull erhalten; kein stiller Session-Verlust
+- **Ed25519 Lizenz-Signierung** — asymmetrisch; Public Key in Binary eingebettet; Private Key nie im Repo; Open Source safe
+- **UI Overhaul** — Raycast-inspiriertes Oxid Light Theme als Standard; vault-card, vault-input, vault-btn-* Design-Tokens
 
 ### [1.0.0] — Enterprise Release
 
