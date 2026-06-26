@@ -25,6 +25,8 @@
 13. [Zentrales Policy-Management & Admin-GPOs](#13-zentrales-policy-management--admin-gpos)
 14. [Dokumentationspflicht & Changelog](#14-dokumentationspflicht--changelog)
 15. [Key-Rotation & Compliance-Dashboard](#15-key-rotation--compliance-dashboard)
+16. [Admin-Deployment Guide](#16-admin-deployment-guide)
+17. [Lizenzmodell](#17-lizenzmodell)
 
 ---
 
@@ -491,6 +493,7 @@ OxidVault/
 │           ├── lib.rs       ← Re-Exports
 │           ├── crypto.rs    ← Argon2id KDF, AES-256-GCM
 │           ├── format.rs    ← .oxid Lesen/Schreiben
+│           ├── license.rs   ← CE/EE Lizenz (HMAC-SHA256, offline)
 │           ├── lock.rs      ← exklusiver Vault-Datei-Lock
 │           ├── policy/      ← Master-Passwort-Regeln + Admin-GPO (`policy.json`)
 │           ├── entry.rs     ← SecretEntry, SecretEntryPublic, SecretField
@@ -870,11 +873,12 @@ ReachabilityDot — Sidebar + Detailansicht
 | `attach_vault_path` | `path` | `VaultInfo` | Vault-Datei anhängen (gesperrt) — User-Liste für v3-Login | ✅ |
 | `unlock_vault_as_user` | `username`, `password`, `mfa_code?` | `UnlockVaultResponse` | v3-Entsperren als bestimmter User | ✅ |
 | `list_vault_users` | — | `VaultUserPublic[]` | Alle User (kein Secret) — funktioniert auch bei gesperrtem v3-Vault | ✅ |
-| `add_vault_user` | `new_username`, `new_password`, `role` | `VaultUserPublic` | User hinzufügen (Admin) — **Vault-Lock-Guard** | ✅ |
+| `add_vault_user` | `new_username`, `new_password`, `role` | `VaultUserPublic` | User hinzufügen (Admin) — **Vault-Lock-Guard** + **CE-User-Limit** (`license_limit_exceeded`) | ✅ |
 | `remove_vault_user` | `username` | `()` | User entfernen (Admin) — **Vault-Lock-Guard** | ✅ |
 | `change_user_password` | `current_password`, `new_password` | `()` | Eigenes Passwort ändern — **Vault-Lock-Guard** | ✅ |
 | `migrate_vault_to_v3` | `current_password`, `admin_username` | `VaultInfo` | v1/v2 → v3 Migration — **Vault-Lock-Guard** | ✅ |
 | `get_current_user` | — | `VaultUserPublic?` | Aktuell eingeloggter User — **Vault-Lock-Guard** | ✅ |
+| `get_license_info` | — | `LicenseInfo` | Aktive Lizenz (CE/EE) — **kein Vault-Lock** | ✅ |
 
 ### Typen
 
@@ -2194,6 +2198,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 1.0.0 | **Multi-User Vault Phase 1:** Format v3 (`VaultUser[]` im Klartext-Header, shared DEK), `vault_user.rs`, `create_v3` / `unlock_as_user` / User-Management / `migrate_to_v3`, neue Audit-Events |
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
+| 2026-06-25 | 2.0.0 | **License Feature-Gate:** `license.rs` HMAC-SHA256 offline Validierung, CE 5-User-Limit, `get_license_info` Command, Upgrade-Banner in `UserManagementPanel` |
 | 2026-06-25 | 2.0.0 | **MFA v3:** `session_kek` in Vault-RAM, enable/disable/verify per User-Eintrag (KEK-verschlüsselt im Header), `persist_v3_header` (kein Payload-Re-Encrypt), Unlock-MFA-Check in `unlock_as_user`, Routing in `enable_mfa`/`disable_mfa`/`verify_mfa_code`/`get_mfa_status` |
 | 2026-06-25 | 1.0.0 | **MSI Native Messaging Auto-Setup:** WiX-Fragment `src-tauri/wix/native_messaging.wxs` registriert Host-Manifest + Chrome/Edge-HKCU-Keys automatisch bei Installation (Cleanup bei Uninstall) |
 | 2025-06-23 | 1.0.0 | **Vault-Lock-Guard:** `commands/vault_guard.rs` — `ensure_vault_unlocked`; sensible Commands liefern `Err("Vault locked")` |
@@ -2419,6 +2424,48 @@ sudo cp docs/policy.json.example /etc/oxidvault/policy.json
 sudo chmod 644 /etc/oxidvault/policy.json
 # JSON bearbeiten — Keys mit '_' entfernen oder belassen (werden ignoriert)
 ```
+
+---
+
+## 17. Lizenzmodell
+
+| Edition | Benutzer | Features | Lizenz |
+|---|---|---|---|
+| **Community** | bis 5 | Alle aktuellen Features | AGPLv3, kostenlos |
+| **Enterprise** | unbegrenzt | + LDAP, SSO, Priority Support | Kommerziell |
+
+### Lizenzdatei
+
+| Plattform | Pfad |
+|---|---|
+| Windows | `C:\ProgramData\OxidVault\oxidvault.license` |
+| Linux/macOS | `/etc/oxidvault/oxidvault.license` |
+
+- Fehlt die Datei → Community Edition (kein Fehler, kein Absturz)
+- Ungültige Signatur → Community Edition (silent fallback, Log-Warnung)
+- Abgelaufen → Community Edition (silent fallback)
+- Validierung: HMAC-SHA256, vollständig offline
+
+**JSON-Format (`oxidvault.license`):**
+
+| Feld | Beschreibung |
+|---|---|
+| `licensee` | Firmenname (Anzeige) |
+| `plan` | `"community"` oder `"enterprise"` |
+| `max_users` | `0` = unbegrenzt (EE), `5` = CE-Limit |
+| `valid_until` | ISO-Datum `YYYY-MM-DD` |
+| `issued_at` | ISO-Datum `YYYY-MM-DD` |
+| `signature` | HMAC-SHA256 über alle anderen Felder (pipe-separiert) |
+
+### Feature-Gates
+
+| Feature | Community | Enterprise |
+|---|---|---|
+| Benutzer pro Vault | max. 5 | unbegrenzt |
+| LDAP / AD | ❌ | ✅ (geplant) |
+| SSO SAML/OIDC | ❌ | ✅ (geplant) |
+
+> **Implementierung:** `crates/vault-core/src/license.rs` · `AppState.license` (beim Start geladen) · `add_vault_user` → `license_limit_exceeded` · UI: `UserManagementPanel` / `AddUserModal`
 
 ---
 

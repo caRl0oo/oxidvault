@@ -55,6 +55,10 @@ export function formatDiagnosticStatus(statusCode: string): string {
   return formatVaultError(statusCode);
 }
 
+export function isLicenseLimitError(error: unknown): boolean {
+  return String(error).includes("license_limit_exceeded");
+}
+
 export function formatVaultError(error: unknown): string {
   const raw = String(error).replace(/^Error:\s*/i, "").trim();
   const lower = raw.toLowerCase();

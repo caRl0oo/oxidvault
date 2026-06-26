@@ -151,6 +151,16 @@ export interface VaultUserPublic {
   isCurrentUser: boolean;
 }
 
+export type LicensePlan = "community" | "enterprise";
+
+export interface LicenseInfo {
+  plan: LicensePlan;
+  licensee: string;
+  maxUsers: number;
+  validUntil: string;
+  ceMaxUsers: number;
+}
+
 export interface UnlockVaultResponse {
   unlocked: boolean;
   mfaRequired: boolean;

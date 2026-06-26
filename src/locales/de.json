@@ -600,5 +600,17 @@
     "confirm_password": "Neues Passwort bestätigen",
     "password_mismatch": "Passwörter stimmen nicht überein.",
     "submit": "Passwort rotieren"
+  },
+  "license": {
+    "communityEdition": "Community Edition",
+    "enterpriseEdition": "Enterprise Edition",
+    "limitReached": "CE-Limit erreicht (5/5) — Enterprise upgraden",
+    "limitDescription": "Die Community Edition unterstützt bis zu 5 Benutzer pro Vault.",
+    "upgradePrompt": "Für unbegrenzte Benutzer, LDAP und SSO:",
+    "upgradeButton": "Enterprise-Lizenz anfragen →",
+    "userCount": "{{current}}/{{max}} Benutzer",
+    "unlimited": "Unbegrenzt",
+    "ceBadge": "Community Edition · {{count}} · Upgrade",
+    "ceLimitTooltip": "CE-Limit erreicht ({{current}}/{{max}})"
   }
 }

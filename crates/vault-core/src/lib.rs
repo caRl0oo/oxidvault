@@ -13,6 +13,7 @@ pub mod error;
 pub mod expiry;
 pub mod format;
 pub mod generator;
+pub mod license;
 pub mod lock;
 pub mod mfa;
 pub mod path_util;
@@ -48,6 +49,9 @@ pub use entry::{
 };
 pub use error::VaultError;
 pub use generator::{generate_password, PasswordGenOptions, DEFAULT_PASSWORD_LENGTH};
+pub use license::{
+    community_license, load_license, ActiveLicense, LicenseError, Plan, CE_MAX_USERS,
+};
 pub use lock::LockMetadata;
 pub use mfa::{MfaSetupInfo, MfaStatus, StoredMfaConfig};
 pub use probe::{resolve_probe_target, ProbeTarget};

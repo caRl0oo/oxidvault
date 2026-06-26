@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use vault_core::license::{community_license, load_license, ActiveLicense};
+
 use crate::clipboard::SecureClipboard;
 use crate::nm_bridge::BridgeAuthState;
 use crate::ssh::SshManager;
@@ -17,18 +19,25 @@ pub struct AppState {
     pub bridge: Mutex<BridgeAuthState>,
     /// Format version of the currently loaded vault (1, 2, or 3).
     pub vault_format_version: Mutex<u8>,
+    pub license: Mutex<ActiveLicense>,
     last_activity_secs: AtomicU64,
     idle_warning_sent: AtomicBool,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let license = load_license().unwrap_or_else(|err| {
+            eprintln!("License warning: {err} — falling back to Community Edition");
+            community_license()
+        });
+
         Self {
             vault: Mutex::new(vault_core::Vault::new()),
             ssh: SshManager::new(),
             clipboard: SecureClipboard::new(),
             bridge: Mutex::new(BridgeAuthState::default()),
             vault_format_version: Mutex::new(0),
+            license: Mutex::new(license),
             last_activity_secs: AtomicU64::new(unix_secs_now()),
             idle_warning_sent: AtomicBool::new(false),
         }

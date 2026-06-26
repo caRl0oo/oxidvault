@@ -20,6 +20,7 @@ import type {
   UserRole,
   VaultInfo,
   VaultUserPublic,
+  LicenseInfo,
 } from "@/types/vault";
 
 export async function healthCheck(): Promise<string> {
@@ -295,6 +296,10 @@ export async function migrateVaultToV3(
 
 export async function getCurrentUser(): Promise<VaultUserPublic | null> {
   return invoke<VaultUserPublic | null>("get_current_user");
+}
+
+export async function getLicenseInfo(): Promise<LicenseInfo> {
+  return invoke<LicenseInfo>("get_license_info");
 }
 
 export function isTauri(): boolean {

@@ -600,5 +600,17 @@
     "confirm_password": "Confirm new password",
     "password_mismatch": "Passwords do not match.",
     "submit": "Rotate password"
+  },
+  "license": {
+    "communityEdition": "Community Edition",
+    "enterpriseEdition": "Enterprise Edition",
+    "limitReached": "CE limit reached (5/5) — upgrade to Enterprise",
+    "limitDescription": "Community Edition supports up to 5 users per vault.",
+    "upgradePrompt": "For unlimited users, LDAP and SSO:",
+    "upgradeButton": "Request Enterprise License →",
+    "userCount": "{{current}}/{{max}} users",
+    "unlimited": "Unlimited",
+    "ceBadge": "Community Edition · {{count}} · Upgrade",
+    "ceLimitTooltip": "CE limit reached ({{current}}/{{max}})"
   }
 }

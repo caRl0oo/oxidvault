@@ -6,10 +6,10 @@ import { useTranslation } from "react-i18next";
 import { AddUserModal } from "@/components/settings/AddUserModal";
 import { VaultButton } from "@/components/ui/VaultButton";
 import { CONFIRM_PANEL_CLASS, STATUS_SUCCESS_CLASS } from "@/lib/uiClasses";
-import { addVaultUser, listVaultUsers, removeVaultUser } from "@/lib/ipc";
-import { formatVaultError } from "@/lib/errors";
+import { addVaultUser, getLicenseInfo, listVaultUsers, removeVaultUser } from "@/lib/ipc";
+import { formatVaultError, isLicenseLimitError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
-import type { UserRole, VaultUserPublic } from "@/types/vault";
+import type { LicenseInfo, UserRole, VaultUserPublic } from "@/types/vault";
 
 const containerClass = "max-w-xl space-y-4";
 const headingClass = "font-mono text-xs uppercase tracking-wider text-vault-muted";
@@ -26,17 +26,61 @@ const successClass = `${STATUS_SUCCESS_CLASS} px-3 py-2 text-xs`;
 const errorClass = "font-mono text-xs text-vault-danger";
 const confirmPanelClass = `${CONFIRM_PANEL_CLASS} p-4`;
 const confirmTextClass = "font-mono text-xs leading-relaxed text-vault-muted";
+const licenseHeaderClass = "mb-4 flex items-center gap-2";
+const enterprisePlanBadgeClass =
+  "rounded border border-green-700 bg-green-900 px-2 py-1 font-mono text-xs text-green-300";
+const communityPlanBadgeClass =
+  "rounded border border-vault-border bg-vault-surface/30 px-2 py-1 font-mono text-xs text-vault-muted";
+const licenseMetaClass = "font-mono text-xs text-vault-muted";
+
+function LicenseHeaderBadge({
+  licenseInfo,
+  userCount,
+}: Readonly<{
+  licenseInfo: LicenseInfo;
+  userCount: number;
+}>) {
+  const { t } = useTranslation();
+  const isEnterprise = licenseInfo.plan === "enterprise";
+  const planBadgeClass = isEnterprise ? enterprisePlanBadgeClass : communityPlanBadgeClass;
+
+  return (
+    <div className={licenseHeaderClass}>
+      <span className={planBadgeClass}>
+        {isEnterprise ? t("license.enterpriseEdition") : t("license.communityEdition")}
+      </span>
+      {licenseInfo.plan === "community" ? (
+        <span className={licenseMetaClass}>
+          {t("license.userCount", { current: userCount, max: licenseInfo.ceMaxUsers })}
+        </span>
+      ) : null}
+      {isEnterprise && licenseInfo.licensee ? (
+        <span className={licenseMetaClass}>{licenseInfo.licensee}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export function UserManagementPanel() {
   const { t } = useTranslation();
   const [users, setUsers] = useState<VaultUserPublic[]>([]);
+  const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
+  const [licenseLimitReached, setLicenseLimitReached] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+
+  useEffect(() => {
+    getLicenseInfo()
+      .then(setLicenseInfo)
+      .catch((err: unknown) => {
+        console.error(err);
+      });
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -55,16 +99,25 @@ export function UserManagementPanel() {
     runAsync(refresh);
   }, [refresh]);
 
+  const ceMaxUsers = licenseInfo?.ceMaxUsers ?? 5;
+  const atCeLimit =
+    licenseInfo?.plan === "community" && users.length >= ceMaxUsers;
+
   const handleAdd = async (username: string, password: string, role: UserRole) => {
     setAddLoading(true);
     setError(null);
     try {
       await addVaultUser(username, password, role);
       setAddOpen(false);
+      setLicenseLimitReached(false);
       setSuccess(t("users.addUserSuccess"));
       globalThis.setTimeout(() => setSuccess(null), 3000);
       await refresh();
     } catch (e) {
+      if (isLicenseLimitError(e)) {
+        setLicenseLimitReached(true);
+        return;
+      }
       setError(formatVaultError(e));
     } finally {
       setAddLoading(false);
@@ -87,12 +140,19 @@ export function UserManagementPanel() {
     }
   };
 
+  const openAddModal = () => {
+    setLicenseLimitReached(false);
+    setAddOpen(true);
+  };
+
   const roleLabel = (role: UserRole) =>
     role === "admin" ? t("users.roleAdmin") : t("users.roleMember");
 
   return (
     <div className={containerClass}>
       <h2 className={headingClass}>{t("users.title")}</h2>
+
+      {licenseInfo ? <LicenseHeaderBadge licenseInfo={licenseInfo} userCount={users.length} /> : null}
 
       {loading ? (
         <p className={loadingClass}>{t("common.loading")}</p>
@@ -126,7 +186,13 @@ export function UserManagementPanel() {
         </ul>
       )}
 
-      <VaultButton variant="primary" size="sm" onClick={() => setAddOpen(true)}>
+      <VaultButton
+        variant="primary"
+        size="sm"
+        onClick={openAddModal}
+        disabled={atCeLimit}
+        title={atCeLimit ? t("license.limitReached") : undefined}
+      >
         + {t("users.addUser")}
       </VaultButton>
 
@@ -167,6 +233,7 @@ export function UserManagementPanel() {
       <AddUserModal
         open={addOpen}
         loading={addLoading}
+        licenseLimitReached={licenseLimitReached}
         onClose={() => setAddOpen(false)}
         onSubmit={(username, password, role) => {
           void handleAdd(username, password, role);

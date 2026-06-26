@@ -85,6 +85,7 @@ pub fn run() {
             commands::users::remove_vault_user,
             commands::users::change_user_password,
             commands::users::migrate_vault_to_v3,
+            commands::users::get_license_info,
             commands::users::get_current_user,
         ])
         .on_window_event(|window, event| {

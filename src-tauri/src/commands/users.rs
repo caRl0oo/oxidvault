@@ -3,8 +3,9 @@
 
 use std::path::Path;
 
+use serde::Serialize;
 use tauri::{AppHandle, State};
-use vault_core::{UnlockStep, UnlockVaultResponse, UserRole, VaultUserPublic};
+use vault_core::{Plan, UnlockStep, UnlockVaultResponse, UserRole, VaultUserPublic, CE_MAX_USERS};
 
 use super::bootstrap;
 use super::vault_guard::ensure_vault_unlocked;
@@ -121,6 +122,22 @@ pub fn add_vault_user(
 ) -> Result<VaultUserPublic, String> {
     ensure_vault_unlocked(&state)?;
     ensure_multi_user(&state)?;
+
+    {
+        let license = state
+            .license
+            .lock()
+            .map_err(|_| "Internal error".to_string())?;
+        let vault = state
+            .vault
+            .lock()
+            .map_err(|_| "Internal error".to_string())?;
+        let current_count = vault.list_users().len();
+        if !license.can_add_user(current_count) {
+            return Err("license_limit_exceeded".to_string());
+        }
+    }
+
     let new_password = wrap_password(new_password);
     let role = parse_user_role(&role)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
@@ -133,6 +150,36 @@ pub fn add_vault_user(
         .into_iter()
         .find(|user| user.username == new_username)
         .ok_or_else(|| "user not found after add".to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LicenseInfo {
+    pub plan: String,
+    pub licensee: String,
+    pub max_users: usize,
+    pub valid_until: String,
+    pub ce_max_users: usize,
+}
+
+/// Returns the active license (independent of vault lock state).
+#[tauri::command]
+pub fn get_license_info(state: State<'_, AppState>) -> Result<LicenseInfo, String> {
+    let license = state
+        .license
+        .lock()
+        .map_err(|_| "Internal error".to_string())?;
+
+    Ok(LicenseInfo {
+        plan: match license.plan {
+            Plan::Community => "community".to_string(),
+            Plan::Enterprise => "enterprise".to_string(),
+        },
+        licensee: license.licensee.clone(),
+        max_users: license.max_users,
+        valid_until: license.valid_until.clone(),
+        ce_max_users: CE_MAX_USERS,
+    })
 }
 
 /// Removes a user (Admin only; cannot remove self).
