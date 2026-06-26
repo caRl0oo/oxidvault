@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OxidVault",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Sicherer Passwort-Manager für dein Unternehmen.",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

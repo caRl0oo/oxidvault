@@ -146,7 +146,7 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 - **Security Dashboard** — Offline-Schwachstellenanalyse (Duplikate, Entropie, Ablaufdaten)
 - **Compliance-Dashboard** — Policy-, Audit- und Key-Age-Status mit Rotations-Empfehlung (> 90 Tage)
 - **SSH Quick Connect** — Integriertes Terminal für gespeicherte SSH-Zugänge
-- **Browser-Erweiterung** — Native Messaging für kontrollierte Autofill-Integration ([`browser-extension/README.md`](browser-extension/README.md))
+- **Browser-Erweiterung** — Native Messaging für kontrolliertes Autofill ([Chrome Web Store](https://chromewebstore.google.com/detail/oxidvault/belagnpfebgljfamjihdoinbcehingjd) · [`browser-extension/README.md`](browser-extension/README.md))
 
 ---
 

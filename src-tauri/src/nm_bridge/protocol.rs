@@ -124,7 +124,12 @@ impl BridgeResponse {
         }
     }
 
-    pub fn vault_status(locked: bool, mfa_required: bool, mfa_failed: bool, minimized: bool) -> Self {
+    pub fn vault_status(
+        locked: bool,
+        mfa_required: bool,
+        mfa_failed: bool,
+        minimized: bool,
+    ) -> Self {
         if mfa_failed {
             return Self::mfa_failed(minimized);
         }

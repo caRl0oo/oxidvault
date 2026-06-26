@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
-use crate::nm_bridge::focus::{focus_main_window, focus_main_window_for_unlock, main_window_minimized};
+use crate::nm_bridge::focus::{
+    focus_main_window, focus_main_window_for_unlock, main_window_minimized,
+};
 use crate::nm_bridge::framing::{read_message, write_message};
 use crate::nm_bridge::protocol::{BridgeRequest, BridgeResponse};
 use crate::nm_bridge::session;
