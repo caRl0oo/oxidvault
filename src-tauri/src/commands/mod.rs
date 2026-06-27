@@ -34,6 +34,7 @@ pub(super) fn note_unlock_success(
     state.touch_activity();
     let _ = settings::save_vault_mfa_configured(app, vault.mfa_status().mfa_enabled);
     crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
+    crate::system_tray::notify_vault_unlocked(app);
 }
 
 pub(super) fn wrap_password(password: String) -> Zeroizing<String> {
@@ -180,8 +181,17 @@ pub fn unlock_vault(
 }
 
 #[tauri::command]
-pub fn lock_vault(state: State<'_, AppState>) -> Result<VaultInfo, String> {
-    lock_vault_state(state)
+pub fn lock_vault(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<VaultInfo, String> {
+    let info = lock_vault_state(state)?;
+    crate::system_tray::notify_vault_locked(&app, &info);
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    perform_lock(&state)?;
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]

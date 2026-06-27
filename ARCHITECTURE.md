@@ -248,7 +248,7 @@ Detailansicht / Sidebar
 | **Eingehende Passwörter (K4)** | `Zeroizing<String>` in `create_vault`, `open_vault`, `unlock_vault` |
 | **session_kek (v3)** | `Zeroizing<[u8; 32]>` auf `Vault` — KEK des aktuellen Users; nur im RAM während der Session; bei `lock()` auf `None` gesetzt (ZeroizeOnDrop) |
 | **Atomic Writes** | Temp-Datei `.oxid.tmp` → `fsync` → `rename` (crash-safe) |
-| **Lock-on-Minimize** | Tauri `WindowEvent::Focused(false)` + `is_minimized()` → sofortiger Lock |
+| **Lock-on-Minimize (GPO)** | `forceLockOnMinimize` in `window_events.rs` beim Verstecken in Tray |
 | Kein Klartext in Logs | Kein `Debug`-Output für sensitive Structs (`MasterKey` ohne `Debug`) |
 | Release-Härtung | `panic = "abort"`, `strip = true`, `LTO` |
 
@@ -341,34 +341,31 @@ encrypt(payload) → write {dir}/{name}.oxid.tmp → sync_all()
 | **UNC-Pfade** | `path_util::normalize_vault_path` in `vault.rs` (Create/Open/Attach) |
 | **Einsatz** | `write_vault_file` (Create) und `update_vault_file` (Update) |
 
-#### Lock-on-Minimize (Enterprise Hardening)
+#### Minimize to Tray & optionales Lock-on-Minimize (GPO)
 
-> **Status:** ✅ `src-tauri/src/window_events.rs` · Event `vault-locked`
+> **Status:** ✅ `src-tauri/src/system_tray.rs` · `window_events.rs` · Event `vault-locked`
 
-Sofort-Sperre wenn der Admin das Fenster minimiert — kein Warten auf Auto-Lock-Timer:
+Schließen (X) oder Minimieren versteckt das Fenster in der Systemleiste — der Vault bleibt standardmäßig entsperrt:
 
 ```
-Fenster minimiert
+Fenster schließen / minimieren
       │
       ▼
-WindowEvent::Focused(false) + is_minimized() == true
+CloseRequested → prevent_close + hide()
+Focused(false) + is_minimized() → hide()
+      │
+      ├─ forceLockOnMinimize (GPO) → perform_lock() + vault-locked
       │
       ▼
-perform_lock()  [SSH disconnect + Vault::lock() + RAM-Purge]
-      │
-      ▼
-Tauri Event `vault-locked` { reason: "minimize", info }
-      │
-      ▼
-Frontend: Lock-Screen, Passwort erforderlich
+Tray-Icon bleibt sichtbar — Vault entsperrt (Default)
 ```
 
 | Aspekt | Detail |
 |---|---|
-| **Trigger** | Nur Minimieren — Alt-Tab (Fokusverlust ohne Minimize) sperrt **nicht** |
-| **Backend** | Identische Lock-Pipeline wie `lock_vault` / Auto-Lock |
-| **Frontend** | Listener auf `vault-locked` → UI-Reset + Hinweis |
-| **Wiederherstellen** | Master-Passwort Pflicht via `unlock_vault` |
+| **Tray-Menü** | Status, Öffnen, Sperren, Beenden — lokalisiert (de/en) |
+| **Beenden** | Nur über Tray → „Beenden“ (mit Lock vor Exit) |
+| **GPO** | `forceLockOnMinimize: true` → zusätzlicher Lock beim Verstecken |
+| **Wiederherstellen** | Tray-Klick oder Menü „OxidVault öffnen“ |
 
 #### RAM-Purge beim Auto-Lock / manuellen Lock (v0.1.0)
 
@@ -537,7 +534,8 @@ OxidVault/
 │       ├── clipboard.rs     ← SecureClipboard (arboard, 30s Auto-Clear)
 │       ├── probe/           ← Async TCP-Reachability-Checks
 │       │   └── mod.rs
-│       ├── window_events.rs ← Lock-on-Minimize (Tauri Window Events)
+│       ├── system_tray.rs ← System Tray (Minimize to Tray, Menü)
+│       ├── window_events.rs ← Close/Minimize → Tray (+ optionales GPO-Lock)
 │       ├── settings.rs      ← App-Einstellungen (Vault-Pfad, Git-Sync, kein Secret)
 │       ├── git/                 ← In-process Git-Sync via `git2` (kein externes `git`-Binary)
 │       │   ├── mod.rs
@@ -613,6 +611,19 @@ flowchart TB
     STATE --> VAULT
     VAULT -- ".oxid Datei" --> DISK[(Lokales Dateisystem)]
 ```
+
+### System Tray
+
+> **Status:** ✅ `src-tauri/src/system_tray.rs` · Icon `icons/32x32.png`
+
+| Aktion | Verhalten |
+|---|---|
+| Fenster schließen (X) | App in Tray minimieren — Vault bleibt entsperrt |
+| Fenster minimieren | Aus Taskleiste in Tray — Vault bleibt entsperrt |
+| Tray-Linksklick / Doppelklick | App wiederherstellen |
+| Tray → „Vault sperren“ | RAM-Purge + Lock |
+| Tray → „Beenden“ | Lock + `app.exit(0)` |
+| `forceLockOnMinimize` (GPO) | Minimieren/Schließen sperrt zusätzlich den Vault |
 
 ### Datenfluss: Secret speichern
 
@@ -1642,7 +1653,7 @@ flowchart LR
 | **Extension (MV3)** | `browser-extension/manifest.json` | `nativeMessaging`, Service Worker, `content_scripts` |
 | `background.js` | `connectNative`, `get_login` / `vault_status` / `request_unlock` |
 | **Popup** | `browser-extension/popup.html` | Vault-Status, MFA-Hinweis (kein Secret-Input) |
-| **Content Script** | `browser-extension/content.js` | Login-Formular-Erkennung, AutoFill, MFA-Banner |
+| **Content Script** | `browser-extension/content.js` | Login-Formular-Erkennung, AutoFill, Unlock-Polling (kein In-Page-Banner) |
 | **Host-Manifest** | `browser-extension/host/com.oxidvault.app.json` | Browser-Registrierung (Pfad + `allowed_origins`) |
 | **Registry-Skript** | `scripts/register_native_host.ps1` | Schreibt Host-Manifest + HKCU Chrome/Edge |
 
@@ -1689,7 +1700,7 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 | `ok` | `{ "status": "ok", "success": true, "username": "…", "password": "…" }` — genau ein passender Eintrag |
 | `not_found` | Kein Web-Login für diese Domain |
 | `locked` | Vault gesperrt — optional `"mfa_required": true` wenn MFA aktiv |
-| `mfa_failed` | Ungültiger MFA-Code in der Desktop-App (Extension zeigt Hinweis, **kein** MFA-Input in der Extension) |
+| `mfa_failed` | Ungültiger MFA-Code in der Desktop-App (Status nur im Popup, **kein** MFA-Input in der Extension) |
 | `unavailable` | Desktop-App nicht gestartet / IPC nicht erreichbar |
 | `error` | Protokoll- oder Autorisierungsfehler |
 
@@ -1702,10 +1713,8 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 **Ablauf bei gesperrtem Vault:**
 
 1. `get_login` liefert `{ "status": "locked", "mfa_required": true|false, "locked": true }`.
-2. `content.js` zeigt ein dezentes In-Page-Banner; bei MFA: Hinweis auf Desktop-Entsperrung (Passwort + MFA).
-3. `{ "action": "request_unlock" }` fokussiert das OxidVault-Hauptfenster (`nm_bridge/focus.rs`) — nur wenn nicht minimiert.
-4. Extension pollt `{ "action": "vault_status" }` bis `{ "success": true, "locked": false }` oder `{ "status": "mfa_failed" }`.
-5. Popup (`popup.html`) spiegelt denselben Status — ohne Eingabefelder für Secrets.
+2. `content.js` startet `{ "action": "request_unlock" }` (nur wenn nicht minimiert) und pollt `{ "action": "vault_status" }` bis `{ "success": true, "locked": false }` — danach erneutes AutoFill.
+3. Popup (`popup.html`) zeigt Vault-Status und MFA-Hinweis — ohne Eingabefelder für Secrets.
 
 **MFA-Hinweis bei kaltem Start:** `settings.json` enthält `vaultMfaConfigured` (Metadaten, kein Secret), gesetzt bei MFA-Aktivierung/-Deaktivierung und erfolgreicher Entsperrung. Zusammen mit in-memory `Vault::mfa` nach Lock in derselben Session.
 
@@ -2096,7 +2105,7 @@ settings.json (User)  +  policy.json (Admin)  →  ResolvedConfig (effektiv + UI
 
 | Feld | Wirkung |
 |---|---|
-| `forceLockOnMinimize` | Lock-on-Minimize in `window_events.rs` |
+| `forceLockOnMinimize` | Optionales Lock beim Verstecken in Tray (`window_events.rs`) |
 | `autoLockSeconds` | Inaktivitäts-Auto-Lock (`useAutoLock` im Frontend) |
 | `gitSyncEnabled` | Git-Sync Toggle + `sync_vault_git` |
 | `minMasterPasswordLen` | Master-Passwort-Validierung bei `Vault::create` |
@@ -2199,6 +2208,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
+| 2026-06-28 | 2.1.0 | **System Tray:** Minimize to Tray, Vault bleibt entsperrt, Tray-Menü (Öffnen/Sperren/Beenden), `forceLockOnMinimize` GPO-kompatibel |
+| 2026-06-25 | 2.0.0 | **Extension In-Page-Banner entfernt:** `content.js` zeigt keinen Lock-/MFA-Banner mehr; Status nur im Popup; Unlock-Polling bleibt für AutoFill |
 | 2026-06-25 | 2.0.0 | **NM Bridge Focus-Loop-Fix:** `vault_status.minimized`; `request_unlock` ohne Focus bei minimiertem Fenster; `AppState.nm_bridge_focusing` unterdrückt Lock-on-Minimize während NM-Focus |
 | 2026-06-25 | 2.0.0 | **License HMAC-Key:** extern via `OXIDVAULT_LICENSE_KEY` / `license_hmac.key` — nicht mehr im Quellcode (ersetzt durch Ed25519) |
 | 2026-06-25 | 2.0.0 | **License Feature-Gate:** `license.rs` HMAC-SHA256 offline Validierung, CE 5-User-Limit, `get_license_info` Command, Upgrade-Banner in `UserManagementPanel` |

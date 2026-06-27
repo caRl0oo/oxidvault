@@ -8,7 +8,6 @@ const LOG_PREFIX = "[OxidVault]";
 const OBSERVER_TIMEOUT_MS = 3000;
 const HIGHLIGHT_DURATION_MS = 500;
 const PENDING_STORAGE_PREFIX = "oxidvault:pending:";
-const BANNER_ID = "oxidvault-autofill-banner";
 const UNLOCK_POLL_INTERVAL_MS = 2000;
 const UNLOCK_POLL_MAX_ATTEMPTS = 60;
 
@@ -18,16 +17,6 @@ let usernameFillAttempted = false;
 let passwordFillAttempted = false;
 let getLoginInFlight = false;
 let unlockPollTimer = null;
-let bannerShown = false;
-
-const MINIMIZED_LOCKED_BANNER =
-  "OxidVault ist gesperrt und minimiert. Stelle das Desktop-Fenster wieder her, um zu entsperren.";
-
-const LOCKED_BANNER =
-  "OxidVault ist gesperrt. Entsperre den Tresor in der Desktop-App, um AutoFill zu nutzen.";
-
-const MFA_LOCKED_BANNER =
-  "OxidVault ist gesperrt (MFA aktiv). Entsperre den Tresor ausschließlich in der Desktop-App mit Passwort und MFA-Code.";
 
 const USERNAME_SELECTORS = [
   'input[type="email"]',
@@ -76,120 +65,6 @@ function clearPendingCredentials(hostname) {
   }
 }
 
-function removeBanner() {
-  const existing = document.getElementById(BANNER_ID);
-  if (existing) {
-    existing.remove();
-  }
-}
-
-function dismissBanner() {
-  removeBanner();
-  bannerShown = false;
-  stopUnlockPolling();
-}
-
-function renderBanner(kind, message) {
-  removeBanner();
-
-  const banner = document.createElement("div");
-  banner.id = BANNER_ID;
-  banner.setAttribute("role", "status");
-
-  const text = document.createElement("span");
-  text.textContent = message;
-  text.style.flex = "1";
-
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Schließen");
-  closeBtn.onclick = () => dismissBanner();
-  Object.assign(closeBtn.style, {
-    flexShrink: "0",
-    margin: "0",
-    padding: "0 0 0 8px",
-    border: "none",
-    background: "transparent",
-    color: "inherit",
-    fontSize: "18px",
-    lineHeight: "1",
-    cursor: "pointer",
-    opacity: "0.85",
-  });
-
-  const styles = {
-    mfa: {
-      background: "rgba(30, 58, 138, 0.95)",
-      border: "1px solid rgba(96, 165, 250, 0.6)",
-      color: "#dbeafe",
-    },
-    locked: {
-      background: "rgba(120, 53, 15, 0.95)",
-      border: "1px solid rgba(251, 191, 36, 0.55)",
-      color: "#fef3c7",
-    },
-    error: {
-      background: "rgba(127, 29, 29, 0.95)",
-      border: "1px solid rgba(248, 113, 113, 0.55)",
-      color: "#fee2e2",
-    },
-  };
-
-  const palette = styles[kind] ?? styles.locked;
-
-  Object.assign(banner.style, {
-    position: "fixed",
-    top: "12px",
-    right: "12px",
-    zIndex: "2147483646",
-    maxWidth: "min(360px, calc(100vw - 24px))",
-    padding: "10px 14px",
-    borderRadius: "10px",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.35)",
-    fontFamily: "system-ui, sans-serif",
-    fontSize: "13px",
-    lineHeight: "1.45",
-    pointerEvents: "auto",
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "8px",
-    ...palette,
-  });
-
-  banner.appendChild(text);
-  banner.appendChild(closeBtn);
-  document.documentElement.appendChild(banner);
-}
-
-function showLockedBanner(mfaRequired) {
-  if (bannerShown) {
-    return;
-  }
-  bannerShown = true;
-
-  const kind = mfaRequired ? "mfa" : "locked";
-  const message = mfaRequired ? MFA_LOCKED_BANNER : LOCKED_BANNER;
-  renderBanner(kind, message);
-  startVaultStatusPolling();
-}
-
-function showMinimizedLockedBanner() {
-  if (bannerShown) {
-    return;
-  }
-  bannerShown = true;
-  renderBanner("locked", MINIMIZED_LOCKED_BANNER);
-  startVaultStatusPolling();
-}
-
-function showErrorBanner(message) {
-  dismissBanner();
-  bannerShown = true;
-  renderBanner("error", message);
-  startVaultStatusPolling();
-}
-
 function stopUnlockPolling() {
   if (unlockPollTimer !== null) {
     globalThis.clearInterval(unlockPollTimer);
@@ -212,18 +87,8 @@ function startVaultStatusPolling(onUnlocked, maxAttempts = null) {
         return;
       }
 
-      if (response?.status === "mfa_failed") {
-        stopUnlockPolling();
-        showErrorBanner(
-          response.error ??
-            "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
-        );
-        return;
-      }
-
       if (isVaultUnlocked(response)) {
         stopUnlockPolling();
-        dismissBanner();
         onUnlocked?.();
         return;
       }
@@ -247,7 +112,7 @@ function beginDesktopUnlock(onUnlocked) {
     }
 
     if (statusResponse?.locked && statusResponse?.minimized) {
-      showMinimizedLockedBanner();
+      pollVaultUnlocked(onUnlocked);
       return;
     }
 
@@ -257,16 +122,7 @@ function beginDesktopUnlock(onUnlocked) {
         return;
       }
 
-      if (response?.status === "mfa_failed") {
-        showErrorBanner(
-          response.error ??
-            "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
-        );
-        return;
-      }
-
       if (isVaultUnlocked(response)) {
-        dismissBanner();
         onUnlocked();
         return;
       }
@@ -472,32 +328,24 @@ function applyCachedCredentialsIfPossible() {
 
 function handleLockedResponse(response) {
   if (response?.status === "mfa_failed") {
-    showErrorBanner(
-      response.error ??
-        "MFA-Code in OxidVault ungültig. Bitte in der Desktop-App erneut versuchen."
+    console.warn(
+      `${LOG_PREFIX} MFA failed:`,
+      response.error ?? "MFA-Code in OxidVault ungültig."
     );
     return;
   }
 
-  if (response?.minimized) {
-    showMinimizedLockedBanner();
-    return;
-  }
-
-  if (response?.mfa_required) {
-    showLockedBanner(true);
-    beginDesktopUnlock(() => {
-      getLoginInFlight = false;
-      requestAutofill();
-    });
-    return;
-  }
-
-  showLockedBanner(false);
-  beginDesktopUnlock(() => {
+  const onUnlocked = () => {
     getLoginInFlight = false;
     requestAutofill();
-  });
+  };
+
+  if (response?.minimized) {
+    pollVaultUnlocked(onUnlocked);
+    return;
+  }
+
+  beginDesktopUnlock(onUnlocked);
 }
 
 function requestAutofill() {
@@ -525,7 +373,6 @@ function requestAutofill() {
     }
 
     if (response?.status === "ok" && response?.success !== false) {
-      dismissBanner();
       const credentials = credentialsForFill(response);
       cachedCredentials = credentials;
       storePendingCredentials(hostname, credentials);

@@ -94,6 +94,11 @@ export function Layout({
           {"+"}
           <kbd className="rounded border border-vault-border px-1">N</kbd> {t("shortcuts.newSecret")}
         </span>
+        <span>
+          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
+          {"+"}
+          <kbd className="rounded border border-vault-border px-1">Q</kbd> {t("shortcuts.quit")}
+        </span>
       </footer>
     </div>
   );

@@ -61,6 +61,7 @@ fn tick(app: &AppHandle, state: &AppState) {
     if elapsed >= timeout {
         state.clear_idle_warning();
         if let Ok(info) = perform_lock(state) {
+            let _ = crate::system_tray::update_tray_menu(app, true);
             let _ = app.emit(
                 "vault-locked",
                 VaultLockedPayload {

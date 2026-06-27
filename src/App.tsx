@@ -908,7 +908,7 @@ export default function App() {
     [onShortcutLock, onShortcutSearch, onShortcutNewSecret, onShortcutGenerator],
   );
 
-  useKeyboardShortcuts(shortcuts);
+  useKeyboardShortcuts(shortcuts, true, { quitOnModQ: isTauri() });
 
   useEffect(() => {
     if (screen === "unlock" || screen === "create" || screen === "open") {

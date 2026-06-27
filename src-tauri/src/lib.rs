@@ -11,10 +11,11 @@ mod probe;
 mod settings;
 mod ssh;
 mod state;
+mod system_tray;
 mod window_events;
 
 use state::AppState;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 /// Headless Native Messaging host for the browser extension (no WebView).
 pub fn run_native_messaging() -> std::io::Result<()> {
@@ -26,6 +27,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            system_tray::setup_tray(app.handle())?;
             nm_bridge::spawn_server(app.handle().clone());
             idle_worker::spawn(app.handle().clone());
             Ok(())
@@ -38,6 +40,7 @@ pub fn run() {
             commands::open_vault,
             commands::unlock_vault,
             commands::lock_vault,
+            commands::quit_app,
             commands::list_entries,
             commands::add_entry,
             commands::update_entry,
@@ -87,12 +90,19 @@ pub fn run() {
             commands::users::migrate_vault_to_v3,
             commands::users::get_license_info,
             commands::users::get_current_user,
+            system_tray::sync_tray_locale,
         ])
         .on_window_event(|window, event| {
-            if let Some(state) = window.try_state::<AppState>() {
+            let app = window.app_handle();
+            if let Some(state) = app.try_state::<AppState>() {
                 window_events::on_main_window_event(window, event, &state);
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running OxidVault");
+        .build(tauri::generate_context!())
+        .expect("error while running OxidVault")
+        .run(|_app, event| {
+            if let RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }

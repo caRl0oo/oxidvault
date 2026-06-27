@@ -2,14 +2,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 type ShortcutMap = Record<string, () => void>;
 
-export function useKeyboardShortcuts(shortcuts: ShortcutMap, enabled = true) {
+interface KeyboardShortcutOptions {
+  readonly quitOnModQ?: boolean;
+}
+
+export function useKeyboardShortcuts(
+  shortcuts: ShortcutMap,
+  enabled = true,
+  options?: KeyboardShortcutOptions,
+) {
   useEffect(() => {
     if (!enabled) return;
 
     const handler = (event: KeyboardEvent) => {
+      if (
+        options?.quitOnModQ &&
+        event.key.toLowerCase() === "q" &&
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        void invoke("quit_app");
+        return;
+      }
+
       const parts: string[] = [];
       if (event.ctrlKey || event.metaKey) parts.push("mod");
       if (event.shiftKey) parts.push("shift");
@@ -26,7 +47,7 @@ export function useKeyboardShortcuts(shortcuts: ShortcutMap, enabled = true) {
       }
     };
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [shortcuts, enabled]);
+    globalThis.addEventListener("keydown", handler);
+    return () => globalThis.removeEventListener("keydown", handler);
+  }, [shortcuts, enabled, options?.quitOnModQ]);
 }

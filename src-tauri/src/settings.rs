@@ -67,7 +67,8 @@ impl AppSettings {
 }
 
 fn default_force_lock_on_minimize() -> bool {
-    true
+    // Tray minimize/close keeps the vault unlocked unless GPO policy.json overrides.
+    false
 }
 
 fn default_auto_lock_seconds() -> u32 {

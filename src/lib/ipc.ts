@@ -73,6 +73,10 @@ export async function lockVault(): Promise<VaultInfo> {
   return invoke<VaultInfo>("lock_vault");
 }
 
+export async function quitApp(): Promise<void> {
+  return invoke<void>("quit_app");
+}
+
 export async function touchActivity(): Promise<void> {
   return invoke<void>("touch_activity");
 }

@@ -3,6 +3,7 @@
 
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import de from "@/locales/de.json";
 import en from "@/locales/en.json";
 import { getStoredLocale, persistLocale, type LocaleId } from "@/lib/locale";
@@ -25,9 +26,18 @@ try {
   /* i18n init failure is non-fatal for shell UI */
 }
 
+try {
+  await invoke("sync_tray_locale", { locale: getStoredLocale() });
+} catch {
+  /* tray locale sync is best-effort */
+}
+
 i18n.on("languageChanged", (lng) => {
   if (lng === "de" || lng === "en") {
     persistLocale(lng);
+    void invoke("sync_tray_locale", { locale: lng }).catch(() => {
+      /* tray locale sync is best-effort */
+    });
   }
 });
 

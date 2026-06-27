@@ -44,6 +44,14 @@
     "backendBrowserOnly": "browser-only",
     "backendOffline": "offline"
   },
+  "tray": {
+    "statusLocked": "🔒 Vault locked",
+    "statusUnlocked": "🔓 Vault unlocked",
+    "show": "Open OxidVault",
+    "lock": "Lock vault",
+    "quit": "Quit",
+    "tooltip": "OxidVault"
+  },
   "welcome": {
     "tagline": "Offline-first secret manager · Backend:",
     "createVault": "Create new vault",
@@ -430,7 +438,8 @@
     "search": "Search",
     "lock": "Lock",
     "generator": "Generator",
-    "newSecret": "New secret"
+    "newSecret": "New secret",
+    "quit": "Quit"
   },
   "dialog": {
     "vaultFilter": "OxidVault",
