@@ -30,10 +30,15 @@ impl Drop for NmBridgeFocusGuard<'_> {
     }
 }
 
+fn window_blocks_nm_focus(window: &tauri::WebviewWindow) -> bool {
+    window.is_minimized().unwrap_or(false) || !window.is_visible().unwrap_or(true)
+}
+
+/// True when the main window must not be focused (minimized or hidden in the system tray).
 pub fn main_window_minimized(app: &AppHandle) -> bool {
     app.get_webview_window("main")
-        .map(|window| window.is_minimized().unwrap_or(false))
-        .unwrap_or(false)
+        .map(|window| window_blocks_nm_focus(&window))
+        .unwrap_or(true)
 }
 
 /// Brings the desktop UI to the foreground (e.g. new-secret prefill).
@@ -57,14 +62,14 @@ pub fn focus_main_window_for_unlock(app: &AppHandle, state: &AppState) {
         return;
     };
 
-    if window.is_minimized().unwrap_or(false) {
+    if window_blocks_nm_focus(&window) {
         return;
     }
 
     let _guard = NmBridgeFocusGuard::new(Some(state));
 
     let _ = window.show();
-    if !window.is_minimized().unwrap_or(false) {
+    if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) {
         let _ = window.set_focus();
     }
 }

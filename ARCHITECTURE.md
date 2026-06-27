@@ -1677,7 +1677,7 @@ Chrome und Firefox verwenden dasselbe Framing für `type: "stdio"`:
 |---|---|
 | `{ "action": "ping" }` | `{ "status": "pong" }` |
 | `{ "action": "get_login", "url": "<hostname>" }` | siehe Phase 3 |
-| `{ "action": "vault_status" }` | `{ "status": "ok"|"locked"|"mfa_failed", "locked": bool, "minimized": bool, … }` |
+| `{ "action": "vault_status" }` | `{ "status": "ok"|"locked"|"mfa_failed", "locked": bool, "minimized": bool, … }` — `minimized` true bei Taskleisten-Minimize **oder** Tray-Hide (`!is_visible`) |
 | `{ "action": "request_unlock" }` | `{ "status": "ok", "success": true }` — fokussiert Desktop-App nur wenn **nicht** minimiert (kein Passwort/MFA über NM) |
 | `{ "action": "open_new_secret", "password": "…" }` | Öffnet Desktop **Neues Secret** mit vorbefülltem Passwort (One-Shot, `take_extension_new_secret`) |
 | Unbekannte `action` | `{ "status": "error", "error": "unknown action" }` |
@@ -2208,6 +2208,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
+| 2026-06-28 | 2.1.0 | **NM Bridge Tray-Focus-Fix:** `minimized` inkl. Tray-Hide (`!is_visible`); `request_unlock` ohne Vault-Mutex während Focus; `perform_lock` Mutex-Timeout 5s |
 | 2026-06-28 | 2.1.0 | **System Tray:** Minimize to Tray, Vault bleibt entsperrt, Tray-Menü (Öffnen/Sperren/Beenden), `forceLockOnMinimize` GPO-kompatibel |
 | 2026-06-25 | 2.0.0 | **Extension In-Page-Banner entfernt:** `content.js` zeigt keinen Lock-/MFA-Banner mehr; Status nur im Popup; Unlock-Polling bleibt für AutoFill |
 | 2026-06-25 | 2.0.0 | **NM Bridge Focus-Loop-Fix:** `vault_status.minimized`; `request_unlock` ohne Focus bei minimiertem Fenster; `AppState.nm_bridge_focusing` unterdrückt Lock-on-Minimize während NM-Focus |

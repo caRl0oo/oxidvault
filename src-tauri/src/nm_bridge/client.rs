@@ -143,9 +143,7 @@ fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
         None => return BridgeResponse::unavailable(),
     };
 
-    if !main_window_minimized(app) {
-        focus_main_window_for_unlock(app, &state);
-    }
+    let minimized = main_window_minimized(app);
 
     if state
         .bridge
@@ -153,18 +151,27 @@ fn handle_request_unlock(app: &tauri::AppHandle) -> BridgeResponse {
         .map(|bridge| bridge.mfa_failed())
         .unwrap_or(false)
     {
-        return BridgeResponse::mfa_failed(main_window_minimized(app));
+        return BridgeResponse::mfa_failed(minimized);
     }
 
-    let vault = match state.vault.lock() {
-        Ok(guard) => guard,
-        Err(e) => return BridgeResponse::error(e.to_string()),
+    let mfa_required = {
+        let vault = match state.vault.lock() {
+            Ok(guard) => guard,
+            Err(e) => return BridgeResponse::error(e.to_string()),
+        };
+
+        if !vault.info().locked {
+            return BridgeResponse::unlock_success();
+        }
+
+        locked_mfa_required(app, &vault)
     };
 
-    if !vault.info().locked {
-        return BridgeResponse::unlock_success();
+    if minimized {
+        return BridgeResponse::locked(mfa_required, true);
     }
 
+    focus_main_window_for_unlock(app, &state);
     BridgeResponse::focus_sent()
 }
 

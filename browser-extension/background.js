@@ -89,6 +89,18 @@ async function handleVaultStatus(sendResponse) {
 
 async function handleRequestUnlock(sendResponse) {
   try {
+    const status = await queryNativeHost({ action: "vault_status" });
+    if (status?.minimized) {
+      sendResponse({
+        status: "locked",
+        success: false,
+        locked: true,
+        minimized: true,
+        mfa_required: status.mfa_required ?? false,
+      });
+      return;
+    }
+
     const response = await queryNativeHost({ action: "request_unlock" });
     sendResponse(response);
   } catch (err) {
