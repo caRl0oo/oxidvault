@@ -147,6 +147,9 @@ Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions
 - **Compliance-Dashboard** — Policy-, Audit- und Key-Age-Status mit Rotations-Empfehlung (> 90 Tage)
 - **SSH Quick Connect** — Integriertes Terminal für gespeicherte SSH-Zugänge
 - **Browser-Erweiterung** — Native Messaging für kontrolliertes Autofill ([Chrome Web Store](https://chromewebstore.google.com/detail/oxidvault/belagnpfebgljfamjihdoinbcehingjd) · [`browser-extension/README.md`](browser-extension/README.md))
+- **System Tray** — App minimiert in den System Tray; Vault bleibt entsperrt; Wiederherstellung per Klick; Tray-Menü (Öffnen / Sperren / Beenden)
+- **Auto-Lock Timer** — einstellbar in der UI (1 / 5 / 10 / 15 / 30 Min / Nie); Admin-GPO überschreibt; Default 10 Minuten
+- **PDF Compliance Report** — Export des Audit-Logs als A4-PDF mit OxidVault-Branding, Compliance-Status und letzten 50 Ereignissen; ideal für DSGVO-Audits
 
 ---
 
@@ -284,13 +287,37 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 | Plattform | Datei |
 |---|---|
-| **Windows** | `OxidVault_2.0.1_x64_en-US.msi` |
+| **Windows** | `OxidVault_2.2.0_x64_en-US.msi` |
 
 > **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.com](https://oxidvault.com)
 
 ---
 
 ## Changelog
+
+### [2.2.0] — Auto-Lock & PDF Compliance
+
+- **Auto-Lock Timer UI** — einstellbar in Einstellungen → Sicherheit (1/5/10/15/30 Min/Nie); Default 10 Minuten; GPO-kompatibel
+- **PDF Compliance Report** — Export aus Aktivitäts-Log Tab; A4, OxidVault-Branding, Compliance-Status, letzte 50 Audit-Ereignisse; vollständiger Export weiterhin als JSON/CSV
+
+### [2.1.1] — Bugfixes System Tray
+
+- **Extension Focus-Loop behoben** — App springt nicht mehr hoch wenn im Tray minimiert
+- **Deadlock-Schutz** — `perform_lock` mit 5s Timeout
+- **Tray-Hide korrekt erkannt** — `is_visible()` Check statt nur `is_minimized()`
+
+### [2.1.0] — System Tray
+
+- **System Tray** — X-Button und Minimieren verstecken App im Tray; Vault bleibt entsperrt
+- **Ctrl+Q** — App sauber beenden mit RAM-Purge vor Exit
+- **Tray-Menü** — Öffnen / Vault sperren / Beenden
+- **GPO `forceLockOnMinimize`** — sperrt Vault beim Verstecken in Tray wenn Admin-Policy aktiv
+
+### [2.0.1] — Bugfixes
+
+- **Extension Banner entfernt** — In-Page-Banner erschienen bei jedem Seitenaufruf; Status jetzt nur im Extension-Popup sichtbar
+- **Focus-Loop Fix** — Browser-Extension fokussierte App nicht mehr wenn Vault minimiert
+- **Mobile Menu Fix** — Landing Page oxidvault.com
 
 ### [2.0.0] — Multi-User & Security
 

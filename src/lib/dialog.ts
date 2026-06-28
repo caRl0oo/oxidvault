@@ -62,3 +62,16 @@ export async function pickAuditExportPath(): Promise<AuditExportSelection | null
     format,
   };
 }
+
+export async function pickAuditPdfExportPath(): Promise<string | null> {
+  const path = await save({
+    defaultPath: `OxidVault-Compliance-Report-${new Date().toISOString().slice(0, 10)}.pdf`,
+    filters: [{ name: i18n.t("dialog.auditPdfFilter"), extensions: ["pdf"] }],
+  });
+
+  if (!path) {
+    return null;
+  }
+
+  return path.toLowerCase().endsWith(".pdf") ? path : `${path}.pdf`;
+}

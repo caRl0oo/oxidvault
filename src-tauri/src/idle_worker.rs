@@ -95,5 +95,5 @@ fn resolve_auto_lock_seconds(app: &AppHandle) -> u32 {
                 .auto_lock_seconds
                 .value
         })
-        .unwrap_or(120)
+        .unwrap_or_else(|_| settings::default_auto_lock_seconds())
 }

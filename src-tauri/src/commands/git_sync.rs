@@ -26,6 +26,31 @@ pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
     load_settings(&app)
 }
 
+const ALLOWED_AUTO_LOCK_SECONDS: [u32; 6] = [0, 60, 300, 600, 900, 1800];
+
+#[tauri::command]
+pub fn update_auto_lock_seconds(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    seconds: u32,
+) -> Result<AppSettings, String> {
+    ensure_vault_unlocked(&state)?;
+    state.touch_activity_if_unlocked();
+    let mut settings = load_settings(&app)?;
+    let resolved = resolve_config(&settings.policy_preferences());
+    if resolved.auto_lock_seconds.disabled {
+        return Err("Automatische Sperrung wird durch die Admin-Richtlinie verwaltet.".into());
+    }
+    if !ALLOWED_AUTO_LOCK_SECONDS.contains(&seconds) {
+        return Err("Ungültiger Auto-Lock-Wert.".into());
+    }
+
+    settings.auto_lock_seconds = seconds;
+    save_settings(&app, &settings)?;
+    record_vault_audit(&state, |vault| vault.record_config_changed("auto_lock"))?;
+    Ok(settings)
+}
+
 #[tauri::command]
 pub fn update_git_sync_settings(
     app: AppHandle,

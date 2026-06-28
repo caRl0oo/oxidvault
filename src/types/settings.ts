@@ -11,6 +11,7 @@ export interface GitSyncSettings {
 export interface AppSettings {
   lastVaultPath?: string | null;
   gitSync: GitSyncSettings;
+  autoLockSeconds?: number;
 }
 
 export interface GitSyncResult {

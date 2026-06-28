@@ -29,7 +29,7 @@ pub use audit::{
     init as init_audit_log, log_event_for_vault, read_audit_logs, verify_audit_chain, AuditAction,
     AuditLog, AuditLogEntry, AuditLogger,
 };
-pub use audit_export::{export_audit_report, ExportFormat};
+pub use audit_export::{export_audit_report, export_audit_report_pdf, ExportFormat};
 pub use auth::{unlock_vault as authenticate_unlock, AuthError, VaultHandle};
 pub use compliance::{compliance_status, ComplianceStatus, KEY_ROTATION_THRESHOLD_DAYS};
 pub use diagnostics::{

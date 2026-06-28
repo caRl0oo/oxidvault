@@ -860,6 +860,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
+| `export_audit_log_pdf` | `target_path` | `()` | PDF Compliance Report (A4, Status, letzte 50 Ereignisse) — **Vault-Lock-Guard** | ✅ |
 | `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
 | `get_system_diagnostics` | — | `SystemDiagnostics` | Admin-Support-Snapshot: Vault-Pfad (UNC), GPO-Policy, Audit-Log-Schreibbarkeit, Version — **keine Secrets** | ✅ |
 | `enable_mfa` | — | `MfaSetupInfo` | TOTP-Enrollment — **Vault-Lock-Guard** | ✅ |
@@ -870,6 +871,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `get_app_settings` | — | `AppSettings` | Lokale App-Einstellungen laden | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effektive Policy (User + Admin-GPO, UI-`disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?`, `ssh_key_path?`, `https_username?`, `https_password?` | `AppSettings` | Git-Sync-Konfiguration — **Vault-Lock-Guard** | ✅ |
+| `update_auto_lock_seconds` | `seconds: u32` | `AppSettings` | Auto-Lock-Timer (0/60/300/600/900/1800) — **Vault-Lock-Guard** | ✅ |
 | `trigger_git_sync` | — | `GitSyncResult` | `git2` pull → commit/push — **Vault-Lock-Guard** | ✅ async |
 | `save_ssh_passphrase` | `passphrase: String` | `()` | SSH-Key-Passphrase im OS-Keyring — **Vault-Lock-Guard** | ✅ |
 | `remove_ssh_passphrase` | — | `()` | SSH-Key-Passphrase aus Keyring — **Vault-Lock-Guard** | ✅ |
@@ -1243,12 +1245,14 @@ ReachabilityDot — Sidebar + Detailansicht
 | `auditVaultSecurity()` | `audit_vault_security` |
 | `getAuditLogs(limit)` | `get_audit_logs` |
 | `exportAuditLog(targetPath, format)` | `export_audit_log` |
+| `exportAuditLogPdf(targetPath)` | `export_audit_log_pdf` |
 | `getComplianceStatus()` | `get_compliance_status` |
 | `getSystemDiagnostics()` | `get_system_diagnostics` |
 | `reencryptVault(currentPassword, newPassword)` | `reencrypt_vault` |
 | `getAppSettings()` | `get_app_settings` |
 | `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
+| `updateAutoLockSeconds(seconds)` | `update_auto_lock_seconds` |
 | `triggerGitSync()` | `trigger_git_sync` |
 | `saveSshPassphrase(passphrase)` | `save_ssh_passphrase` |
 | `removeSshPassphrase()` | `remove_ssh_passphrase` |
@@ -1965,7 +1969,7 @@ self.audit_logger.log(AuditAction::SecretCreated { id: entry_uuid })?;
 | **Aktionen** | Technische `AuditAction`-Enums → deutsche Beschreibungstexte (`auditLogLabels.ts`) |
 | **Suche** | Clientseitiger Filter nach Aktion, Eintrag-ID, Hash, formatiertem Zeitstempel |
 | **Sicherheitshinweis** | Info-Banner: keine Passwörter oder Benutzernamen im Log |
-| **Export** | Button **Export** → Save-Dialog (JSON/CSV-Filter) → `export_audit_log` |
+| **Export** | Button **Export** → Save-Dialog (JSON/CSV-Filter) → `export_audit_log`; Button **PDF Export** → `export_audit_log_pdf` |
 
 ---
 
@@ -2106,7 +2110,7 @@ settings.json (User)  +  policy.json (Admin)  →  ResolvedConfig (effektiv + UI
 | Feld | Wirkung |
 |---|---|
 | `forceLockOnMinimize` | Optionales Lock beim Verstecken in Tray (`window_events.rs`) |
-| `autoLockSeconds` | Inaktivitäts-Auto-Lock (`useAutoLock` im Frontend) |
+| `autoLockSeconds` | Inaktivitäts-Auto-Lock (`idle_worker.rs`); User einstellbar in Einstellungen → Sicherheit; Admin-GPO überschreibt |
 | `gitSyncEnabled` | Git-Sync Toggle + `sync_vault_git` |
 | `minMasterPasswordLen` | Master-Passwort-Validierung bei `Vault::create` |
 
@@ -2115,6 +2119,7 @@ settings.json (User)  +  policy.json (Admin)  →  ResolvedConfig (effektiv + UI
 | IPC | Rückgabe |
 |---|---|
 | `get_resolved_config` | `ResolvedConfig` mit `{ value, disabled }` pro Feld |
+| `update_auto_lock_seconds` | Speichert User-Präferenz in `settings.json` (0 = Nie); blockiert bei GPO-Override |
 
 Das Frontend nutzt `disabled: true`, um UI-Elemente zu sperren (z. B. Git-Sync-Checkbox in `SettingsMenu.tsx`).
 
@@ -2153,7 +2158,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | **JSON-Report** | Objekt mit kryptographischem `integrity`-Header (`reportHash` = SHA-256 über Version, Zeitstempel, Chain-Tail-Hash, Einträge) plus `entries[]` inkl. `prevHash` |
 | **CSV-Report** | Spalten: `timestamp_utc`, `action`, `entry_id`, `prev_hash`, `entry_hash` |
 | **Tauri Command** | `export_audit_log(target_path, format)` — `format`: `"json"` oder `"csv"` |
-| **UI** | Save-Dialog (`dialog::save`) mit Filter **JSON Audit Report (.json)** / **CSV Audit Report (.csv)**; Dateiendung bestimmt `format` |
+| **PDF-Report** | `export_audit_log_pdf` → `printpdf` → A4, Text-Branding, Compliance-Status, letzte 50 Audit-Ereignisse; Hinweis auf JSON/CSV bei >50 Einträgen |
+| **UI** | Save-Dialog (`dialog::save`) mit Filter **JSON Audit Report (.json)** / **CSV Audit Report (.csv)**; Dateiendung bestimmt `format`; zusätzlich **PDF Export** |
 
 **JSON-Integritätsheader (Auszug):**
 
@@ -2208,6 +2214,8 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
+| 2026-06-29 | 2.2.0 | **PDF Compliance Report:** `printpdf`, A4, Compliance-Status, Audit-Ereignisse, OxidVault Branding |
+| 2026-06-29 | 2.2.0 | **Auto-Lock UI:** Timer einstellbar (1/5/10/15/30 Min/Nie); Default 10 Min; GPO-kompatibel |
 | 2026-06-28 | 2.1.0 | **NM Bridge Tray-Focus-Fix:** `minimized` inkl. Tray-Hide (`!is_visible`); `request_unlock` ohne Vault-Mutex während Focus; `perform_lock` Mutex-Timeout 5s |
 | 2026-06-28 | 2.1.0 | **System Tray:** Minimize to Tray, Vault bleibt entsperrt, Tray-Menü (Öffnen/Sperren/Beenden), `forceLockOnMinimize` GPO-kompatibel |
 | 2026-06-25 | 2.0.0 | **Extension In-Page-Banner entfernt:** `content.js` zeigt keinen Lock-/MFA-Banner mehr; Status nur im Popup; Unlock-Polling bleibt für AutoFill |

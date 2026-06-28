@@ -238,6 +238,9 @@
     "entryCount": "{{filtered}} of {{total}} entries",
     "entryCountFiltered": " (filtered)",
     "exportSaved": "Export saved: {{path}}",
+    "exportPdf": "PDF Export",
+    "exportPdfSuccess": "PDF Compliance Report exported: {{path}}",
+    "reportTitle": "DSGVO Compliance Report",
     "actions": {
       "VaultCreated": "Vault was created",
       "VaultOpened": "Vault was opened",
@@ -444,7 +447,8 @@
   "dialog": {
     "vaultFilter": "OxidVault",
     "auditJsonFilter": "JSON audit report (.json)",
-    "auditCsvFilter": "CSV audit report (.csv)"
+    "auditCsvFilter": "CSV audit report (.csv)",
+    "auditPdfFilter": "PDF compliance report (.pdf)"
   },
   "settings": {
     "title": "Settings",
@@ -463,6 +467,7 @@
     "gitSync": "Git synchronization",
     "gitSyncHint": "The encrypted .oxid file is synchronized via Git — plaintext secrets never leave the vault.",
     "adminPolicyActive": "Admin policy active — some options are locked.",
+    "adminPolicy": "Managed by admin policy",
     "syncEnabled": "Sync enabled",
     "remoteRepository": "Remote repository",
     "remotePlaceholder": "https://github.com/user/vault.git",
@@ -477,6 +482,17 @@
     "saveGit": "Save Git settings",
     "saving": "Saving…",
     "saved": "Saved ✓",
+    "autoLock": {
+      "title": "Auto-Lock",
+      "description": "Automatically lock vault after inactivity",
+      "1min": "1 minute",
+      "5min": "5 minutes",
+      "10min": "10 minutes",
+      "15min": "15 minutes",
+      "30min": "30 minutes",
+      "never": "Never",
+      "customSeconds": "{{seconds}} seconds"
+    },
     "mfa": {
       "title": "Two-factor authentication",
       "recoveryHint": "Important: Create your recovery codes before enabling 2FA so you do not lose access if your device is lost.",

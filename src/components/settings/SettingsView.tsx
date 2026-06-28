@@ -17,6 +17,7 @@ import {
   getMfaStatus,
   getResolvedConfig,
   saveSshPassphrase,
+  updateAutoLockSeconds,
   updateGitSyncSettings,
 } from "@/lib/ipc";
 import { LOCALE_OPTIONS, isLocaleId } from "@/lib/locale";
@@ -33,6 +34,8 @@ import { ChangeUserPasswordPanel } from "@/components/settings/ChangeUserPasswor
 import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 
 const SETTINGS_NAV: SettingsCategory[] = ["general", "sync", "security", "users"];
+
+const AUTO_LOCK_PRESETS = [60, 300, 600, 900, 1800, 0] as const;
 
 const inputClass = `${UI.input} mt-1.5 max-w-xl text-sm`;
 
@@ -82,6 +85,10 @@ export function SettingsView({
   const [sshPassphraseSaved, setSshPassphraseSaved] = useState(false);
   const [sshPassphraseError, setSshPassphraseError] = useState<string | null>(null);
   const [resolvedConfig, setResolvedConfig] = useState<ResolvedConfig | null>(null);
+  const [autoLockSeconds, setAutoLockSeconds] = useState(600);
+  const [autoLockDisabled, setAutoLockDisabled] = useState(false);
+  const [autoLockSaving, setAutoLockSaving] = useState(false);
+  const [autoLockError, setAutoLockError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
 
@@ -132,6 +139,8 @@ export function SettingsView({
           isMultiUser && !vaultLocked ? getCurrentUser() : Promise.resolve(null),
         ]);
         setResolvedConfig(resolved);
+        setAutoLockSeconds(resolved.autoLockSeconds.value);
+        setAutoLockDisabled(resolved.autoLockSeconds.disabled);
         setGitEnabled(resolved.gitSyncEnabled.value);
         setRemoteUrl(settings.gitSync.remoteUrl ?? "");
         setSshKeyPath(settings.gitSync.sshKeyPath ?? "");
@@ -158,6 +167,23 @@ export function SettingsView({
     }
     return id !== "users" || (isMultiUser && isCurrentUserAdmin);
   });
+
+  const handleAutoLockChange = useCallback(async (seconds: number) => {
+    setAutoLockSaving(true);
+    setAutoLockError(null);
+    try {
+      await updateAutoLockSeconds(seconds);
+      setAutoLockSeconds(seconds);
+      const resolved = await getResolvedConfig();
+      setResolvedConfig(resolved);
+      setAutoLockSeconds(resolved.autoLockSeconds.value);
+      setAutoLockDisabled(resolved.autoLockSeconds.disabled);
+    } catch (e) {
+      setAutoLockError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAutoLockSaving(false);
+    }
+  }, []);
 
   const saveGitSettings = useCallback(async () => {
     setGitSaving(true);
@@ -279,6 +305,11 @@ export function SettingsView({
 
     return (
       <SecuritySettingsPanel
+        autoLockSeconds={autoLockSeconds}
+        autoLockDisabled={autoLockDisabled}
+        autoLockSaving={autoLockSaving}
+        autoLockError={autoLockError}
+        onAutoLockChange={(seconds) => runAsync(() => handleAutoLockChange(seconds))}
         mfaEnabled={mfaEnabled}
         mfaVaultLocked={mfaVaultLocked}
         mfaDisableConfirm={mfaDisableConfirm}
@@ -609,6 +640,11 @@ function SyncSettingsPanel({
 }
 
 interface SecuritySettingsPanelProps {
+  readonly autoLockSeconds: number;
+  readonly autoLockDisabled: boolean;
+  readonly autoLockSaving: boolean;
+  readonly autoLockError: string | null;
+  readonly onAutoLockChange: (seconds: number) => void;
   readonly mfaEnabled: boolean;
   readonly mfaVaultLocked: boolean;
   readonly mfaDisableConfirm: boolean;
@@ -623,6 +659,11 @@ interface SecuritySettingsPanelProps {
 }
 
 function SecuritySettingsPanel({
+  autoLockSeconds,
+  autoLockDisabled,
+  autoLockSaving,
+  autoLockError,
+  onAutoLockChange,
   mfaEnabled,
   mfaVaultLocked,
   mfaDisableConfirm,
@@ -639,6 +680,35 @@ function SecuritySettingsPanel({
 
   return (
     <div className="flex max-w-xl flex-col gap-4">
+      <div className="vault-card flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-vault-text">{t("settings.autoLock.title")}</span>
+            <span className="text-xs text-vault-muted">{t("settings.autoLock.description")}</span>
+            {autoLockDisabled ? (
+              <span className="mt-0.5 text-xs text-vault-warning">{t("settings.adminPolicy")}</span>
+            ) : null}
+          </div>
+          <select
+            className={`${UI.input} w-48 text-sm`}
+            value={autoLockSeconds}
+            onChange={(e) => onAutoLockChange(Number(e.target.value))}
+            disabled={autoLockDisabled || autoLockSaving}
+          >
+            {autoLockSelectOptions(autoLockSeconds, t).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {autoLockError ? (
+          <p className="text-xs text-vault-danger" role="alert">
+            {autoLockError}
+          </p>
+        ) : null}
+      </div>
+
       <div className="vault-card flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
@@ -715,6 +785,40 @@ function SecuritySettingsPanel({
       {isMultiUser ? <ChangeUserPasswordPanel /> : null}
     </div>
   );
+}
+
+function autoLockSelectOptions(
+  currentValue: number,
+  t: (key: string, options?: { seconds: number }) => string,
+): Array<{ value: number; label: string }> {
+  const presets: Array<{ value: number; label: string }> = AUTO_LOCK_PRESETS.map(
+    (seconds) => ({
+      value: seconds,
+      label: autoLockPresetLabel(seconds, t),
+    }),
+  );
+
+  if (!(AUTO_LOCK_PRESETS as readonly number[]).includes(currentValue)) {
+    presets.unshift({
+      value: currentValue,
+      label: t("settings.autoLock.customSeconds", { seconds: currentValue }),
+    });
+  }
+
+  return presets;
+}
+
+function autoLockPresetLabel(
+  seconds: number,
+  t: (key: string) => string,
+): string {
+  if (seconds === 0) return t("settings.autoLock.never");
+  if (seconds === 60) return t("settings.autoLock.1min");
+  if (seconds === 300) return t("settings.autoLock.5min");
+  if (seconds === 600) return t("settings.autoLock.10min");
+  if (seconds === 900) return t("settings.autoLock.15min");
+  if (seconds === 1800) return t("settings.autoLock.30min");
+  return String(seconds);
 }
 
 function gitSaveButtonLabel(

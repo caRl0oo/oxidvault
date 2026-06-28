@@ -3,8 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { pickAuditExportPath } from "@/lib/dialog";
-import { exportAuditLog, getAuditLogs } from "@/lib/ipc";
+import { pickAuditExportPath, pickAuditPdfExportPath } from "@/lib/dialog";
+import { exportAuditLog, exportAuditLogPdf, getAuditLogs } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
 import {
   formatAuditAction,
@@ -48,6 +48,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState(false);
 
@@ -82,6 +83,27 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
       setExportSuccess(false);
     } finally {
       setExporting(false);
+    }
+  }, [t]);
+
+  const handleExportPdf = useCallback(async () => {
+    setExportMessage(null);
+    setExportSuccess(false);
+    const path = await pickAuditPdfExportPath();
+    if (!path) {
+      return;
+    }
+
+    setExportingPdf(true);
+    try {
+      await exportAuditLogPdf(path);
+      setExportMessage(t("audit.exportPdfSuccess", { path }));
+      setExportSuccess(true);
+    } catch (e) {
+      setExportMessage(formatVaultError(e));
+      setExportSuccess(false);
+    } finally {
+      setExportingPdf(false);
     }
   }, [t]);
 
@@ -207,10 +229,18 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
         <button
           type="button"
           onClick={() => runAsync(handleExport)}
-          disabled={exporting || loading}
+          disabled={exporting || exportingPdf || loading}
           className="vault-btn-secondary px-3 py-1.5 text-sm disabled:opacity-50"
         >
           {exporting ? t("audit.exporting") : t("common.export")}
+        </button>
+        <button
+          type="button"
+          onClick={() => runAsync(handleExportPdf)}
+          disabled={exporting || exportingPdf || loading}
+          className="vault-btn-secondary px-3 py-1.5 text-sm disabled:opacity-50"
+        >
+          {exportingPdf ? t("audit.exporting") : t("audit.exportPdf")}
         </button>
         <button
           type="button"

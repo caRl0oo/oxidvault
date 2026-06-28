@@ -71,8 +71,8 @@ fn default_force_lock_on_minimize() -> bool {
     false
 }
 
-fn default_auto_lock_seconds() -> u32 {
-    120
+pub fn default_auto_lock_seconds() -> u32 {
+    600
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {

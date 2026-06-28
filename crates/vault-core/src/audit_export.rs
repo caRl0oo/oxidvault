@@ -4,17 +4,20 @@
 //! Dual-format audit report export with mandatory hash-chain verification.
 
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
+use printpdf::{BuiltinFont, Line, Mm, PdfDocument, Point};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::audit::{audit_log_path, verify_audit_chain};
+use crate::audit::{audit_log_path, read_audit_logs, verify_audit_chain};
+use crate::compliance::ComplianceStatus;
 use crate::error::VaultError;
 
 const REPORT_VERSION: &str = "1.0";
+const PDF_AUDIT_DISPLAY_LIMIT: usize = 50;
 
 /// Supported audit report export formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +99,222 @@ pub fn export_audit_report(
     }
 
     Ok(target_path)
+}
+
+/// Generates a branded A4 PDF compliance summary with status and the newest audit events.
+pub fn export_audit_report_pdf(
+    vault_path: &Path,
+    target_path: &Path,
+    compliance: &ComplianceStatus,
+) -> Result<(), VaultError> {
+    let log_path = audit_log_path(vault_path);
+    let total_entries = read_all_audit_entries(&log_path)?.len();
+    let logs = read_audit_logs(vault_path, PDF_AUDIT_DISPLAY_LIMIT).unwrap_or_default();
+
+    let (doc, page1, layer1) = PdfDocument::new(
+        "OxidVault DSGVO Compliance Report",
+        Mm(210.0),
+        Mm(297.0),
+        "Layer 1",
+    );
+
+    let current_layer = doc.get_page(page1).get_layer(layer1);
+
+    let font_regular = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(pdf_error)?;
+    let font_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(pdf_error)?;
+
+    current_layer.use_text("OxidVault", 24.0, Mm(20.0), Mm(270.0), &font_bold);
+    current_layer.use_text(
+        "DSGVO Compliance Report",
+        14.0,
+        Mm(20.0),
+        Mm(260.0),
+        &font_regular,
+    );
+
+    let now = Utc::now().format("%d.%m.%Y %H:%M UTC").to_string();
+    current_layer.use_text(
+        format!("Erstellt: {now}"),
+        10.0,
+        Mm(20.0),
+        Mm(252.0),
+        &font_regular,
+    );
+    current_layer.use_text(
+        format!(
+            "Vault: {}",
+            truncate_for_pdf(&vault_path.display().to_string(), 70)
+        ),
+        10.0,
+        Mm(20.0),
+        Mm(246.0),
+        &font_regular,
+    );
+
+    let separator = Line::from_iter(vec![
+        (Point::new(Mm(20.0), Mm(242.0)), false),
+        (Point::new(Mm(190.0), Mm(242.0)), false),
+    ]);
+    current_layer.set_outline_thickness(0.5);
+    current_layer.add_line(separator);
+
+    current_layer.use_text("Compliance-Status", 12.0, Mm(20.0), Mm(234.0), &font_bold);
+
+    let status_text = if compliance.audit_chain_valid && !compliance.key_rotation_recommended {
+        "Compliance OK"
+    } else {
+        "Handlungsbedarf"
+    };
+    current_layer.use_text(status_text, 11.0, Mm(20.0), Mm(226.0), &font_regular);
+
+    let chain_label = if compliance.audit_chain_valid {
+        "Ja"
+    } else {
+        "Nein"
+    };
+    current_layer.use_text(
+        format!("Hash-Kette valide: {chain_label}"),
+        10.0,
+        Mm(20.0),
+        Mm(219.0),
+        &font_regular,
+    );
+    current_layer.use_text(
+        format!("Schluessel-Alter: {} Tage", compliance.key_age_days),
+        10.0,
+        Mm(20.0),
+        Mm(213.0),
+        &font_regular,
+    );
+    let gpo_label = if compliance.policy_managed_by_gpo {
+        "Ja"
+    } else {
+        "Nein"
+    };
+    current_layer.use_text(
+        format!("GPO verwaltet: {gpo_label}"),
+        10.0,
+        Mm(20.0),
+        Mm(207.0),
+        &font_regular,
+    );
+    if compliance.key_rotation_recommended {
+        current_layer.use_text(
+            "Schluessel-Rotation empfohlen (> 90 Tage)",
+            10.0,
+            Mm(20.0),
+            Mm(201.0),
+            &font_regular,
+        );
+    }
+
+    current_layer.use_text(
+        format!("Audit-Ereignisse (letzte {PDF_AUDIT_DISPLAY_LIMIT})"),
+        12.0,
+        Mm(20.0),
+        Mm(192.0),
+        &font_bold,
+    );
+
+    current_layer.use_text("Zeit (UTC)", 9.0, Mm(20.0), Mm(184.0), &font_bold);
+    current_layer.use_text("Aktion", 9.0, Mm(70.0), Mm(184.0), &font_bold);
+    current_layer.use_text("Eintrag-ID", 9.0, Mm(130.0), Mm(184.0), &font_bold);
+
+    let min_y = if total_entries > PDF_AUDIT_DISPLAY_LIMIT {
+        45.0
+    } else {
+        20.0
+    };
+
+    let mut y = 177.0f32;
+    for log in &logs {
+        if y < min_y {
+            break;
+        }
+
+        let time = log.timestamp_utc.chars().take(16).collect::<String>();
+        current_layer.use_text(time, 8.0, Mm(20.0), Mm(y), &font_regular);
+        current_layer.use_text(
+            truncate_for_pdf(&log.action, 28),
+            8.0,
+            Mm(70.0),
+            Mm(y),
+            &font_regular,
+        );
+        current_layer.use_text(
+            display_entry_id(&log.entry_id),
+            8.0,
+            Mm(130.0),
+            Mm(y),
+            &font_regular,
+        );
+
+        y -= 6.0;
+    }
+
+    if total_entries > PDF_AUDIT_DISPLAY_LIMIT {
+        current_layer.use_text(
+            format!(
+                "Hinweis: Zeigt die letzten {PDF_AUDIT_DISPLAY_LIMIT} von {total_entries} Ereignissen."
+            ),
+            8.0,
+            Mm(20.0),
+            Mm(35.0),
+            &font_regular,
+        );
+        current_layer.use_text(
+            "Vollstaendiger Export als JSON/CSV verfuegbar.",
+            8.0,
+            Mm(20.0),
+            Mm(29.0),
+            &font_regular,
+        );
+    }
+
+    let footer_line = Line::from_iter(vec![
+        (Point::new(Mm(20.0), Mm(13.0)), false),
+        (Point::new(Mm(190.0), Mm(13.0)), false),
+    ]);
+    current_layer.set_outline_thickness(0.5);
+    current_layer.add_line(footer_line);
+
+    current_layer.use_text(
+        format!("OxidVault v{} - oxidvault.com", env!("CARGO_PKG_VERSION")),
+        8.0,
+        Mm(20.0),
+        Mm(8.0),
+        &font_regular,
+    );
+
+    let file = File::create(target_path)?;
+    let mut writer = BufWriter::new(file);
+    doc.save(&mut writer).map_err(pdf_error)?;
+    writer.flush()?;
+
+    Ok(())
+}
+
+fn pdf_error(error: printpdf::Error) -> VaultError {
+    VaultError::Other(format!("pdf export failed: {error}"))
+}
+
+fn truncate_for_pdf(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{truncated}...")
+}
+
+fn display_entry_id(entry_id: &str) -> String {
+    if entry_id.is_empty() {
+        return "-".to_string();
+    }
+    truncate_for_pdf(entry_id, 20)
 }
 
 fn genesis_hash() -> String {
@@ -243,6 +462,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::audit::{AuditAction, AuditLogger};
+    use crate::compliance::ComplianceStatus;
     use tempfile::tempdir;
 
     #[test]
@@ -290,6 +510,34 @@ mod tests {
         assert!(raw.starts_with("timestamp_utc,action,entry_id,prev_hash,entry_hash"));
         assert!(raw.contains("SecretCreated"));
         assert!(raw.contains("550e8400-e29b-41d4-a716-446655440000"));
+    }
+
+    #[test]
+    fn export_pdf_writes_valid_file() {
+        let dir = tempdir().unwrap();
+        let vault_path = dir.path().join("team.oxid");
+        std::fs::write(&vault_path, b"dummy").unwrap();
+
+        let logger = AuditLogger::for_vault(&vault_path).unwrap();
+        logger
+            .log(AuditAction::VaultUnlocked {
+                lock_id: "lock-1".into(),
+            })
+            .expect("log");
+
+        let compliance = ComplianceStatus {
+            policy_managed_by_gpo: false,
+            audit_chain_valid: true,
+            key_created_at: None,
+            key_rotated_at: None,
+            key_age_days: 0,
+            key_rotation_recommended: false,
+        };
+        let target = dir.path().join("report.pdf");
+        export_audit_report_pdf(&vault_path, &target, &compliance).expect("export pdf");
+
+        let bytes = std::fs::read(&target).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
     }
 
     #[test]

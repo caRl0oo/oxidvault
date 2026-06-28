@@ -238,6 +238,9 @@
     "entryCount": "{{filtered}} von {{total}} Einträgen",
     "entryCountFiltered": " (gefiltert)",
     "exportSaved": "Export gespeichert: {{path}}",
+    "exportPdf": "PDF Export",
+    "exportPdfSuccess": "PDF Compliance Report exportiert: {{path}}",
+    "reportTitle": "DSGVO Compliance Report",
     "actions": {
       "VaultCreated": "Tresor wurde erstellt",
       "VaultOpened": "Tresor wurde geöffnet",
@@ -444,7 +447,8 @@
   "dialog": {
     "vaultFilter": "OxidVault",
     "auditJsonFilter": "JSON-Audit-Bericht (.json)",
-    "auditCsvFilter": "CSV-Audit-Bericht (.csv)"
+    "auditCsvFilter": "CSV-Audit-Bericht (.csv)",
+    "auditPdfFilter": "PDF Compliance Report (.pdf)"
   },
   "settings": {
     "title": "Einstellungen",
@@ -463,6 +467,7 @@
     "gitSync": "Git Synchronisation",
     "gitSyncHint": "Die verschlüsselte .oxid-Datei wird über Git synchronisiert — Klartext-Secrets verlassen nie den Tresor.",
     "adminPolicyActive": "Admin-Richtlinie aktiv — einige Optionen sind gesperrt.",
+    "adminPolicy": "Von Administrator-Richtlinie verwaltet",
     "syncEnabled": "Sync aktiv",
     "remoteRepository": "Remote-Repository",
     "remotePlaceholder": "https://github.com/user/vault.git",
@@ -477,6 +482,17 @@
     "saveGit": "Git-Einstellungen speichern",
     "saving": "Speichern…",
     "saved": "Gespeichert ✓",
+    "autoLock": {
+      "title": "Automatische Sperrung",
+      "description": "Vault nach Inaktivität automatisch sperren",
+      "1min": "1 Minute",
+      "5min": "5 Minuten",
+      "10min": "10 Minuten",
+      "15min": "15 Minuten",
+      "30min": "30 Minuten",
+      "never": "Nie",
+      "customSeconds": "{{seconds}} Sekunden"
+    },
     "mfa": {
       "title": "Zwei-Faktor-Authentifizierung",
       "recoveryHint": "Hinweis: Erstelle unbedingt deine Recovery-Codes, bevor du 2FA aktivierst, um bei Verlust des Geräts nicht den Zugriff zu verlieren.",
