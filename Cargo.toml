@@ -26,7 +26,3 @@ strip = true
 
 [profile.dev]
 incremental = true
-
-# Patched printpdf depends on lopdf >= 0.42 (RUSTSEC-2026-0187).
-[patch.crates-io]
-printpdf = { path = "patches/printpdf" }

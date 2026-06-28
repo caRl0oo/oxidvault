@@ -26,6 +26,7 @@ pub fn run_native_messaging() -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             system_tray::setup_tray(app.handle())?;
             nm_bridge::spawn_server(app.handle().clone());
@@ -56,7 +57,6 @@ pub fn run() {
             commands::audit::audit_vault_security,
             commands::audit::get_audit_logs,
             commands::audit::export_audit_log,
-            commands::audit::export_audit_log_pdf,
             commands::git_sync::get_app_settings,
             commands::git_sync::update_auto_lock_seconds,
             commands::git_sync::update_git_sync_settings,

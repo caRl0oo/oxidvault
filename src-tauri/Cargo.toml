@@ -23,6 +23,7 @@ tauri-build = { version = "2", features = [] }
 vault-core = { path = "../crates/vault-core" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 serde.workspace = true
 serde_json.workspace = true
 open = "5"

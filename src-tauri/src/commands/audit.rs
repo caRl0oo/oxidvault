@@ -3,13 +3,10 @@
 
 use tauri::State;
 use vault_core::{
-    compliance_status, export_audit_report, export_audit_report_pdf, read_audit_logs,
-    AuditLogEntry, ExportFormat, SecurityAuditReport,
+    export_audit_report, read_audit_logs, AuditLogEntry, ExportFormat, SecurityAuditReport,
 };
 
 use crate::state::AppState;
-
-use super::ensure_vault_unlocked;
 
 #[tauri::command]
 pub fn audit_vault_security(state: State<'_, AppState>) -> Result<SecurityAuditReport, String> {
@@ -49,26 +46,6 @@ pub fn export_audit_log(
         std::path::PathBuf::from(vault_path),
         std::path::PathBuf::from(target_path),
         export_format,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn export_audit_log_pdf(state: State<'_, AppState>, target_path: String) -> Result<(), String> {
-    ensure_vault_unlocked(&state)?;
-    let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    state.record_activity_for(&vault.info());
-    let vault_path = vault
-        .info()
-        .path
-        .ok_or_else(|| "Kein Vault geladen".to_string())?;
-    let compliance =
-        compliance_status(std::path::Path::new(&vault_path)).map_err(|e| e.to_string())?;
-    export_audit_report_pdf(
-        std::path::Path::new(&vault_path),
-        std::path::Path::new(&target_path),
-        &compliance,
     )
     .map_err(|e| e.to_string())?;
     Ok(())

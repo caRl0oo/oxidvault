@@ -239,7 +239,7 @@
     "entryCountFiltered": " (gefiltert)",
     "exportSaved": "Export gespeichert: {{path}}",
     "exportPdf": "PDF Export",
-    "exportPdfSuccess": "PDF Compliance Report exportiert: {{path}}",
+    "exportPdfSuccess": "PDF Compliance Report gespeichert: {{path}}",
     "reportTitle": "DSGVO Compliance Report",
     "actions": {
       "VaultCreated": "Tresor wurde erstellt",

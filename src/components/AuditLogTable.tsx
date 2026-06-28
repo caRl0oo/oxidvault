@@ -3,8 +3,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import { pickAuditExportPath, pickAuditPdfExportPath } from "@/lib/dialog";
-import { exportAuditLog, exportAuditLogPdf, getAuditLogs } from "@/lib/ipc";
+import { exportAuditLog, getAuditLogs, getComplianceStatus, getVaultInfo } from "@/lib/ipc";
+import { generateComplianceReportPdfBlob, loadLogoAsBase64 } from "@/lib/pdfExport";
 import { formatVaultError } from "@/lib/errors";
 import {
   formatAuditAction,
@@ -89,15 +91,31 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
   const handleExportPdf = useCallback(async () => {
     setExportMessage(null);
     setExportSuccess(false);
-    const path = await pickAuditPdfExportPath();
-    if (!path) {
+
+    const filePath = await pickAuditPdfExportPath();
+    if (!filePath) {
       return;
     }
 
     setExportingPdf(true);
     try {
-      await exportAuditLogPdf(path);
-      setExportMessage(t("audit.exportPdfSuccess", { path }));
+      const [compliance, logoBase64, vaultInfo] = await Promise.all([
+        getComplianceStatus(),
+        loadLogoAsBase64(),
+        getVaultInfo(),
+      ]);
+
+      const pdfBytes = generateComplianceReportPdfBlob({
+        vaultPath: vaultInfo.path ?? "",
+        compliance,
+        logs: entries,
+        totalEntries: entries.length,
+        logoBase64,
+      });
+
+      await writeFile(filePath, pdfBytes);
+
+      setExportMessage(t("audit.exportPdfSuccess", { path: filePath }));
       setExportSuccess(true);
     } catch (e) {
       setExportMessage(formatVaultError(e));
@@ -105,7 +123,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
     } finally {
       setExportingPdf(false);
     }
-  }, [t]);
+  }, [entries, t]);
 
   useEffect(() => {
     runAsync(loadLogs);

@@ -239,7 +239,7 @@
     "entryCountFiltered": " (filtered)",
     "exportSaved": "Export saved: {{path}}",
     "exportPdf": "PDF Export",
-    "exportPdfSuccess": "PDF Compliance Report exported: {{path}}",
+    "exportPdfSuccess": "PDF Compliance Report saved: {{path}}",
     "reportTitle": "DSGVO Compliance Report",
     "actions": {
       "VaultCreated": "Vault was created",

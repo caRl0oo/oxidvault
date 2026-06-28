@@ -860,7 +860,6 @@ ReachabilityDot — Sidebar + Detailansicht
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline-Passwort-Audit (Duplikate, Schwäche, Score) | ✅ |
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Neueste Compliance-Audit-Einträge aus `{vault}.audit.log` (neueste zuerst) | ✅ |
 | `export_audit_log` | `target_path`, `format` | `()` | Hash-Kette prüfen, Audit-Report als JSON oder CSV exportieren | ✅ |
-| `export_audit_log_pdf` | `target_path` | `()` | PDF Compliance Report (A4, Status, letzte 50 Ereignisse) — **Vault-Lock-Guard** | ✅ |
 | `get_compliance_status` | — | `ComplianceStatus` | GPO-, Audit-Ketten- und Key-Age-Status | ✅ |
 | `get_system_diagnostics` | — | `SystemDiagnostics` | Admin-Support-Snapshot: Vault-Pfad (UNC), GPO-Policy, Audit-Log-Schreibbarkeit, Version — **keine Secrets** | ✅ |
 | `enable_mfa` | — | `MfaSetupInfo` | TOTP-Enrollment — **Vault-Lock-Guard** | ✅ |
@@ -1245,7 +1244,6 @@ ReachabilityDot — Sidebar + Detailansicht
 | `auditVaultSecurity()` | `audit_vault_security` |
 | `getAuditLogs(limit)` | `get_audit_logs` |
 | `exportAuditLog(targetPath, format)` | `export_audit_log` |
-| `exportAuditLogPdf(targetPath)` | `export_audit_log_pdf` |
 | `getComplianceStatus()` | `get_compliance_status` |
 | `getSystemDiagnostics()` | `get_system_diagnostics` |
 | `reencryptVault(currentPassword, newPassword)` | `reencrypt_vault` |
@@ -1969,7 +1967,7 @@ self.audit_logger.log(AuditAction::SecretCreated { id: entry_uuid })?;
 | **Aktionen** | Technische `AuditAction`-Enums → deutsche Beschreibungstexte (`auditLogLabels.ts`) |
 | **Suche** | Clientseitiger Filter nach Aktion, Eintrag-ID, Hash, formatiertem Zeitstempel |
 | **Sicherheitshinweis** | Info-Banner: keine Passwörter oder Benutzernamen im Log |
-| **Export** | Button **Export** → Save-Dialog (JSON/CSV-Filter) → `export_audit_log`; Button **PDF Export** → `export_audit_log_pdf` |
+| **Export** | Button **Export** → Save-Dialog (JSON/CSV-Filter) → `export_audit_log`; Button **PDF Export** → Save-Dialog → `generateComplianceReportPdfBlob` + `writeFile` |
 
 ---
 
@@ -2158,8 +2156,22 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | **JSON-Report** | Objekt mit kryptographischem `integrity`-Header (`reportHash` = SHA-256 über Version, Zeitstempel, Chain-Tail-Hash, Einträge) plus `entries[]` inkl. `prevHash` |
 | **CSV-Report** | Spalten: `timestamp_utc`, `action`, `entry_id`, `prev_hash`, `entry_hash` |
 | **Tauri Command** | `export_audit_log(target_path, format)` — `format`: `"json"` oder `"csv"` |
-| **PDF-Report** | `export_audit_log_pdf` → `printpdf` → A4, Text-Branding, Compliance-Status, letzte 50 Audit-Ereignisse; Hinweis auf JSON/CSV bei >50 Einträgen |
-| **UI** | Save-Dialog (`dialog::save`) mit Filter **JSON Audit Report (.json)** / **CSV Audit Report (.csv)**; Dateiendung bestimmt `format`; zusätzlich **PDF Export** |
+| **PDF-Report** | `src/lib/pdfExport.ts` → jsPDF + jspdf-autotable im Tauri WebView (kein Rust-Command) |
+| **UI** | Save-Dialog (`dialog::save`) mit Filter **JSON Audit Report (.json)** / **CSV Audit Report (.csv)**; Dateiendung bestimmt `format`; zusätzlich **PDF Export** (Save-Dialog + `tauri-plugin-fs` `writeFile`) |
+
+### PDF Compliance Report
+
+| Aspekt | Detail |
+|---|---|
+| **Methode** | jsPDF + jspdf-autotable im Tauri WebView (Frontend) |
+| **Offline** | Vollständig client-seitig — keine Netzwerkanfragen |
+| **Format** | A4, Portrait, OxidVault-Branding (Indigo), Logo eingebettet (optional) |
+| **Tabelle** | jspdf-autotable — automatischer Seitenumbruch, wiederholende Header |
+| **Farbcodierung** | Aktionen farbig (grün=Unlock, orange=Reveal, rot=Delete) |
+| **Footer** | Seitenzahl auf jeder Seite |
+| **Speichern** | Tauri Save-Dialog (`pickAuditPdfExportPath`) + `writeFile` — Nutzer wählt Zielpfad |
+| **Umlaute** | UTF-8, funktioniert vollständig |
+| **Keine Rust-Deps** | Kein printpdf, kein lopdf, kein `patches/`-Ordner |
 
 **JSON-Integritätsheader (Auszug):**
 
@@ -2214,7 +2226,7 @@ Bei folgenden Änderungen **muss** dieses Dokument im selben Commit / PR aktuali
 | 2026-06-25 | 2.0.0 | **Multi-User Phase 2:** Tauri Commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), Auth-Flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK bleibt nach Git-Sync-Pull erhalten; User-Liste wird aus neuem Header gelesen; Lock-Guard vor Reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 License Signing:** HMAC-SHA256 → Ed25519 asymmetrisch; Public Key via Build-Time env var injiziert; Private Key nie im Repo; Open Source safe |
-| 2026-06-29 | 2.2.0 | **PDF Compliance Report:** `printpdf`, A4, Compliance-Status, Audit-Ereignisse, OxidVault Branding |
+| 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` komplett entfernt; jsPDF + jspdf-autotable im Frontend; offline, UTF-8, Logo, farbige Aktionen, Seitenumbruch automatisch |
 | 2026-06-29 | 2.2.0 | **Auto-Lock UI:** Timer einstellbar (1/5/10/15/30 Min/Nie); Default 10 Min; GPO-kompatibel |
 | 2026-06-28 | 2.1.0 | **NM Bridge Tray-Focus-Fix:** `minimized` inkl. Tray-Hide (`!is_visible`); `request_unlock` ohne Vault-Mutex während Focus; `perform_lock` Mutex-Timeout 5s |
 | 2026-06-28 | 2.1.0 | **System Tray:** Minimize to Tray, Vault bleibt entsperrt, Tray-Menü (Öffnen/Sperren/Beenden), `forceLockOnMinimize` GPO-kompatibel |

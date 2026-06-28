@@ -158,10 +158,6 @@ export async function exportAuditLog(
   return invoke<void>("export_audit_log", { targetPath, format });
 }
 
-export async function exportAuditLogPdf(targetPath: string): Promise<void> {
-  return invoke<void>("export_audit_log_pdf", { targetPath });
-}
-
 export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }
