@@ -4,11 +4,14 @@
 //! Dual-format audit report export with mandatory hash-chain verification.
 
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use printpdf::{BuiltinFont, Line, Mm, PdfDocument, Point};
+use printpdf::{
+    BuiltinFont, Color, Line, LinePoint, Mm, Op, PdfDocument, PdfFontHandle, PdfPage,
+    PdfSaveOptions, Point, Pt, Rgb, TextItem,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -111,118 +114,149 @@ pub fn export_audit_report_pdf(
     let total_entries = read_all_audit_entries(&log_path)?.len();
     let logs = read_audit_logs(vault_path, PDF_AUDIT_DISPLAY_LIMIT).unwrap_or_default();
 
-    let (doc, page1, layer1) = PdfDocument::new(
-        "OxidVault DSGVO Compliance Report",
-        Mm(210.0),
-        Mm(297.0),
-        "Layer 1",
+    let mut ops = Vec::new();
+
+    push_pdf_text(
+        &mut ops,
+        "OxidVault",
+        20.0,
+        270.0,
+        BuiltinFont::HelveticaBold,
+        24.0,
     );
-
-    let current_layer = doc.get_page(page1).get_layer(layer1);
-
-    let font_regular = doc
-        .add_builtin_font(BuiltinFont::Helvetica)
-        .map_err(pdf_error)?;
-    let font_bold = doc
-        .add_builtin_font(BuiltinFont::HelveticaBold)
-        .map_err(pdf_error)?;
-
-    current_layer.use_text("OxidVault", 24.0, Mm(20.0), Mm(270.0), &font_bold);
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         "DSGVO Compliance Report",
+        20.0,
+        260.0,
+        BuiltinFont::Helvetica,
         14.0,
-        Mm(20.0),
-        Mm(260.0),
-        &font_regular,
     );
 
     let now = Utc::now().format("%d.%m.%Y %H:%M UTC").to_string();
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!("Erstellt: {now}"),
+        20.0,
+        252.0,
+        BuiltinFont::Helvetica,
         10.0,
-        Mm(20.0),
-        Mm(252.0),
-        &font_regular,
     );
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!(
             "Vault: {}",
             truncate_for_pdf(&vault_path.display().to_string(), 70)
         ),
+        20.0,
+        246.0,
+        BuiltinFont::Helvetica,
         10.0,
-        Mm(20.0),
-        Mm(246.0),
-        &font_regular,
     );
 
-    let separator = Line::from_iter(vec![
-        (Point::new(Mm(20.0), Mm(242.0)), false),
-        (Point::new(Mm(190.0), Mm(242.0)), false),
-    ]);
-    current_layer.set_outline_thickness(0.5);
-    current_layer.add_line(separator);
+    push_pdf_hline(&mut ops, 242.0);
 
-    current_layer.use_text("Compliance-Status", 12.0, Mm(20.0), Mm(234.0), &font_bold);
+    push_pdf_text(
+        &mut ops,
+        "Compliance-Status",
+        20.0,
+        234.0,
+        BuiltinFont::HelveticaBold,
+        12.0,
+    );
 
     let status_text = if compliance.audit_chain_valid && !compliance.key_rotation_recommended {
         "Compliance OK"
     } else {
         "Handlungsbedarf"
     };
-    current_layer.use_text(status_text, 11.0, Mm(20.0), Mm(226.0), &font_regular);
+    push_pdf_text(
+        &mut ops,
+        status_text,
+        20.0,
+        226.0,
+        BuiltinFont::Helvetica,
+        11.0,
+    );
 
     let chain_label = if compliance.audit_chain_valid {
         "Ja"
     } else {
         "Nein"
     };
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!("Hash-Kette valide: {chain_label}"),
+        20.0,
+        219.0,
+        BuiltinFont::Helvetica,
         10.0,
-        Mm(20.0),
-        Mm(219.0),
-        &font_regular,
     );
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!("Schluessel-Alter: {} Tage", compliance.key_age_days),
+        20.0,
+        213.0,
+        BuiltinFont::Helvetica,
         10.0,
-        Mm(20.0),
-        Mm(213.0),
-        &font_regular,
     );
     let gpo_label = if compliance.policy_managed_by_gpo {
         "Ja"
     } else {
         "Nein"
     };
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!("GPO verwaltet: {gpo_label}"),
+        20.0,
+        207.0,
+        BuiltinFont::Helvetica,
         10.0,
-        Mm(20.0),
-        Mm(207.0),
-        &font_regular,
     );
     if compliance.key_rotation_recommended {
-        current_layer.use_text(
+        push_pdf_text(
+            &mut ops,
             "Schluessel-Rotation empfohlen (> 90 Tage)",
+            20.0,
+            201.0,
+            BuiltinFont::Helvetica,
             10.0,
-            Mm(20.0),
-            Mm(201.0),
-            &font_regular,
         );
     }
 
-    current_layer.use_text(
+    push_pdf_text(
+        &mut ops,
         format!("Audit-Ereignisse (letzte {PDF_AUDIT_DISPLAY_LIMIT})"),
+        20.0,
+        192.0,
+        BuiltinFont::HelveticaBold,
         12.0,
-        Mm(20.0),
-        Mm(192.0),
-        &font_bold,
     );
 
-    current_layer.use_text("Zeit (UTC)", 9.0, Mm(20.0), Mm(184.0), &font_bold);
-    current_layer.use_text("Aktion", 9.0, Mm(70.0), Mm(184.0), &font_bold);
-    current_layer.use_text("Eintrag-ID", 9.0, Mm(130.0), Mm(184.0), &font_bold);
+    push_pdf_text(
+        &mut ops,
+        "Zeit (UTC)",
+        20.0,
+        184.0,
+        BuiltinFont::HelveticaBold,
+        9.0,
+    );
+    push_pdf_text(
+        &mut ops,
+        "Aktion",
+        70.0,
+        184.0,
+        BuiltinFont::HelveticaBold,
+        9.0,
+    );
+    push_pdf_text(
+        &mut ops,
+        "Eintrag-ID",
+        130.0,
+        184.0,
+        BuiltinFont::HelveticaBold,
+        9.0,
+    );
 
     let min_y = if total_entries > PDF_AUDIT_DISPLAY_LIMIT {
         45.0
@@ -237,69 +271,119 @@ pub fn export_audit_report_pdf(
         }
 
         let time = log.timestamp_utc.chars().take(16).collect::<String>();
-        current_layer.use_text(time, 8.0, Mm(20.0), Mm(y), &font_regular);
-        current_layer.use_text(
+        push_pdf_text(&mut ops, time, 20.0, y, BuiltinFont::Helvetica, 8.0);
+        push_pdf_text(
+            &mut ops,
             truncate_for_pdf(&log.action, 28),
+            70.0,
+            y,
+            BuiltinFont::Helvetica,
             8.0,
-            Mm(70.0),
-            Mm(y),
-            &font_regular,
         );
-        current_layer.use_text(
+        push_pdf_text(
+            &mut ops,
             display_entry_id(&log.entry_id),
+            130.0,
+            y,
+            BuiltinFont::Helvetica,
             8.0,
-            Mm(130.0),
-            Mm(y),
-            &font_regular,
         );
 
         y -= 6.0;
     }
 
     if total_entries > PDF_AUDIT_DISPLAY_LIMIT {
-        current_layer.use_text(
+        push_pdf_text(
+            &mut ops,
             format!(
                 "Hinweis: Zeigt die letzten {PDF_AUDIT_DISPLAY_LIMIT} von {total_entries} Ereignissen."
             ),
+            20.0,
+            35.0,
+            BuiltinFont::Helvetica,
             8.0,
-            Mm(20.0),
-            Mm(35.0),
-            &font_regular,
         );
-        current_layer.use_text(
+        push_pdf_text(
+            &mut ops,
             "Vollstaendiger Export als JSON/CSV verfuegbar.",
+            20.0,
+            29.0,
+            BuiltinFont::Helvetica,
             8.0,
-            Mm(20.0),
-            Mm(29.0),
-            &font_regular,
         );
     }
 
-    let footer_line = Line::from_iter(vec![
-        (Point::new(Mm(20.0), Mm(13.0)), false),
-        (Point::new(Mm(190.0), Mm(13.0)), false),
-    ]);
-    current_layer.set_outline_thickness(0.5);
-    current_layer.add_line(footer_line);
-
-    current_layer.use_text(
+    push_pdf_hline(&mut ops, 13.0);
+    push_pdf_text(
+        &mut ops,
         format!("OxidVault v{} - oxidvault.com", env!("CARGO_PKG_VERSION")),
+        20.0,
         8.0,
-        Mm(20.0),
-        Mm(8.0),
-        &font_regular,
+        BuiltinFont::Helvetica,
+        8.0,
     );
 
-    let file = File::create(target_path)?;
-    let mut writer = BufWriter::new(file);
-    doc.save(&mut writer).map_err(pdf_error)?;
-    writer.flush()?;
+    let mut doc = PdfDocument::new("OxidVault DSGVO Compliance Report");
+    let page = PdfPage::new(Mm(210.0), Mm(297.0), ops);
+    let bytes = doc
+        .with_pages(vec![page])
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
+    std::fs::write(target_path, bytes)?;
 
     Ok(())
 }
 
-fn pdf_error(error: printpdf::Error) -> VaultError {
-    VaultError::Other(format!("pdf export failed: {error}"))
+fn pdf_black() -> Color {
+    Color::Rgb(Rgb {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        icc_profile: None,
+    })
+}
+
+fn push_pdf_text(
+    ops: &mut Vec<Op>,
+    text: impl Into<String>,
+    x_mm: f32,
+    y_mm: f32,
+    font: BuiltinFont,
+    size_pt: f32,
+) {
+    ops.push(Op::StartTextSection);
+    ops.push(Op::SetTextCursor {
+        pos: Point::new(Mm(x_mm), Mm(y_mm)),
+    });
+    ops.push(Op::SetFont {
+        font: PdfFontHandle::Builtin(font),
+        size: Pt(size_pt),
+    });
+    ops.push(Op::SetLineHeight { lh: Pt(size_pt) });
+    ops.push(Op::SetFillColor { col: pdf_black() });
+    ops.push(Op::ShowText {
+        items: vec![TextItem::Text(text.into())],
+    });
+    ops.push(Op::EndTextSection);
+}
+
+fn push_pdf_hline(ops: &mut Vec<Op>, y_mm: f32) {
+    ops.push(Op::SetOutlineColor { col: pdf_black() });
+    ops.push(Op::SetOutlineThickness { pt: Pt(0.5) });
+    ops.push(Op::DrawLine {
+        line: Line {
+            points: vec![
+                LinePoint {
+                    p: Point::new(Mm(20.0), Mm(y_mm)),
+                    bezier: false,
+                },
+                LinePoint {
+                    p: Point::new(Mm(190.0), Mm(y_mm)),
+                    bezier: false,
+                },
+            ],
+            is_closed: false,
+        },
+    });
 }
 
 fn truncate_for_pdf(value: &str, max_chars: usize) -> String {
