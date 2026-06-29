@@ -2,62 +2,62 @@
 
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Beta-green) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
-**Hochsicherer, on-premise Passwortmanager für Enterprise-Umgebungen.**
+**Secure, on-premise password manager for enterprise environments.**
 
-OxidVault richtet sich an Organisationen, die Zugangsdaten und Secrets **vollständig unter eigener Kontrolle** betreiben möchten — ohne Cloud-Abhängigkeit, ohne Fremd-Hosting und mit nachvollziehbaren Compliance-Pfaden. Die Anwendung kombiniert einen speichersicheren Rust-Kern mit einer schlanken Desktop-Oberfläche und ist für den Einsatz durch IT-Administratoren, Sicherheitsbeauftragte (CISO) und Endanwender in Firmenumgebungen konzipiert.
+OxidVault is designed for organizations that want to operate credentials and secrets **entirely under their own control** — without cloud dependency, without third-party hosting, and with traceable compliance paths. The application combines a memory-safe Rust core with a lean desktop interface and is built for IT administrators, security officers (CISO), and end users in corporate environments.
 
 ---
 
-## Über OxidVault
+## About OxidVault
 
-OxidVault ist ein **Offline-First**-Tresor für Passwörter, SSH-Zugänge und weitere Secrets. Vault-Dateien (`.oxid`) können lokal oder auf **Netzlaufwerken (UNC-Pfade)** abgelegt werden — ideal für zentrale Team-Tresore in AD-Umgebungen.
+OxidVault is an **Offline-First** vault for passwords, SSH access, and other secrets. Vault files (`.oxid`) can be stored locally or on **network drives (UNC paths)** — ideal for centralized team vaults in AD environments.
 
-| Prinzip | Bedeutung für Ihre Organisation |
+| Principle | What it means for your organization |
 |---|---|
-| **On-Premise** | Keine Cloud-Synchronisation, keine Drittanbieter-Infrastruktur |
-| **Zero-Knowledge** | Master-Passwort und Secret-Payloads verbleiben im Rust-Backend; Klartext gelangt nicht dauerhaft in die UI-Schicht |
-| **Governance-ready** | Zentrale Richtlinien per Policy-Datei, auditierbare Ereignisse, Compliance-Dashboard |
-| **Betriebssicher** | Atomare Schreibvorgänge, exklusives Datei-Locking, Key-Rotation ohne Payload-Re-Encrypt |
-| **MFA-geschützt** | TOTP (RFC 6238) als zweite Faktor-Hürde; atomare Entsperrung ohne Zwischenzustände im RAM |
-| **Multi-User** | Pro Vault bis zu 5 Benutzer (CE) — jeder mit eigenem Passwort und MFA; shared DEK-Architektur |
-| **Kommerzielle Lizenz** | Enterprise Edition für unbegrenzte User, LDAP, SSO — [oxidvault.com](https://oxidvault.com) |
+| **On-Premise** | No cloud sync, no third-party infrastructure |
+| **Zero-Knowledge** | Master password and secret payloads remain in the Rust backend; plaintext is not persisted in the UI layer |
+| **Governance-ready** | Central policies via policy file, auditable events, compliance dashboard |
+| **Operationally safe** | Atomic writes, exclusive file locking, key rotation without payload re-encryption |
+| **MFA-protected** | TOTP (RFC 6238) as a second factor; atomic unlock without intermediate RAM states |
+| **Multi-User** | Up to 5 users per vault (CE) — each with their own password and MFA; shared DEK architecture |
+| **Commercial license** | Enterprise Edition for unlimited users, LDAP, SSO — [oxidvault.com](https://oxidvault.com) |
 
-Ausführliche technische Spezifikationen: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+Detailed technical specifications: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 ---
 
-## Sicherheit & Architektur
+## Security & Architecture
 
-OxidVault ist als **speichersicherer, offline-fähiger Tresor** konzipiert. Sicherheitsentscheidungen werden im Rust-Kern (`vault-core`) durchgesetzt — die React-Oberfläche ist reine Präsentationsschicht ohne Zugriff auf Schlüsselmaterial.
+OxidVault is designed as a **memory-safe, offline-capable vault**. Security decisions are enforced in the Rust core (`vault-core`) — the React interface is a pure presentation layer with no access to key material.
 
-### Offline-First & lokale Souveränität
+### Offline-First & Local Sovereignty
 
-- **Keine Cloud-Abhängigkeit** — Vault-Dateien (`.oxid`) verbleiben vollständig unter Ihrer Kontrolle (lokal, UNC-Pfad, optional Git-Sync der *verschlüsselten* Datei).
-- **Kein Fremd-Hosting** — Secrets werden nicht an Drittanbieter übertragen; Autofill-Integrationen (Browser-Erweiterung) nutzen kontrollierte Native-Messaging-Kanäle.
-- **On-Premise by Design** — geeignet für AD-Umgebungen, isolierte Netzwerke und regulierte Branchen.
+- **No cloud dependency** — Vault files (`.oxid`) remain entirely under your control (local, UNC path, optional Git sync of the *encrypted* file).
+- **No third-party hosting** — Secrets are not transmitted to external providers; autofill integrations (browser extension) use controlled native messaging channels.
+- **On-premise by design** — suitable for AD environments, isolated networks, and regulated industries.
 
-### Zwei-Faktor-Authentifizierung (TOTP / MFA)
+### Two-Factor Authentication (TOTP / MFA)
 
-- **RFC 6238** — zeitbasierte Einmalpasswörter (TOTP) vollständig **offline** validierbar; kein SMS-Gateway, kein OAuth-Provider.
-- **Enrollment in den Einstellungen** — CSPRNG-Secret, QR-Code (otpauth-URI), verschlüsselte Persistenz im Vault-Payload (AES-256-GCM).
-- **Entsperr-Flow** — nach korrektem Master-Passwort erscheint die MFA-Challenge; Auto-Fokus, Auto-Submit und **UI-seitiges Rate-Limiting** (3 Fehlversuche → 30 s Sperre) erschweren Brute-Force-Versuche am Desktop.
+- **RFC 6238** — time-based one-time passwords (TOTP) fully validatable **offline**; no SMS gateway, no OAuth provider.
+- **Enrollment in settings** — CSPRNG secret, QR code (otpauth URI), encrypted persistence in the vault payload (AES-256-GCM).
+- **Unlock flow** — after the correct master password, the MFA challenge appears; auto-focus, auto-submit, and **UI-side rate limiting** (3 failed attempts → 30 s lockout) make brute-force attempts on the desktop harder.
 
 ### Multi-User Vaults (Format v3)
 
-OxidVault unterstützt gemeinsam genutzte Tresore mit mehreren Benutzern — ohne zentralen Server.
+OxidVault supports shared vaults with multiple users — without a central server.
 
-- **Eigenes Passwort pro User** — kein geteiltes Master-Passwort
-- **Eigenes TOTP pro User** — MFA ist personengebunden, nicht vault-gebunden
-- **Shared DEK-Architektur** — ein gemeinsamer Data-Encryption-Key, pro User mit dessen KEK gewrappt; Passwort-Rotation eines Users berührt andere User nicht
-- **Rollen** — `Admin` (User verwalten) und `Member` (Secrets lesen/schreiben)
-- **Migration** — bestehende v1/v2-Tresore per Einmalvorgang auf v3 migrierbar; das bisherige Master-Passwort wird zum ersten Admin-User
+- **Own password per user** — no shared master password
+- **Own TOTP per user** — MFA is bound to the person, not the vault
+- **Shared DEK architecture** — one shared Data-Encryption-Key, wrapped per user with their KEK; password rotation for one user does not affect others
+- **Roles** — `Admin` (manage users) and `Member` (read/write secrets)
+- **Migration** — existing v1/v2 vaults can be migrated to v3 in a one-time operation; the previous master password becomes the first admin user
 
-Community Edition: bis zu **5 Benutzer** pro Vault.  
-Enterprise Edition: unbegrenzte Benutzer — [oxidvault.com](https://oxidvault.com)
+Community Edition: up to **5 users** per vault.  
+Enterprise Edition: unlimited users — [oxidvault.com](https://oxidvault.com)
 
-### Atomare Entsperrung
+### Atomic Unlock
 
-Der Tresor kann **technisch nicht** nur mit dem Master-Passwort geöffnet werden, wenn MFA aktiv ist:
+The vault **cannot** be opened with the master password alone when MFA is active:
 
 ```
 Passwort ──► KEK-Ableitung (Argon2id) ──► Payload-Entschlüsselung (ephemer)
@@ -74,171 +74,171 @@ Passwort ──► KEK-Ableitung (Argon2id) ──► Payload-Entschlüsselung (
             Keys & Einträge erst jetzt in Vault-Session
 ```
 
-- Zentrale Funktion: `vault-core/src/auth.rs` → `unlock_vault(password, mfa_code)` → `VaultHandle` | `AuthError`
-- **Kein `PendingUnlock`** — bei `MfaRequired`, `InvalidPassword` oder `InvalidMfa` wird **nichts** an der live `Vault`-Session committet.
-- Entschlüsselte Daten existieren während der Prüfung nur in **ephemerem Stack-Speicher** und werden bei Abbruch explizit zeroized.
+- Central function: `vault-core/src/auth.rs` → `unlock_vault(password, mfa_code)` → `VaultHandle` | `AuthError`
+- **No `PendingUnlock`** — on `MfaRequired`, `InvalidPassword`, or `InvalidMfa`, **nothing** is committed to the live `Vault` session.
+- Decrypted data exists only in **ephemeral stack memory** during verification and is explicitly zeroized on abort.
 
-### Zero-Knowledge & Speicherschutz
+### Zero-Knowledge & Memory Protection
 
-| Aspekt | Umsetzung |
+| Aspect | Implementation |
 |---|---|
-| Master-Passwort | Nur zur KEK-Ableitung; `Zeroizing<String>` an IPC-Grenzen |
-| MFA-Codes | `Zeroizing<String>`; keine Persistenz |
-| Gesperrter Vault | `master_key`, `kek`, Einträge und Klartext-Secrets werden aus dem RAM entfernt |
-| Lock / Close | `zeroize` auf allen kryptografischen Puffern und Secret-Feldern |
-| IPC | Keine dauerhafte Klartext-Übertragung — Metadaten via `SecretEntryPublic`; Reveal/Clipboard bewusst einmalig |
+| Master password | Used only for KEK derivation; `Zeroizing<String>` at IPC boundaries |
+| MFA codes | `Zeroizing<String>`; not persisted |
+| Locked vault | `master_key`, `kek`, entries, and plaintext secrets are removed from RAM |
+| Lock / Close | `zeroize` on all cryptographic buffers and secret fields |
+| IPC | No persistent plaintext transfer — metadata via `SecretEntryPublic`; reveal/clipboard intentionally one-shot |
 
-> Selbst im gesperrten Zustand verbleiben **keine entschlüsselten Secrets** in der aktiven Vault-Session.
+> Even in the locked state, **no decrypted secrets** remain in the active vault session.
 
-### Enterprise-Oberfläche & Betrieb
+### Enterprise Interface & Operations
 
-- **Modulares Theme-System** — Oxid Default, Oxid Light, Dracula, Nord u. a.; semantische Design-Tokens (`vault-accent`, `vault-danger`, …) für konsistente Darstellung in hellen, dunklen und High-Contrast-Umgebungen.
-- **Admin-Policy (GPO-Stil)** — zentrale Vorgaben für Passwortlänge, Auto-Lock, UI-Sperren.
-- **Audit & Compliance** — append-only Audit-Log mit Hash-Kette, Export für Prüfer, Compliance-Dashboard.
+- **Modular theme system** — Oxid Default, Oxid Light, Dracula, Nord, and more; semantic design tokens (`vault-accent`, `vault-danger`, …) for consistent presentation in light, dark, and high-contrast environments.
+- **Admin policy (GPO-style)** — central requirements for password length, auto-lock, UI locks.
+- **Audit & compliance** — append-only audit log with hash chain, export for auditors, compliance dashboard.
 
-### Relevante Module (Auszug)
+### Relevant Modules (Excerpt)
 
-| Modul / Komponente | Verantwortung |
+| Module / Component | Responsibility |
 |---|---|
-| `crates/vault-core/src/auth.rs` | Atomare Authentifizierung (`AuthError`, `VaultHandle`, `unlock_vault`) |
-| `crates/vault-core/src/mfa.rs` | TOTP-Enrollment, Verifikation (RFC 6238), verschlüsselte MFA-Secret-Speicherung |
+| `crates/vault-core/src/auth.rs` | Atomic authentication (`AuthError`, `VaultHandle`, `unlock_vault`) |
+| `crates/vault-core/src/mfa.rs` | TOTP enrollment, verification (RFC 6238), encrypted MFA secret storage |
 | `crates/vault-core/src/crypto.rs` | Argon2id, AES-256-GCM, `MasterKey`, Zeroizing |
-| `src/hooks/useMfaRateLimit.ts` | UI-Rate-Limiting für MFA-Fehlversuche (Lockout + Countdown) |
-| `src/components/screens/AuthForm.tsx` | Entsperr-Modal mit dynamischer MFA-Challenge |
-| `src-tauri/src/commands/` | IPC-Bridge; `Zeroizing` für Passwörter und MFA-Codes |
+| `src/hooks/useMfaRateLimit.ts` | UI rate limiting for MFA failed attempts (lockout + countdown) |
+| `src/components/screens/AuthForm.tsx` | Unlock modal with dynamic MFA challenge |
+| `src-tauri/src/commands/` | IPC bridge; `Zeroizing` for passwords and MFA codes |
 
 ---
 
 ## Key Features
 
-### Enterprise-Governance
+### Enterprise Governance
 
-Zentrale Steuerung über eine **Admin-Policy-Datei** im GPO-Stil. IT-Administratoren definieren verbindliche Vorgaben (z. B. Mindestlänge des Master-Passworts, Auto-Lock, Lock bei Minimieren), die Endanwender nicht überschreiben können.
+Central control via an **admin policy file** in GPO style. IT administrators define binding requirements (e.g. minimum master password length, auto-lock, lock on minimize) that end users cannot override.
 
-| Plattform | Policy-Pfad |
+| Platform | Policy path |
 |---|---|
 | Windows | `C:\ProgramData\OxidVault\policy.json` |
 | Linux / macOS | `/etc/oxidvault/policy.json` |
 
-### Integrität & Compliance
+### Integrity & Compliance
 
-**ISO-27001-konformes Audit-Logging** mit append-only Protokoll und **kryptografischer Hash-Kette**. Jeder Eintrag referenziert den vorherigen — Manipulationen sind erkennbar. Das Compliance-Dashboard prüft die Ketten-Integrität; der **Export** (JSON mit Integritätsheader oder CSV) unterstützt interne Audits und externe Prüfungen.
+**ISO 27001-aligned audit logging** with append-only protocol and **cryptographic hash chain**. Each entry references the previous one — tampering is detectable. The compliance dashboard verifies chain integrity; **export** (JSON with integrity header or CSV) supports internal audits and external reviews.
 
-### Netzwerk-Resilienz
+### Network Resilience
 
-Spezielles Dateisystem-Handling für **UNC-Pfade und Netzwerklaufwerke**: Schreibvorgänge erfolgen über temporäre Dateien im selben Verzeichnis mit **`fsync`** und atomarem **`rename`**, inklusive SMB-Fallback. So bleiben Team-Vaults auf Fileservern auch bei parallelem Zugriff konsistent.
+Special filesystem handling for **UNC paths and network drives**: writes use temporary files in the same directory with **`fsync`** and atomic **`rename`**, including SMB fallback. Team vaults on file servers remain consistent even with parallel access.
 
-### Sicherheit per Design — Key-Rotation (Format v2)
+### Security by Design — Key Rotation (Format v2)
 
-Master-Passwort-Rotation über **sicheres Key-Wrapping**: Ein zufälliger Data-Encryption-Key (DEK) verschlüsselt den Payload; der DEK wird im Header mit dem passwort-abgeleiteten Key Encryption Key (KEK) geschützt. Bei einer Rotation wird **nur der Header neu geschützt** — der verschlüsselte Payload-Block wird 1:1 übernommen. **Kein Klartext der Secrets im RAM** während der Migration.
+Master password rotation via **secure key wrapping**: a random Data-Encryption-Key (DEK) encrypts the payload; the DEK is protected in the header with the password-derived Key Encryption Key (KEK). On rotation, **only the header is re-protected** — the encrypted payload block is copied 1:1. **No plaintext of secrets in RAM** during migration.
 
-### Exklusiver Zugriff
+### Exclusive Access
 
-Stabile **File-Locking-Mechanismen** (`{vault}.lock`) verhindern Race Conditions bei gleichzeitigem Öffnen. Stale Locks werden anhand von Prozess-Metadaten bereinigt; bei Konflikten meldet OxidVault, welcher Benutzer/Host den Tresor hält (`LockedBy`).
+Stable **file locking mechanisms** (`{vault}.lock`) prevent race conditions when opening concurrently. Stale locks are cleaned up using process metadata; on conflict, OxidVault reports which user/host holds the vault (`LockedBy`).
 
-### Weitere Enterprise-Funktionen
+### Additional Enterprise Features
 
-- **Zwei-Faktor-Authentifizierung (TOTP)** — MFA-Enrollment, atomare Entsperrung, UI-Rate-Limiting
-- **Multi-User Vaults (v3)** — bis 5 User CE, unbegrenzt EE; pro User Passwort + MFA
-- **Ed25519 Lizenz-Validierung** — offline, fälschungssicher, kein Lizenzserver nötig
-- **SSH Known-Hosts Verifikation** — TOFU + gespeicherter Fingerprint; MITM-Warnung bei Abweichung
-- **reveal_secret Rate-Limiting** — Sliding Window (5 Anfragen / 60s) gegen Bulk-Extraktion
-- **Security Dashboard** — Offline-Schwachstellenanalyse (Duplikate, Entropie, Ablaufdaten)
-- **Compliance-Dashboard** — Policy-, Audit- und Key-Age-Status mit Rotations-Empfehlung (> 90 Tage)
-- **SSH Quick Connect** — Integriertes Terminal für gespeicherte SSH-Zugänge
-- **Browser-Erweiterung** — Native Messaging für kontrolliertes Autofill ([Chrome Web Store](https://chromewebstore.google.com/detail/oxidvault/belagnpfebgljfamjihdoinbcehingjd) · [`browser-extension/README.md`](browser-extension/README.md))
-- **System Tray** — App minimiert in den System Tray; Vault bleibt entsperrt; Wiederherstellung per Klick; Tray-Menü (Öffnen / Sperren / Beenden)
-- **Auto-Lock Timer** — einstellbar in der UI (1 / 5 / 10 / 15 / 30 Min / Nie); Admin-GPO überschreibt; Default 10 Minuten
-- **PDF Compliance Report** — Export des Audit-Logs als A4-PDF mit OxidVault-Branding, Compliance-Status und letzten 50 Ereignissen; ideal für DSGVO-Audits
-
----
-
-## Compliance & Sicherheit
-
-> Ausführliche Architektur- und MFA-Spezifikation: Abschnitt [Sicherheit & Architektur](#sicherheit--architektur) und [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
-### Zero-Knowledge-Architektur
-
-OxidVault folgt einem **Zero-Knowledge-Modell**:
-
-- Das **Master-Passwort** wird ausschließlich zur Ableitung des Master-Keys (Argon2id) verwendet und nicht persistiert.
-- **Secret-Payloads** werden mit AES-256-GCM verschlüsselt und verlassen den Rust-Kern standardmäßig nicht als Klartext über die IPC-Bridge.
-- **MFA-TOTP-Secrets** liegen verschlüsselt im Vault-Payload; Validierung erfolgt offline im Backend.
-- Sensible Puffer werden mit **`zeroize`** beim Sperren, bei Auth-Fehlern und Schließen aus dem Speicher entfernt.
-- Explizite Freigabe (Reveal, Clipboard) ist bewusst eingeschränkt und auditierbar.
-
-### Kryptografie (Auszug)
-
-| Komponente | Verfahren |
-|---|---|
-| Key-Ableitung | Argon2id (OWASP-Empfehlung) |
-| Verschlüsselung | AES-256-GCM |
-| Zweiter Faktor | TOTP / RFC 6238 (SHA-1, 6 Stellen, 30 s Fenster) |
-| Zufallszahlen | OS CSPRNG (`getrandom`) |
-| Passwort-Policy | Mindestlänge, Blocklist, zxcvbn-Entropie (UX + Backend) |
-
-### Audit & Nachweisführung
-
-| Funktion | Beschreibung |
-|---|---|
-| Audit-Log | `{vault}.audit.log` — Ereignisse wie `VaultCreated`, `VaultUnlocked`, `VaultKeyRotated` |
-| Hash-Kette | SHA-256-Verkettung über alle Einträge |
-| Export | JSON (mit Integritäts-Metadaten) oder CSV für Prüfer |
-| Compliance-Status | IPC `get_compliance_status` — GPO-Flag, Ketten-Validität, Key-Age |
-
-> **Hinweis:** OxidVault unterstützt Compliance-Prozesse technisch (Logging, Integritätsprüfung, Export). Die Einordnung in Ihr ISMS (z. B. ISO 27001) obliegt der jeweiligen Organisation.
+- **Two-factor authentication (TOTP)** — MFA enrollment, atomic unlock, UI rate limiting
+- **Multi-User Vaults (v3)** — up to 5 users CE, unlimited EE; per-user password + MFA
+- **Ed25519 license validation** — offline, tamper-resistant, no license server required
+- **SSH known-hosts verification** — TOFU + stored fingerprint; MITM warning on mismatch
+- **reveal_secret rate limiting** — sliding window (5 requests / 60s) against bulk extraction
+- **Security Dashboard** — offline vulnerability analysis (duplicates, entropy, expiry dates)
+- **Compliance Dashboard** — policy, audit, and key-age status with rotation recommendation (> 90 days)
+- **SSH Quick Connect** — integrated terminal for stored SSH access
+- **Browser extension** — native messaging for controlled autofill ([Chrome Web Store](https://chromewebstore.google.com/detail/oxidvault/belagnpfebgljfamjihdoinbcehingjd) · [`browser-extension/README.md`](browser-extension/README.md))
+- **System Tray** — app minimizes to system tray; vault stays unlocked; restore on click; tray menu (Open / Lock / Quit)
+- **Auto-Lock timer** — configurable in UI (1 / 5 / 10 / 15 / 30 min / Never); admin GPO overrides; default 10 minutes
+- **PDF Compliance Report** — export audit log as A4 PDF with OxidVault branding, compliance status, and last 50 events; ideal for GDPR audits
 
 ---
 
-## Erste Schritte
+## Compliance & Security
 
-### Voraussetzungen
+> Detailed architecture and MFA specification: section [Security & Architecture](#security--architecture) and [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-| Komponente | Version |
+### Zero-Knowledge Architecture
+
+OxidVault follows a **zero-knowledge model**:
+
+- The **master password** is used exclusively to derive the master key (Argon2id) and is not persisted.
+- **Secret payloads** are encrypted with AES-256-GCM and do not leave the Rust core as plaintext over the IPC bridge by default.
+- **MFA TOTP secrets** are stored encrypted in the vault payload; validation runs offline in the backend.
+- Sensitive buffers are removed from memory with **`zeroize`** on lock, auth errors, and close.
+- Explicit release (reveal, clipboard) is intentionally restricted and auditable.
+
+### Cryptography (Excerpt)
+
+| Component | Method |
+|---|---|
+| Key derivation | Argon2id (OWASP recommendation) |
+| Encryption | AES-256-GCM |
+| Second factor | TOTP / RFC 6238 (SHA-1, 6 digits, 30 s window) |
+| Random numbers | OS CSPRNG (`getrandom`) |
+| Password policy | Minimum length, blocklist, zxcvbn entropy (UX + backend) |
+
+### Audit & Evidence
+
+| Function | Description |
+|---|---|
+| Audit log | `{vault}.audit.log` — events such as `VaultCreated`, `VaultUnlocked`, `VaultKeyRotated` |
+| Hash chain | SHA-256 chaining across all entries |
+| Export | JSON (with integrity metadata) or CSV for auditors |
+| Compliance status | IPC `get_compliance_status` — GPO flag, chain validity, key age |
+
+> **Note:** OxidVault supports compliance processes technically (logging, integrity verification, export). Mapping to your ISMS (e.g. ISO 27001) is the responsibility of each organization.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+| Component | Version |
 |---|---|
 | Node.js | 20+ |
-| Rust | stable (≥ 1.85, siehe `rust-toolchain.toml`) |
+| Rust | stable (≥ 1.85, see `rust-toolchain.toml`) |
 | Windows | WebView2 Runtime |
-| Linux (Build) | `libwebkit2gtk-4.1-dev` und GTK-Abhängigkeiten ([Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)) |
+| Linux (build) | `libwebkit2gtk-4.1-dev` and GTK dependencies ([Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)) |
 
-### Entwicklung
+### Development
 
 ```bash
 git clone https://github.com/caRl0oo/oxidvault.git
 cd oxidvault
 npm install
-npm run tauri:dev      # Desktop-App starten (Windows: scripts/tauri-dev.ps1)
+npm run tauri:dev      # Start desktop app (Windows: scripts/tauri-dev.ps1)
 ```
 
-### Release-Build (Windows)
+### Release Build (Windows)
 
 ```bash
 npm install
-npm run icons          # optional: Icons aus logo.png regenerieren
+npm run icons          # optional: regenerate icons from logo.png
 npm run tauri:build    # MSI/NSIS-Installer
 ```
 
-Installer-Artefakte: `target/release/bundle/` (MSI, NSIS, portable EXE).
+Installer artifacts: `target/release/bundle/` (MSI, NSIS, portable EXE).
 
-### Erster Vault
+### First Vault
 
-1. OxidVault starten und **neuen Tresor** anlegen (lokal oder UNC-Pfad).
-2. **Master-Passwort** gemäß Policy wählen (Mindestlänge wird angezeigt).
-3. Optional: **Zwei-Faktor-Authentifizierung** unter Einstellungen aktivieren (Authenticator-App).
-4. Optional: Admin-Policy unter `C:\ProgramData\OxidVault\policy.json` bereitstellen.
-5. Im Tab **Security** Compliance-Status und Passwort-Audit prüfen; bei Bedarf **Passwort rotieren**.
+1. Start OxidVault and **create a new vault** (local or UNC path).
+2. Choose a **master password** according to policy (minimum length is shown).
+3. Optional: enable **two-factor authentication** in settings (authenticator app).
+4. Optional: deploy admin policy at `C:\ProgramData\OxidVault\policy.json`.
+5. In the **Security** tab, review compliance status and password audit; **rotate password** if needed.
 
-### Qualitätssicherung (CI)
+### Quality Assurance (CI)
 
-Der Workflow [`.github/workflows/security-audit.yml`](.github/workflows/security-audit.yml) führt aus:
+The workflow [`.github/workflows/security-audit.yml`](.github/workflows/security-audit.yml) runs:
 
-- `cargo audit` — Abhängigkeits-Scan
+- `cargo audit` — dependency scan
 - `cargo fmt --check` / `cargo clippy`
-- `cargo test` — Krypto- und Integrations-Tests
+- `cargo test` — crypto and integration tests
 
 ---
 
-## Technologie
+## Technology
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -255,14 +255,14 @@ Der Workflow [`.github/workflows/security-audit.yml`](.github/workflows/security
 └──────────────────────────────────────────────┘
 ```
 
-| Schicht | Technologie | Rolle |
+| Layer | Technology | Role |
 |---|---|---|
-| **Backend / Krypto** | Rust (`vault-core`) | Verschlüsselung, Vault-Logik, Audit, Policy, Locking |
-| **Desktop-Shell** | Tauri v2 | Native Runtime, IPC-Commands, OS-Integration |
-| **Frontend** | React + TypeScript | Präsentationsschicht ohne Business-Logik |
-| **Build** | Vite, Cargo | Optimierte Release-Binaries (`LTO`, `strip`) |
+| **Backend / Crypto** | Rust (`vault-core`) | Encryption, vault logic, audit, policy, locking |
+| **Desktop shell** | Tauri v2 | Native runtime, IPC commands, OS integration |
+| **Frontend** | React + TypeScript | Presentation layer without business logic |
+| **Build** | Vite, Cargo | Optimized release binaries (`LTO`, `strip`) |
 
-Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)** — Secrets und Schlüsselmaterial bleiben im speichersicheren Backend.
+This architecture strictly separates **business logic (Rust)** from the **UI (React)** — secrets and key material remain in the memory-safe backend.
 
 ---
 
@@ -270,26 +270,26 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 | Feature | Community (CE) | Enterprise (EE) |
 |---|---|---|
-| Alle aktuellen Features | ✅ | ✅ |
-| Bis 5 User pro Vault | ✅ | ✅ |
-| Unbegrenzte User | ❌ | ✅ |
+| All current features | ✅ | ✅ |
+| Up to 5 users per vault | ✅ | ✅ |
+| Unlimited users | ❌ | ✅ |
 | LDAP / Active Directory | ❌ | ✅ |
 | SSO (SAML / OIDC) | ❌ | ✅ |
-| Priority Support + SLA | ❌ | ✅ |
-| Lizenz | AGPLv3 (Open Source) | Kommerziell |
-| Preis | Kostenlos | Auf Anfrage |
+| Priority support + SLA | ❌ | ✅ |
+| License | AGPLv3 (Open Source) | Commercial |
+| Price | Free | On request |
 
 → **[oxidvault.com](https://oxidvault.com)** · [support@oxidvault.com](mailto:support@oxidvault.com)
 
 ## Download
 
-→ **[Neueste Version auf GitHub Releases](https://github.com/caRl0oo/oxidvault/releases/latest)**
+→ **[Latest version on GitHub Releases](https://github.com/caRl0oo/oxidvault/releases/latest)**
 
-| Plattform | Datei |
+| Platform | File |
 |---|---|
 | **Windows** | `OxidVault_2.2.0_x64_en-US.msi` |
 
-> **Hinweis:** Nach der Installation die Lizenzdatei für Enterprise unter `C:\ProgramData\OxidVault\oxidvault.license` ablegen — Details: [oxidvault.com](https://oxidvault.com)
+> **Note:** After installation, place the license file for Enterprise at `C:\ProgramData\OxidVault\oxidvault.license` — details: [oxidvault.com](https://oxidvault.com)
 
 ---
 
@@ -297,103 +297,103 @@ Diese Architektur trennt **Business Logic (Rust)** strikt von der **UI (React)**
 
 ### [2.2.0] — Auto-Lock & PDF Compliance
 
-- **Auto-Lock Timer UI** — einstellbar in Einstellungen → Sicherheit (1/5/10/15/30 Min/Nie); Default 10 Minuten; GPO-kompatibel
-- **PDF Compliance Report** — Export aus Aktivitäts-Log Tab; A4, OxidVault-Branding, Compliance-Status, letzte 50 Audit-Ereignisse; vollständiger Export weiterhin als JSON/CSV
+- **Auto-Lock timer UI** — configurable in Settings → Security (1/5/10/15/30 min/Never); default 10 minutes; GPO-compatible
+- **PDF Compliance Report** — export from Activity log tab; A4, OxidVault branding, compliance status, last 50 audit events; full export still available as JSON/CSV
 
-### [2.1.1] — Bugfixes System Tray
+### [2.1.1] — System Tray Bugfixes
 
-- **Extension Focus-Loop behoben** — App springt nicht mehr hoch wenn im Tray minimiert
-- **Deadlock-Schutz** — `perform_lock` mit 5s Timeout
-- **Tray-Hide korrekt erkannt** — `is_visible()` Check statt nur `is_minimized()`
+- **Extension focus loop fixed** — app no longer pops up when minimized to tray
+- **Deadlock protection** — `perform_lock` with 5s timeout
+- **Tray hide correctly detected** — `is_visible()` check instead of only `is_minimized()`
 
 ### [2.1.0] — System Tray
 
-- **System Tray** — X-Button und Minimieren verstecken App im Tray; Vault bleibt entsperrt
-- **Ctrl+Q** — App sauber beenden mit RAM-Purge vor Exit
-- **Tray-Menü** — Öffnen / Vault sperren / Beenden
-- **GPO `forceLockOnMinimize`** — sperrt Vault beim Verstecken in Tray wenn Admin-Policy aktiv
+- **System Tray** — X button and minimize hide app in tray; vault stays unlocked
+- **Ctrl+Q** — clean quit with RAM purge before exit
+- **Tray menu** — Open / Lock vault / Quit
+- **GPO `forceLockOnMinimize`** — locks vault when hiding to tray if admin policy is active
 
 ### [2.0.1] — Bugfixes
 
-- **Extension Banner entfernt** — In-Page-Banner erschienen bei jedem Seitenaufruf; Status jetzt nur im Extension-Popup sichtbar
-- **Focus-Loop Fix** — Browser-Extension fokussierte App nicht mehr wenn Vault minimiert
-- **Mobile Menu Fix** — Landing Page oxidvault.com
+- **Extension banner removed** — in-page banner appeared on every page load; status now only visible in extension popup
+- **Focus loop fix** — browser extension no longer focuses app when vault is minimized
+- **Mobile menu fix** — landing page oxidvault.com
 
 ### [2.0.0] — Multi-User & Security
 
-#### Multi-User Architektur
+#### Multi-User Architecture
 
-- **Format v3** — shared DEK, pro-User KEK-Wrapping, User-Tabelle im Plaintext-Header
-- **Multi-User Login** — Username-Textfeld (kein Dropdown, kein Username-Enumeration-Risiko)
-- **Benutzerverwaltung** — Admin kann User hinzufügen/entfernen, Rollen ändern
-- **Passwort ändern** — jeder User kann sein eigenes Passwort ohne Vault-Re-Encrypt rotieren
-- **MFA pro User** — TOTP in User-Eintrag (KEK-verschlüsselt), nicht im Vault-Payload
-- **Migration v1/v2 → v3** — einmaliger Vorgang in den Einstellungen
+- **Format v3** — shared DEK, per-user KEK wrapping, user table in plaintext header
+- **Multi-User login** — username text field (no dropdown, no username enumeration risk)
+- **User management** — admin can add/remove users, change roles
+- **Change password** — each user can rotate their own password without vault re-encrypt
+- **MFA per user** — TOTP in user entry (KEK-encrypted), not in vault payload
+- **Migration v1/v2 → v3** — one-time operation in settings
 
-#### Sicherheit
+#### Security
 
-- **SSH Known-Hosts** — TOFU + gespeicherter SHA-256-Fingerprint; MITM-Warnung bei Abweichung
-- **reveal_secret Rate-Limiting** — Sliding Window (5/60s), Reset bei Lock, Audit-Event
-- **reload_from_disk v3** — DEK bleibt nach Git-Sync-Pull erhalten; kein stiller Session-Verlust
-- **Ed25519 Lizenz-Signierung** — asymmetrisch; Public Key in Binary eingebettet; Private Key nie im Repo; Open Source safe
-- **UI Overhaul** — Raycast-inspiriertes Oxid Light Theme als Standard; vault-card, vault-input, vault-btn-* Design-Tokens
+- **SSH known-hosts** — TOFU + stored SHA-256 fingerprint; MITM warning on mismatch
+- **reveal_secret rate limiting** — sliding window (5/60s), reset on lock, audit event
+- **reload_from_disk v3** — DEK preserved after Git sync pull; no silent session loss
+- **Ed25519 license signing** — asymmetric; public key embedded in binary; private key never in repo; open source safe
+- **UI overhaul** — Raycast-inspired Oxid Light theme as default; vault-card, vault-input, vault-btn-* design tokens
 
 ### [1.0.0] — Enterprise Release
 
-#### Sicherheit & Authentifizierung
+#### Security & Authentication
 
-- **TOTP-MFA (RFC 6238)** — Enrollment mit QR-Code, verschlüsselte Secret-Speicherung im Vault-Payload, Settings-UI (`MfaSetupModal`, `get_mfa_status`, `disable_mfa`).
-- **Atomare Entsperrung** — neues Modul `vault-core/src/auth.rs` mit `unlock_vault(password, mfa_code) → VaultHandle | AuthError`; kein teilentschlüsselter Vault-Zustand im RAM; Entfernung von `PendingUnlock` / zweistufigem Pending-Unlock.
-- **IPC** — `open_vault` / `unlock_vault` akzeptieren optionales `mfa_code`; einheitlicher `UnlockVaultResponse`-Flow.
-- **Entsperr-UX** — dynamisches MFA-Feld im `AuthForm`, Auto-Fokus, Auto-Submit bei 6 Ziffern.
-- **UI-Rate-Limiting** — `useMfaRateLimit`: nach 3 ungültigen MFA-Codes 30 s Lockout mit Countdown (`vault-danger`-Theme-Tokens).
+- **TOTP MFA (RFC 6238)** — enrollment with QR code, encrypted secret storage in vault payload, settings UI (`MfaSetupModal`, `get_mfa_status`, `disable_mfa`).
+- **Atomic unlock** — new module `vault-core/src/auth.rs` with `unlock_vault(password, mfa_code) → VaultHandle | AuthError`; no partially decrypted vault state in RAM; removal of `PendingUnlock` / two-stage pending unlock.
+- **IPC** — `open_vault` / `unlock_vault` accept optional `mfa_code`; unified `UnlockVaultResponse` flow.
+- **Unlock UX** — dynamic MFA field in `AuthForm`, auto-focus, auto-submit at 6 digits.
+- **UI rate limiting** — `useMfaRateLimit`: after 3 invalid MFA codes, 30 s lockout with countdown (`vault-danger` theme tokens).
 
-#### Dokumentation
+#### Documentation
 
-- `ARCHITECTURE.md` — Datenfluss atomare Entsperrung, `AuthError`, `UnlockVaultResponse`, Changelog-Einträge.
+- `ARCHITECTURE.md` — atomic unlock data flow, `AuthError`, `UnlockVaultResponse`, changelog entries.
 
 ---
 
-## Dokumentation & Lizenz
+## Documentation & License
 
-| Ressource | Inhalt |
+| Resource | Content |
 |---|---|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Vollständige technische Referenz (IPC, Dateiformate, Sicherheit) |
-| [`browser-extension/README.md`](browser-extension/README.md) | Browser-Integration via Native Messaging |
-| [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) | Kommerzielle Lizenz ohne AGPLv3-Pflichten |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Beiträge, CLA, Security-Reporting |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Complete technical reference (IPC, file formats, security) |
+| [`browser-extension/README.md`](browser-extension/README.md) | Browser integration via native messaging |
+| [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md) | Commercial license without AGPLv3 obligations |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributions, CLA, security reporting |
 
-### Lizenzierung
+### Licensing
 
-OxidVault steht unter der **[GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html)**. Die AGPL-3.0 verpflichtet jeden, der die Software (oder davon abgeleitete Werke) weiterverbreitet oder als Netzwerkdienst bereitstellt, den **vollständigen Quellcode** unter derselben Lizenz zugänglich zu machen. Für Enterprise-Umgebungen bedeutet das: Änderungen am Tresor-Kern, an der Kryptografie oder an sicherheitsrelevanten Komponenten bleiben nachvollziehbar und können nicht ohne Quellenoffenlegung als proprietäre Blackbox weitergegeben werden — ein zentraler Baustein für **Transparenz, Prüfbarkeit und langfristige Sicherheit**.
+OxidVault is licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html)**. AGPL-3.0 requires anyone who distributes the software (or derivative works) or provides it as a network service to make the **complete source code** available under the same license. For enterprise environments, this means: changes to the vault core, cryptography, or security-relevant components remain traceable and cannot be passed on as a proprietary black box without source disclosure — a central building block for **transparency, auditability, and long-term security**.
 
-Für kommerzielle Nutzung ohne AGPLv3-Pflichten steht eine **Enterprise-Lizenz** zur Verfügung.  
+A **commercial Enterprise license** is available for commercial use without AGPLv3 obligations.  
 Details: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) · [support@oxidvault.com](mailto:support@oxidvault.com)
 
 ---
 
-## Sicherheit & Responsible Disclosure
+## Security & Responsible Disclosure
 
-Wenn Sie eine Sicherheitslücke in OxidVault entdecken, melden Sie diese bitte **vertraulich** — nicht über öffentliche Issues oder Pull Requests.
+If you discover a security vulnerability in OxidVault, please report it **confidentially** — not via public issues or pull requests.
 
-| Kanal | Adresse |
+| Channel | Address |
 |---|---|
 | **Security Contact** | [security@oxidvault.com](mailto:security@oxidvault.com) |
 
-Bitte beschreiben Sie betroffene Version, Plattform, Reproduktionsschritte und — falls möglich — einen Proof of Concept. Wir bestätigen den Eingang in der Regel innerhalb von **72 Stunden** und koordinieren mit Ihnen einen verantwortungsvollen Disclosure-Zeitplan, bevor Details veröffentlicht werden.
+Please describe the affected version, platform, reproduction steps, and — if possible — a proof of concept. We typically acknowledge receipt within **72 hours** and coordinate a responsible disclosure timeline with you before details are published.
 
-> **Hinweis:** Meldungen an `security@oxidvault.com` sind ausschließlich für Sicherheitsvorfälle gedacht. Für allgemeine Support- oder Feature-Anfragen nutzen Sie bitte die Projekt-Issues auf GitHub.
+> **Note:** Reports to `security@oxidvault.com` are intended for security incidents only. For general support or feature requests, please use the project issues on GitHub.
 
 ---
 
 ## Enterprise & Compliance
 
-OxidVault unterstützt **Enterprise-Policies** über eine maschinenweite `policy.json` (Auto-Lock, Mindestpasswortlänge, Git-Sync, Lock-on-Minimize). IT-Teams können Vorgaben zentral per GPO oder Intune ausrollen, ohne dass End-User diese Einstellungen überschreiben können.
+OxidVault supports **enterprise policies** via a machine-wide `policy.json` (auto-lock, minimum password length, Git sync, lock-on-minimize). IT teams can roll out requirements centrally via GPO or Intune without end users being able to override these settings.
 
-| Ressource | Inhalt |
+| Resource | Content |
 |---|---|
-| [Admin-Deployment Guide](ARCHITECTURE.md#16-admin-deployment-guide) | GPO-Rollout in ~5 Minuten, Pfade, Fail-Safe-Logik, Verifikation |
-| [`docs/policy.json.example`](docs/policy.json.example) | Vorlage mit allen unterstützten Policy-Feldern |
+| [Admin Deployment Guide](ARCHITECTURE.md#16-admin-deployment-guide) | GPO rollout in ~5 minutes, paths, fail-safe logic, verification |
+| [`docs/policy.json.example`](docs/policy.json.example) | Template with all supported policy fields |
 
 ---
 
