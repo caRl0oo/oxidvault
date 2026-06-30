@@ -239,7 +239,7 @@ function buildComplianceReportPdfDoc(options: PdfExportOptions): jsPDF {
 
 export function generateComplianceReportPdfBlob(options: PdfExportOptions): Uint8Array {
   const doc = buildComplianceReportPdfDoc(options);
-  const buffer = doc.output("arraybuffer") as ArrayBuffer;
+  const buffer = doc.output("arraybuffer");
   return new Uint8Array(buffer);
 }
 

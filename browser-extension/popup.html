@@ -2,68 +2,69 @@
 <html lang="de" data-theme="oxid">
   <head>
     <meta charset="utf-8" />
-    <title>OxidVault</title>
+    <title data-i18n="app_title"></title>
     <link rel="stylesheet" href="themes.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <div class="header-row">
-      <h1>OxidVault</h1>
-      <select id="themeSelect" class="theme-select" aria-label="Theme">
-        <option value="oxid">Oxid Default</option>
-        <option value="oxid-light">Oxid Light</option>
-        <option value="dracula">Dracula</option>
-        <option value="nord">Nord Arctic</option>
+      <h1 data-i18n="app_title">OxidVault</h1>
+      <label for="themeSelect" class="visually-hidden" data-i18n="aria_theme">Theme</label>
+      <select id="themeSelect" class="theme-select" aria-label="Theme" data-i18n-aria="aria_theme">
+        <option value="oxid" data-i18n="theme_oxid"></option>
+        <option value="oxid-light" data-i18n="theme_oxid_light"></option>
+        <option value="dracula" data-i18n="theme_dracula"></option>
+        <option value="nord" data-i18n="theme_nord"></option>
       </select>
     </div>
 
-    <p id="subtitle" class="subtitle">Verbindung zum Desktop-Tresor …</p>
-    <div id="status" class="status status-unavailable">Status wird geladen …</div>
-    <button id="unlockBtn" type="button" class="btn btn-primary" hidden>OxidVault öffnen</button>
+    <p id="subtitle" class="subtitle" data-i18n="subtitle_connecting"></p>
+    <div id="status" class="status status-unavailable" data-i18n="status_loading"></div>
+    <button id="unlockBtn" type="button" class="btn btn-primary" hidden data-i18n="btn_open_oxidvault"></button>
 
-    <h2 class="section-title">Generator</h2>
+    <h2 class="section-title" data-i18n="section_title_generator">Generator</h2>
     <section id="generatorPanel" class="generator-panel loading" aria-live="polite">
       <label class="field-label" for="lengthSlider">
-        Länge: <span id="lengthValue">24</span>
+        <span data-i18n="label_length">Length:</span> <span id="lengthValue">24</span>
       </label>
       <input id="lengthSlider" class="range-input" type="range" min="8" max="128" value="24" />
 
       <div class="charset-grid">
-        <label class="charset-option">
+        <div class="charset-option">
           <input id="optUpper" type="checkbox" checked />
-          Großbuchstaben
-        </label>
-        <label class="charset-option">
+          <label for="optUpper" data-i18n="charset_uppercase">Uppercase</label>
+        </div>
+        <div class="charset-option">
           <input id="optLower" type="checkbox" checked />
-          Kleinbuchstaben
-        </label>
-        <label class="charset-option">
+          <label for="optLower" data-i18n="charset_lowercase">Lowercase</label>
+        </div>
+        <div class="charset-option">
           <input id="optDigits" type="checkbox" checked />
-          Ziffern
-        </label>
-        <label class="charset-option">
+          <label for="optDigits" data-i18n="charset_digits">Digits</label>
+        </div>
+        <div class="charset-option">
           <input id="optSymbols" type="checkbox" checked />
-          Sonderzeichen
-        </label>
+          <label for="optSymbols" data-i18n="charset_symbols">Symbols</label>
+        </div>
       </div>
 
-      <input
-        id="passwordOutput"
-        class="password-output"
-        type="text"
-        readonly
-        aria-label="Generiertes Passwort"
-        value=""
-      />
+      <label class="password-output-field">
+        <span class="visually-hidden" data-i18n="aria_generated_password">Generated password</span>
+        <input
+          id="passwordOutput"
+          class="password-output"
+          type="text"
+          readonly
+          value=""
+        />
+      </label>
       <p id="generatorError" class="generator-error" hidden></p>
 
       <div class="btn-row">
-        <button id="regenerateBtn" type="button" class="btn btn-primary" disabled>
-          Neu generieren
+        <button id="regenerateBtn" type="button" class="btn btn-primary" disabled data-i18n="btn_regenerate">
         </button>
-        <button id="copyBtn" type="button" class="btn btn-secondary" disabled>Kopieren</button>
-        <button id="saveBtn" type="button" class="btn btn-secondary" disabled>
-          Speichern &amp; AutoFill
+        <button id="copyBtn" type="button" class="btn btn-secondary" disabled data-i18n="btn_copy"></button>
+        <button id="saveBtn" type="button" class="btn btn-secondary" disabled data-i18n="btn_save_autofill">
         </button>
       </div>
     </section>

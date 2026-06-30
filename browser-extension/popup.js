@@ -90,7 +90,7 @@ async function runGenerate(options = readOptions()) {
   if (!hasCharset(options)) {
     currentPassword = "";
     passwordOutput.value = "";
-    showGeneratorError("Mindestens ein Zeichensatz muss aktiv sein.");
+    showGeneratorError(chrome.i18n.getMessage("error_charset_required"));
     setGeneratorLoading(false);
     return;
   }
@@ -106,86 +106,106 @@ async function runGenerate(options = readOptions()) {
     currentPassword = "";
     passwordOutput.value = "";
     showGeneratorError(
-      err instanceof Error ? err.message : "WASM-Generator konnte nicht geladen werden."
+      err instanceof Error ? err.message : chrome.i18n.getMessage("error_wasm_generator_load_failed")
     );
   } finally {
     setGeneratorLoading(false);
   }
 }
 
-function renderStatus(response) {
-  if (response?.status === "unavailable") {
-    subtitleEl.textContent = "Desktop-App nicht erreichbar";
-    setStatus(
-      "status-unavailable",
-      "Starte OxidVault auf diesem Rechner, um AutoFill und Speichern zu nutzen."
-    );
-    unlockBtn.hidden = true;
-    return;
-  }
+function setSubtitleAndStatus(subtitleKey, statusClass, statusKey) {
+  subtitleEl.textContent = chrome.i18n.getMessage(subtitleKey);
+  setStatus(statusClass, chrome.i18n.getMessage(statusKey));
+}
 
-  if (response?.status === "mfa_failed") {
-    subtitleEl.textContent = "MFA fehlgeschlagen";
-    setStatus(
-      "status-error",
-      response.error ??
-        "Der MFA-Code in der Desktop-App war ungültig. Bitte erneut in OxidVault entsperren."
-    );
-    unlockBtn.hidden = false;
-    unlockBtn.textContent = "OxidVault erneut öffnen";
-    return;
+function applyMinimizedVaultUi(response, config) {
+  const minimized = response?.minimized === true;
+  subtitleEl.textContent = chrome.i18n.getMessage(
+    minimized ? config.subtitleMinimized : config.subtitle
+  );
+  setStatus(
+    config.statusClass,
+    chrome.i18n.getMessage(minimized ? config.statusMinimized : config.status)
+  );
+  unlockBtn.hidden = minimized;
+  if (!minimized) {
+    unlockBtn.textContent = chrome.i18n.getMessage("btn_open_oxidvault");
   }
+}
 
-  if (response?.success === true && response?.locked === false) {
-    subtitleEl.textContent = "Tresor entsperrt";
-    setStatus("status-ok", "AutoFill ist bereit. Login-Seiten werden automatisch erkannt.");
-    unlockBtn.hidden = true;
-    return;
-  }
-
-  if (response?.mfa_required) {
-    subtitleEl.textContent = response?.minimized
-      ? "Zwei-Faktor-Authentifizierung aktiv (minimiert)"
-      : "Zwei-Faktor-Authentifizierung aktiv";
-    setStatus(
-      "status-mfa",
-      response?.minimized
-        ? "Stelle das OxidVault-Fenster wieder her, um mit Passwort und MFA-Code zu entsperren."
-        : "Entsperre OxidVault in der Desktop-App mit Master-Passwort und MFA-Code."
-    );
-    unlockBtn.hidden = response?.minimized === true;
-    if (!unlockBtn.hidden) {
-      unlockBtn.textContent = "OxidVault öffnen";
-    }
-    return;
-  }
-
-  if (response?.locked) {
-    subtitleEl.textContent = response?.minimized
-      ? "Tresor gesperrt (minimiert)"
-      : "Tresor gesperrt";
-    setStatus(
-      "status-locked",
-      response?.minimized
-        ? "Stelle das OxidVault-Fenster wieder her, um zu entsperren."
-        : "Entsperre OxidVault in der Desktop-App, um Secrets zu speichern."
-    );
-    unlockBtn.hidden = response?.minimized === true;
-    if (!unlockBtn.hidden) {
-      unlockBtn.textContent = "OxidVault öffnen";
-    }
-    return;
-  }
-
-  subtitleEl.textContent = "Status unbekannt";
-  setStatus("status-unavailable", "Verbindung zum Host fehlgeschlagen.");
+function renderUnavailableStatus() {
+  setSubtitleAndStatus(
+    "subtitle_desktop_unavailable",
+    "status-unavailable",
+    "status_desktop_unavailable"
+  );
   unlockBtn.hidden = true;
+}
+
+function renderMfaFailedStatus(response) {
+  subtitleEl.textContent = chrome.i18n.getMessage("subtitle_mfa_failed");
+  setStatus(
+    "status-error",
+    response.error ?? chrome.i18n.getMessage("status_mfa_failed_default")
+  );
+  unlockBtn.hidden = false;
+  unlockBtn.textContent = chrome.i18n.getMessage("btn_reopen_oxidvault");
+}
+
+function renderUnlockedStatus() {
+  setSubtitleAndStatus("subtitle_vault_unlocked", "status-ok", "status_vault_unlocked");
+  unlockBtn.hidden = true;
+}
+
+function renderMfaRequiredStatus(response) {
+  applyMinimizedVaultUi(response, {
+    subtitleMinimized: "subtitle_mfa_active_minimized",
+    subtitle: "subtitle_mfa_active",
+    statusClass: "status-mfa",
+    statusMinimized: "status_mfa_restore_window",
+    status: "status_mfa_unlock_desktop",
+  });
+}
+
+function renderLockedStatus(response) {
+  applyMinimizedVaultUi(response, {
+    subtitleMinimized: "subtitle_vault_locked_minimized",
+    subtitle: "subtitle_vault_locked",
+    statusClass: "status-locked",
+    statusMinimized: "status_locked_restore_window",
+    status: "status_locked_unlock_desktop",
+  });
+}
+
+function renderUnknownStatus() {
+  setSubtitleAndStatus(
+    "subtitle_unknown_status",
+    "status-unavailable",
+    "status_host_connection_failed"
+  );
+  unlockBtn.hidden = true;
+}
+
+const STATUS_RENDERERS = [
+  { match: (response) => response?.status === "unavailable", render: renderUnavailableStatus },
+  { match: (response) => response?.status === "mfa_failed", render: renderMfaFailedStatus },
+  {
+    match: (response) => response?.success === true && response?.locked === false,
+    render: renderUnlockedStatus,
+  },
+  { match: (response) => response?.mfa_required, render: renderMfaRequiredStatus },
+  { match: (response) => response?.locked, render: renderLockedStatus },
+];
+
+function renderStatus(response) {
+  const handler = STATUS_RENDERERS.find((entry) => entry.match(response));
+  (handler?.render ?? renderUnknownStatus)(response);
 }
 
 function refreshStatus() {
   chrome.runtime.sendMessage({ type: "VAULT_STATUS" }, (response) => {
     if (chrome.runtime.lastError) {
-      subtitleEl.textContent = "Verbindungsfehler";
+      subtitleEl.textContent = chrome.i18n.getMessage("subtitle_connection_error");
       setStatus("status-unavailable", chrome.runtime.lastError.message);
       unlockBtn.hidden = true;
       return;
@@ -255,13 +275,13 @@ copyBtn.addEventListener("click", () => {
   navigator.clipboard
     .writeText(currentPassword)
     .then(() => {
-      copyBtn.textContent = "Kopiert!";
+      copyBtn.textContent = chrome.i18n.getMessage("btn_copied");
       globalThis.setTimeout(() => {
-        copyBtn.textContent = "Kopieren";
+        copyBtn.textContent = chrome.i18n.getMessage("btn_copy");
       }, 1500);
     })
     .catch(() => {
-      showGeneratorError("Zwischenablage nicht verfügbar.");
+      showGeneratorError(chrome.i18n.getMessage("error_clipboard_unavailable"));
     });
 });
 
@@ -279,17 +299,17 @@ saveBtn.addEventListener("click", () => {
         return;
       }
       if (response?.status === "locked") {
-        showGeneratorError("Tresor gesperrt — bitte zuerst in OxidVault entsperren.");
+        showGeneratorError(chrome.i18n.getMessage("error_vault_locked_save"));
         refreshStatus();
         return;
       }
       if (response?.status === "error") {
-        showGeneratorError(response.error ?? "Speichern fehlgeschlagen.");
+        showGeneratorError(response.error ?? chrome.i18n.getMessage("error_save_failed"));
         return;
       }
       showGeneratorError(null);
-      subtitleEl.textContent = "Desktop-App geöffnet";
-      setStatus("status-ok", "Neues Secret-Formular in OxidVault wird vorbefüllt.");
+      subtitleEl.textContent = chrome.i18n.getMessage("subtitle_desktop_opened");
+      setStatus("status-ok", chrome.i18n.getMessage("status_new_secret_prefill"));
       refreshStatus();
     }
   );
@@ -300,6 +320,16 @@ refreshStatus();
 void loadWasmModule()
   .then(() => runGenerate(DEFAULT_OPTIONS))
   .catch(() => {
-    showGeneratorError("WASM-Modul fehlt — bitte scripts/build-wasm.ps1 ausführen.");
+    showGeneratorError(chrome.i18n.getMessage("error_wasm_module_missing"));
     generatorPanel.classList.remove("loading");
   });
+
+document.querySelectorAll("[data-i18n]").forEach((el) => {
+  const msg = chrome.i18n.getMessage(el.dataset.i18n);
+  if (msg) el.textContent = msg;
+});
+
+document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+  const msg = chrome.i18n.getMessage(el.dataset.i18nAria);
+  if (msg) el.setAttribute("aria-label", msg);
+});

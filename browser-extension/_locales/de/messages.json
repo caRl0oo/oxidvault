@@ -1,0 +1,140 @@
+{
+  "error_charset_required": {
+    "message": "Mindestens ein Zeichensatz muss aktiv sein."
+  },
+  "error_wasm_generator_load_failed": {
+    "message": "WASM-Generator konnte nicht geladen werden."
+  },
+  "subtitle_desktop_unavailable": {
+    "message": "Desktop-App nicht erreichbar"
+  },
+  "status_desktop_unavailable": {
+    "message": "Starte OxidVault auf diesem Rechner, um AutoFill und Speichern zu nutzen."
+  },
+  "subtitle_mfa_failed": {
+    "message": "MFA fehlgeschlagen"
+  },
+  "status_mfa_failed_default": {
+    "message": "Der MFA-Code in der Desktop-App war ungültig. Bitte erneut in OxidVault entsperren."
+  },
+  "btn_reopen_oxidvault": {
+    "message": "OxidVault erneut öffnen"
+  },
+  "subtitle_vault_unlocked": {
+    "message": "Tresor entsperrt"
+  },
+  "status_vault_unlocked": {
+    "message": "AutoFill ist bereit. Login-Seiten werden automatisch erkannt."
+  },
+  "subtitle_mfa_active_minimized": {
+    "message": "Zwei-Faktor-Authentifizierung aktiv (minimiert)"
+  },
+  "subtitle_mfa_active": {
+    "message": "Zwei-Faktor-Authentifizierung aktiv"
+  },
+  "status_mfa_restore_window": {
+    "message": "Stelle das OxidVault-Fenster wieder her, um mit Passwort und MFA-Code zu entsperren."
+  },
+  "status_mfa_unlock_desktop": {
+    "message": "Entsperre OxidVault in der Desktop-App mit Master-Passwort und MFA-Code."
+  },
+  "btn_open_oxidvault": {
+    "message": "OxidVault öffnen"
+  },
+  "subtitle_vault_locked_minimized": {
+    "message": "Tresor gesperrt (minimiert)"
+  },
+  "subtitle_vault_locked": {
+    "message": "Tresor gesperrt"
+  },
+  "status_locked_restore_window": {
+    "message": "Stelle das OxidVault-Fenster wieder her, um zu entsperren."
+  },
+  "status_locked_unlock_desktop": {
+    "message": "Entsperre OxidVault in der Desktop-App, um Secrets zu speichern."
+  },
+  "subtitle_unknown_status": {
+    "message": "Status unbekannt"
+  },
+  "status_host_connection_failed": {
+    "message": "Verbindung zum Host fehlgeschlagen."
+  },
+  "subtitle_connection_error": {
+    "message": "Verbindungsfehler"
+  },
+  "btn_copied": {
+    "message": "Kopiert!"
+  },
+  "btn_copy": {
+    "message": "Kopieren"
+  },
+  "error_clipboard_unavailable": {
+    "message": "Zwischenablage nicht verfügbar."
+  },
+  "error_vault_locked_save": {
+    "message": "Tresor gesperrt — bitte zuerst in OxidVault entsperren."
+  },
+  "error_save_failed": {
+    "message": "Speichern fehlgeschlagen."
+  },
+  "subtitle_desktop_opened": {
+    "message": "Desktop-App geöffnet"
+  },
+  "status_new_secret_prefill": {
+    "message": "Neues Secret-Formular in OxidVault wird vorbefüllt."
+  },
+  "error_wasm_module_missing": {
+    "message": "WASM-Modul fehlt — bitte scripts/build-wasm.ps1 ausführen."
+  },
+  "app_title": {
+    "message": "OxidVault"
+  },
+  "theme_oxid": {
+    "message": "Oxid Default"
+  },
+  "theme_oxid_light": {
+    "message": "Oxid Light"
+  },
+  "theme_dracula": {
+    "message": "Dracula"
+  },
+  "theme_nord": {
+    "message": "Nord Arctic"
+  },
+  "subtitle_connecting": {
+    "message": "Verbindung zum Desktop-Tresor …"
+  },
+  "status_loading": {
+    "message": "Status wird geladen …"
+  },
+  "section_title_generator": {
+    "message": "Generator"
+  },
+  "label_length": {
+    "message": "Länge:"
+  },
+  "charset_uppercase": {
+    "message": "Großbuchstaben"
+  },
+  "charset_lowercase": {
+    "message": "Kleinbuchstaben"
+  },
+  "charset_digits": {
+    "message": "Ziffern"
+  },
+  "charset_symbols": {
+    "message": "Sonderzeichen"
+  },
+  "btn_regenerate": {
+    "message": "Neu generieren"
+  },
+  "btn_save_autofill": {
+    "message": "Speichern & AutoFill"
+  },
+  "aria_theme": {
+    "message": "Theme"
+  },
+  "aria_generated_password": {
+    "message": "Generiertes Passwort"
+  }
+}

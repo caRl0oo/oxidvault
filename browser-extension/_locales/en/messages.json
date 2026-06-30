@@ -1,0 +1,140 @@
+{
+  "error_charset_required": {
+    "message": "At least one character set must be enabled."
+  },
+  "error_wasm_generator_load_failed": {
+    "message": "WASM generator could not be loaded."
+  },
+  "subtitle_desktop_unavailable": {
+    "message": "Desktop app unavailable"
+  },
+  "status_desktop_unavailable": {
+    "message": "Start OxidVault on this machine to use autofill and save."
+  },
+  "subtitle_mfa_failed": {
+    "message": "MFA failed"
+  },
+  "status_mfa_failed_default": {
+    "message": "The MFA code in the desktop app was invalid. Please unlock OxidVault again."
+  },
+  "btn_reopen_oxidvault": {
+    "message": "Reopen OxidVault"
+  },
+  "subtitle_vault_unlocked": {
+    "message": "Vault unlocked"
+  },
+  "status_vault_unlocked": {
+    "message": "Autofill is ready. Login pages are detected automatically."
+  },
+  "subtitle_mfa_active_minimized": {
+    "message": "Two-factor authentication active (minimized)"
+  },
+  "subtitle_mfa_active": {
+    "message": "Two-factor authentication active"
+  },
+  "status_mfa_restore_window": {
+    "message": "Restore the OxidVault window to unlock with password and MFA code."
+  },
+  "status_mfa_unlock_desktop": {
+    "message": "Unlock OxidVault in the desktop app with master password and MFA code."
+  },
+  "btn_open_oxidvault": {
+    "message": "Open OxidVault"
+  },
+  "subtitle_vault_locked_minimized": {
+    "message": "Vault locked (minimized)"
+  },
+  "subtitle_vault_locked": {
+    "message": "Vault locked"
+  },
+  "status_locked_restore_window": {
+    "message": "Restore the OxidVault window to unlock."
+  },
+  "status_locked_unlock_desktop": {
+    "message": "Unlock OxidVault in the desktop app to save secrets."
+  },
+  "subtitle_unknown_status": {
+    "message": "Unknown status"
+  },
+  "status_host_connection_failed": {
+    "message": "Connection to host failed."
+  },
+  "subtitle_connection_error": {
+    "message": "Connection error"
+  },
+  "btn_copied": {
+    "message": "Copied!"
+  },
+  "btn_copy": {
+    "message": "Copy"
+  },
+  "error_clipboard_unavailable": {
+    "message": "Clipboard unavailable."
+  },
+  "error_vault_locked_save": {
+    "message": "Vault locked — please unlock OxidVault first."
+  },
+  "error_save_failed": {
+    "message": "Save failed."
+  },
+  "subtitle_desktop_opened": {
+    "message": "Desktop app opened"
+  },
+  "status_new_secret_prefill": {
+    "message": "New secret form in OxidVault is being prefilled."
+  },
+  "error_wasm_module_missing": {
+    "message": "WASM module missing — run scripts/build-wasm.ps1."
+  },
+  "app_title": {
+    "message": "OxidVault"
+  },
+  "theme_oxid": {
+    "message": "Oxid Default"
+  },
+  "theme_oxid_light": {
+    "message": "Oxid Light"
+  },
+  "theme_dracula": {
+    "message": "Dracula"
+  },
+  "theme_nord": {
+    "message": "Nord Arctic"
+  },
+  "subtitle_connecting": {
+    "message": "Connecting to desktop vault …"
+  },
+  "status_loading": {
+    "message": "Loading status …"
+  },
+  "section_title_generator": {
+    "message": "Generator"
+  },
+  "label_length": {
+    "message": "Length:"
+  },
+  "charset_uppercase": {
+    "message": "Uppercase"
+  },
+  "charset_lowercase": {
+    "message": "Lowercase"
+  },
+  "charset_digits": {
+    "message": "Digits"
+  },
+  "charset_symbols": {
+    "message": "Symbols"
+  },
+  "btn_regenerate": {
+    "message": "Regenerate"
+  },
+  "btn_save_autofill": {
+    "message": "Save & Autofill"
+  },
+  "aria_theme": {
+    "message": "Theme"
+  },
+  "aria_generated_password": {
+    "message": "Generated password"
+  }
+}
