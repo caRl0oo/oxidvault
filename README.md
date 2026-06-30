@@ -4,6 +4,17 @@
 
 If you find OxidVault useful, consider giving it a ⭐ — it helps others discover the project.
 
+## Feedback & Community
+
+OxidVault is already used in the wild — **200+ repository clones** and growing. Your input shapes what we build next.
+
+Help us improve with low-effort participation on GitHub:
+
+- **[Open an issue](https://github.com/caRl0oo/oxidvault/issues)** — report a feature request, workflow friction, or something that slowed you down. Short notes are welcome; you do not need a full spec.
+- **React with 👍 on existing issues** — if an idea matches your needs, a thumbs-up is enough for us to gauge demand and prioritize without long comment threads.
+
+→ **[GitHub Issues](https://github.com/caRl0oo/oxidvault/issues)**
+
 **Secure, on-premise password manager for enterprise environments.**
 
 OxidVault is designed for organizations that want to operate credentials and secrets **entirely under their own control** — without cloud dependency, without third-party hosting, and with traceable compliance paths. The application combines a memory-safe Rust core with a lean desktop interface and is built for IT administrators, security officers (CISO), and end users in corporate environments.
