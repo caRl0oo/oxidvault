@@ -3,6 +3,15 @@
 
 import { save, open } from "@tauri-apps/plugin-dialog";
 import i18n from "@/lib/i18n";
+import type { ImportFormat } from "@/import/types";
+
+function importExtensions(format: ImportFormat): string[] {
+  return format === "bitwarden" ? ["json"] : ["csv"];
+}
+
+function importFilterName(format: ImportFormat): string {
+  return i18n.t(`dialog.importFilter_${format}`);
+}
 
 export function normalizeVaultPath(path: string): string {
   return path.toLowerCase().endsWith(".oxid") ? path : `${path}.oxid`;
@@ -74,4 +83,13 @@ export async function pickAuditPdfExportPath(): Promise<string | null> {
   }
 
   return path.toLowerCase().endsWith(".pdf") ? path : `${path}.pdf`;
+}
+
+export async function pickImportPath(format: ImportFormat): Promise<string | null> {
+  const extensions = importExtensions(format);
+  const path = await open({
+    multiple: false,
+    filters: [{ name: importFilterName(format), extensions }],
+  });
+  return typeof path === "string" ? path : null;
 }

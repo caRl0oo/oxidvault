@@ -162,6 +162,10 @@ export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }
 
+export async function markImportOffered(vaultPath: string): Promise<AppSettings> {
+  return invoke<AppSettings>("mark_import_offered", { vaultPath });
+}
+
 export async function updateAutoLockSeconds(seconds: number): Promise<AppSettings> {
   return invoke<AppSettings>("update_auto_lock_seconds", { seconds });
 }

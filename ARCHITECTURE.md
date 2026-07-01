@@ -868,6 +868,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `verify_mfa_code` | `code: String` | `bool` | TOTP validation (RFC 6238, offline); on enrollment → encrypted persistence in vault payload | ✅ |
 | `reencrypt_vault` | `current_password`, `new_password` | `()` | Rotate master key container — **vault lock guard** | ✅ |
 | `get_app_settings` | — | `AppSettings` | Load local app settings | ✅ |
+| `mark_import_offered` | `vault_path: String` | `AppSettings` | Append vault path to `importOfferedPaths` in `settings.json` | ✅ |
 | `get_resolved_config` | — | `ResolvedConfig` | Effective policy (user + admin GPO, UI `disabled`) | ✅ |
 | `update_git_sync_settings` | `enabled`, `remote_url?`, `ssh_key_path?`, `https_username?`, `https_password?` | `AppSettings` | Git sync configuration — **vault lock guard** | ✅ |
 | `update_auto_lock_seconds` | `seconds: u32` | `AppSettings` | Auto-lock timer (0/60/300/600/900/1800) — **vault lock guard** | ✅ |
@@ -1248,6 +1249,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `getSystemDiagnostics()` | `get_system_diagnostics` |
 | `reencryptVault(currentPassword, newPassword)` | `reencrypt_vault` |
 | `getAppSettings()` | `get_app_settings` |
+| `markImportOffered(vaultPath)` | `mark_import_offered` |
 | `getResolvedConfig()` | `get_resolved_config` |
 | `updateGitSyncSettings(enabled, remoteUrl)` | `update_git_sync_settings` |
 | `updateAutoLockSeconds(seconds)` | `update_auto_lock_seconds` |
@@ -1387,7 +1389,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | **Persistence** | `localStorage` key `oxidvault-locale` — restore in `main.tsx` via `@/lib/i18n` |
 | **UI selection** | **Language** dropdown in gear menu (`SettingsMenu`) |
 | **Fallback** | `fallbackLng: false` — no cross-language fallback; both locale files must be complete |
-| **Scope** | Welcome/auth, vault workspace, sidebar, entry detail, secret modal, generator, audit log, security/compliance, rotation, settings, shortcuts, toasts, error and audit label mapping |
+| **Scope** | Welcome/auth, vault workspace, sidebar, entry detail, secret modal, generator, audit log, security/compliance, rotation, settings, shortcuts, toasts, password import (`import.*`), error and audit label mapping |
 | **Audit events** | Backend stays English (`VaultKeyRotated`, …); frontend mapping in `src/lib/auditLogLabels.ts` → `audit.actions.*` |
 | **Error mapping** | `src/lib/errors.ts` — Rust error substrings → `errors.*` keys |
 | **Type labels** | `src/lib/vaultLabels.ts` — secret types, DB/WiFi options, dashboard filters |
@@ -1459,6 +1461,7 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | Field | Type | Content |
 |---|---|---|
 | `lastVaultPath` | `string?` | Absolute path to last opened `.oxid` file |
+| `importOfferedPaths` | `string[]` | Vault paths where the first-run import offer was shown or dismissed |
 | `gitSync.enabled` | `boolean` | Git sync active/inactive |
 | `gitSync.remoteUrl` | `string?` | Remote repository URL or path (e.g. `https://…` or `file://…`) |
 
@@ -1516,11 +1519,87 @@ Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
 | `ClipboardToast` | `src/components/ClipboardToast.tsx` | Toast notice for 30s clipboard auto-clear |
 | `SecretTypeIcon` | `src/components/SecretTypeIcon.tsx` | SVG icons for all 6 secret types in sidebar |
 | `openWebsite.ts` | `src/lib/openWebsite.ts` | URL validation + IPC to `open_website_url` |
+| `ImportWelcomeModal` | `src/components/ImportWelcomeModal.tsx` | One-time offer after new empty vault (import vs. start fresh) |
+| `ImportModal` | `src/components/ImportModal.tsx` | 4-step wizard: format → file → confirm → result |
+
+### Password Import (v2.3.0)
+
+> **Status:** ✅ Client-side TypeScript only — **no** new Rust parsers, **no** vault format changes. Secrets are written via existing `add_entry` IPC.
+
+| Aspect | Detail |
+|---|---|
+| **Entry points** | (1) `ImportWelcomeModal` after `create_vault_v3` when vault has 0 entries · (2) Settings → General → **Import passwords** (`SettingsView`) |
+| **First-run flag** | `importOfferedPaths: string[]` in `settings.json` — path appended via `mark_import_offered` when user dismisses welcome or opens import; read on bootstrap via `get_app_settings` |
+| **Legacy migration** | One-time `localStorage` keys `oxidvault-import-offered:*` → `mark_import_offered` in `src/lib/importOffered.ts` |
+| **File picker** | `pickImportPath(format)` in `src/lib/dialog.ts` — Bitwarden `.json`, all others `.csv` |
+| **File read** | `readTextFile` (`@tauri-apps/plugin-fs`) — capability `fs:allow-read-text-file` in `default.json` |
+| **i18n** | Namespace `import.*` in `src/locales/de.json` + `en.json` |
+
+**Module layout (`src/import/`):**
+
+| File | Role |
+|---|---|
+| `types.ts` | `ImportFormat`, `ParsedImportEntry`, `ParsedImportKind` (`web_login` \| `secure_note`) |
+| `csv.ts` | RFC 4180-style CSV parser (quoted fields); BOM strip on headers |
+| `shared.ts` | Validation, tag/folder helpers, `finalizeParseResult` |
+| `bitwarden.ts` | Unencrypted JSON export (`items[]`, type `1` / `login`) |
+| `onepassword.ts` | CSV (`Title`, `Website`, `Username`, `Password`, …) |
+| `keepass.ts` | KeePass CSV (`Account`, `Login Name`, `Web Site`, `Group`, …) |
+| `chrome.ts` | Chrome CSV (`name`, `url`, `username`, `password`) |
+| `roboform.ts` | RoboForm CSV — see mapping below |
+| `index.ts` | `validateImportFormat`, `parseImportFile`, `buildImportPreview`, `toSecretInput`, `executeImport` |
+
+**Supported formats:**
+
+| Format | Extension | Export hint (UI) |
+|---|---|---|
+| Bitwarden | `.json` | Tools → Export vault → JSON (unencrypted) |
+| 1Password | `.csv` | File → Export → CSV |
+| KeePass | `.csv` | File → Export → KeePass CSV (1.x) |
+| Chrome | `.csv` | Password Manager → download CSV |
+| RoboForm | `.csv` | Extras → Export → Save as CSV |
+
+**Mapping → `add_entry` input:**
+
+| Source (typical) | `web_login` field | Notes |
+|---|---|---|
+| title / name | `title` | Fallback title if empty |
+| url | `url` | Required for `web_login` |
+| username / login | `username` | Required for `web_login` |
+| password | `password` | Required for `web_login` |
+| notes | `notes` | Optional — **supported** on `WebLogin` payload in `vault-core` (`entry.rs`) |
+| folder / group | `tags[]` | Single folder → one tag |
+
+**RoboForm CSV columns:** `Name`, `Url`, `MatchUrl`, `Login`, `Pwd`, `Note`, `Folder`, `RfFieldsV2`
+
+| RoboForm column | Mapping |
+|---|---|
+| `Name` | `title` |
+| `Url` | `url` (web login) |
+| `MatchUrl` | ignored |
+| `Login` | `username` |
+| `Pwd` | `password` |
+| `Note` | `notes` (web login) or `content` (secure note) |
+| `Folder` | `tags` |
+| `RfFieldsV2` | Extra column — does not break CSV parsing (header-indexed `cellAt`). If `Note` empty on **web_login** rows, readable plain text from `RfFieldsV2` may be used as `notes` (JSON/binary blobs skipped) |
+
+**RoboForm secure note detection:** If `Pwd` and `Login` are empty and `Note` is non-empty → import as `secure_note` (`title` = `Name`, `content` = `Note`, `tags` = `Folder`). Does not use `RfFieldsV2` for secure notes.
+
+**Validation & deduplication:**
+
+| Rule | Behaviour |
+|---|---|
+| Skip invalid | `web_login`: requires non-empty `url`, `username`, `password`; skip if both `title` and `password` empty |
+| Skip invalid (note) | `secure_note`: requires non-empty `title` and `content` |
+| Duplicates | `web_login`: skip if same `title` + `url` (case-insensitive) already in vault · `secure_note`: skip if same `title` already exists |
+| Import execution | Sequential `add_entry` per preview row; `entry_count` updated in frontend |
+
+**Verification script:** `scripts/verify-roboform-import.ts` (RoboForm notes, secure note, quoted CSV / `RfFieldsV2`).
 
 ### State Management
 
 Currently: Local React state in `App.tsx` with screen flow (`welcome` → `create`/`open` → `vault`; smart start: directly `unlock`).  
-File dialogs via `@tauri-apps/plugin-dialog` in `src/lib/dialog.ts`.
+File dialogs via `@tauri-apps/plugin-dialog` in `src/lib/dialog.ts` (`pickVaultSavePath`, `pickVaultOpenPath`, `pickImportPath`, audit export paths).
 
 ---
 
@@ -2232,6 +2311,7 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.0.0 | **Multi-user phase 2:** Tauri commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), auth flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK retained after Git sync pull; user list read from new header; lock guard before reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 license signing:** HMAC-SHA256 → Ed25519 asymmetric; public key via build-time env var injection; private key never in repo; open source safe |
+| 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |
 | 2026-06-29 | 2.2.0 | **Auto-lock UI:** configurable timer (1/5/10/15/30 min/never); default 10 min; GPO-compatible |
 | 2026-06-28 | 2.1.0 | **NM bridge tray-focus fix:** `minimized` incl. tray hide (`!is_visible`); `request_unlock` without vault mutex during focus; `perform_lock` mutex timeout 5s |

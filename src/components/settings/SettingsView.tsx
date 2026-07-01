@@ -50,6 +50,7 @@ interface SettingsViewProps {
   readonly onGitSyncChange?: (settings: GitSyncSettings) => void;
   readonly onTriggerGitSync?: () => void;
   readonly gitSyncing?: boolean;
+  readonly onOpenImport?: () => void;
 }
 
 export function SettingsView({
@@ -61,6 +62,7 @@ export function SettingsView({
   onGitSyncChange,
   onTriggerGitSync,
   gitSyncing = false,
+  onOpenImport,
 }: Readonly<SettingsViewProps>) {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
@@ -269,6 +271,8 @@ export function SettingsView({
           setTheme={setTheme}
           currentLocale={currentLocale}
           onOpenAbout={() => setAboutOpen(true)}
+          onOpenImport={onOpenImport}
+          vaultLocked={vaultLocked}
         />
       );
     }
@@ -386,6 +390,8 @@ interface GeneralSettingsPanelProps {
   readonly setTheme: (theme: ThemeId) => void;
   readonly currentLocale: string;
   readonly onOpenAbout: () => void;
+  readonly onOpenImport?: () => void;
+  readonly vaultLocked: boolean;
 }
 
 function GeneralSettingsPanel({
@@ -393,6 +399,8 @@ function GeneralSettingsPanel({
   setTheme,
   currentLocale,
   onOpenAbout,
+  onOpenImport,
+  vaultLocked,
 }: Readonly<GeneralSettingsPanelProps>) {
   const { t } = useTranslation();
 
@@ -456,6 +464,25 @@ function GeneralSettingsPanel({
           </div>
         </div>
       </section>
+
+      {!vaultLocked && onOpenImport ? (
+        <section className="flex flex-col gap-4">
+          <div className={UI.sectionLabel}>{t("import.menu_item")}</div>
+          <button
+            type="button"
+            onClick={onOpenImport}
+            className={`${UI.card} flex w-full items-center gap-4 p-4 text-left transition-shadow duration-150 hover:shadow-md`}
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-vault-accent/15 font-mono text-lg text-vault-accent">
+              ↓
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-semibold text-vault-text">{t("import.menu_item")}</span>
+              <span className="text-xs text-vault-muted">{t("import.menu_hint")}</span>
+            </div>
+          </button>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-4">
         <div className={UI.sectionLabel}>{t("about.menuItem")}</div>

@@ -19,6 +19,7 @@ interface AppMainAreaProps {
   readonly onGoToUnlock: () => void;
   readonly idleWarningSeconds: number | null;
   readonly vaultUnlocked: boolean;
+  readonly onOpenImport?: () => void;
   readonly children: ReactNode;
 }
 
@@ -34,6 +35,7 @@ export function AppMainArea({
   onGoToUnlock,
   idleWarningSeconds,
   vaultUnlocked,
+  onOpenImport,
   children,
 }: Readonly<AppMainAreaProps>) {
   const { t } = useTranslation();
@@ -49,6 +51,7 @@ export function AppMainArea({
         onGitSyncChange={onGitSyncChange}
         onTriggerGitSync={onTriggerGitSync}
         gitSyncing={gitSyncing}
+        onOpenImport={onOpenImport}
       />
     );
   }

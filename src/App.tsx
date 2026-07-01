@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MigrateToV3Modal } from "@/components/MigrateToV3Modal";
 import { OnboardingModal, ONBOARDING_STORAGE_KEY } from "@/components/OnboardingModal";
+import { ImportModal } from "@/components/ImportModal";
+import { ImportWelcomeModal } from "@/components/ImportWelcomeModal";
 import { AppScreenContent, BrowserPreview } from "@/components/AppScreenContent";
 import { Layout } from "@/components/Layout";
 import { AppMainArea } from "@/components/app/AppMainArea";
@@ -76,6 +78,8 @@ import type {
   SshSessionStatus,
   SshTerminalState,
 } from "@/types/ssh";
+import { isImportOfferedForPath, migrateLegacyImportOffered, persistImportOffered } from "@/lib/importOffered";
+import type { ImportExecutionResult } from "@/import/types";
 
 type Screen = "welcome" | "create" | "open" | "unlock" | "vault";
 type VaultMainView = "secrets" | "security" | "activity";
@@ -130,6 +134,10 @@ export default function App() {
   const [migrateLoading, setMigrateLoading] = useState(false);
   const [migrationSuccess, setMigrationSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showImportWelcome, setShowImportWelcome] = useState(false);
+  const [importWelcomePending, setImportWelcomePending] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importOfferedPaths, setImportOfferedPaths] = useState<string[]>([]);
   const {
     isLockedOut: mfaLockedOut,
     secondsRemaining: mfaLockoutSeconds,
@@ -163,6 +171,11 @@ export default function App() {
         enabled: resolved.gitSyncEnabled.value,
         remoteUrl: settings.gitSync.remoteUrl,
       });
+      setImportOfferedPaths(settings.importOfferedPaths ?? []);
+      const migratedImportPaths = await migrateLegacyImportOffered();
+      if (migratedImportPaths) {
+        setImportOfferedPaths(migratedImportPaths);
+      }
       if (!info.initialized) {
         setScreen("welcome");
       } else if (info.locked) {
@@ -278,7 +291,17 @@ export default function App() {
   const completeOnboarding = useCallback(() => {
     globalThis.localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
     setShowOnboarding(false);
-  }, []);
+    const path = vaultPath ?? vaultInfo?.path;
+    if (
+      importWelcomePending &&
+      path &&
+      entries.length === 0 &&
+      !isImportOfferedForPath(importOfferedPaths, path)
+    ) {
+      setShowImportWelcome(true);
+    }
+    setImportWelcomePending(false);
+  }, [importWelcomePending, vaultPath, vaultInfo?.path, entries.length, importOfferedPaths]);
 
   const handleCreate = useCallback(async () => {
     if (!password.trim() || !evaluateMasterPassword(password).valid) return;
@@ -303,15 +326,60 @@ export default function App() {
       setAdminUsername("admin");
       setScreen("vault");
       await refreshEntries();
-      if (!globalThis.localStorage.getItem(ONBOARDING_STORAGE_KEY)) {
+      const showOnboardingModal = !globalThis.localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      if (showOnboardingModal) {
         setShowOnboarding(true);
+        setImportWelcomePending(true);
+      } else if (!isImportOfferedForPath(importOfferedPaths, path)) {
+        setShowImportWelcome(true);
       }
     } catch (e) {
       setError(formatVaultError(e));
     } finally {
       setLoading(false);
     }
-  }, [password, adminUsername, vaultName, refreshEntries, t]);
+  }, [password, adminUsername, vaultName, refreshEntries, t, importOfferedPaths]);
+
+  const activeVaultPath = vaultPath ?? vaultInfo?.path ?? null;
+
+  const handleImportWelcomeStartFresh = useCallback(() => {
+    if (activeVaultPath) {
+      runAsync(async () => {
+        const paths = await persistImportOffered(activeVaultPath);
+        setImportOfferedPaths(paths);
+      });
+    }
+    setShowImportWelcome(false);
+  }, [activeVaultPath]);
+
+  const handleImportWelcomeOpen = useCallback(() => {
+    if (activeVaultPath) {
+      runAsync(async () => {
+        const paths = await persistImportOffered(activeVaultPath);
+        setImportOfferedPaths(paths);
+      });
+    }
+    setShowImportWelcome(false);
+    setShowImportModal(true);
+  }, [activeVaultPath]);
+
+  const handleOpenImportModal = useCallback(() => {
+    setShowImportModal(true);
+  }, []);
+
+  const handleImportComplete = useCallback(
+    async (result: ImportExecutionResult) => {
+      await refreshEntries();
+      setVaultInfo((prev) =>
+        prev ? { ...prev, entry_count: prev.entry_count + result.imported } : prev,
+      );
+    },
+    [refreshEntries],
+  );
+
+  const importAddEntry = useCallback(async (input: SecretEntryInputFull) => {
+    await addEntry(input);
+  }, []);
 
   const vaultLocked = !vaultInfo || vaultInfo.locked;
 
@@ -967,6 +1035,7 @@ export default function App() {
           onGoToUnlock={handleGoToUnlockFromSettings}
           idleWarningSeconds={idleWarningSeconds}
           vaultUnlocked={vaultUnlocked}
+          onOpenImport={handleOpenImportModal}
         >
           <AppScreenContent
             screen={screen}
@@ -1074,6 +1143,20 @@ export default function App() {
         }}
       />
       {showOnboarding ? <OnboardingModal onComplete={completeOnboarding} /> : null}
+      <ImportWelcomeModal
+        open={showImportWelcome}
+        onImport={handleImportWelcomeOpen}
+        onStartFresh={handleImportWelcomeStartFresh}
+      />
+      <ImportModal
+        open={showImportModal}
+        vaultEntries={entries}
+        onClose={() => setShowImportModal(false)}
+        onAddEntry={importAddEntry}
+        onImportComplete={(result) => {
+          void handleImportComplete(result);
+        }}
+      />
     </Layout>
   );
 }

@@ -1,6 +1,6 @@
 # OxidVault
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Status](https://img.shields.io/badge/Status-Beta-green) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.3.0-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
 If you find OxidVault useful, consider giving it a ⭐ — it helps others discover the project.
 
@@ -163,6 +163,34 @@ Stable **file locking mechanisms** (`{vault}.lock`) prevent race conditions when
 - **System Tray** — app minimizes to system tray; vault stays unlocked; restore on click; tray menu (Open / Lock / Quit)
 - **Auto-Lock timer** — configurable in UI (1 / 5 / 10 / 15 / 30 min / Never); admin GPO overrides; default 10 minutes
 - **PDF Compliance Report** — export audit log as A4 PDF with OxidVault branding, compliance status, and last 50 events; ideal for GDPR audits
+- **Password Import** — migrate logins from Bitwarden, 1Password, KeePass, Chrome, or RoboForm (see [Password Import](#password-import))
+
+### Password Import
+
+Bring existing credentials into OxidVault without manual re-entry. Import runs **entirely in the desktop UI** (TypeScript parsers) — secrets are written through the existing `add_entry` command; no new cloud services and no vault format changes.
+
+**Supported formats:**
+
+| Source | Export type |
+|---|---|
+| Bitwarden | JSON (unencrypted vault export) |
+| 1Password | CSV |
+| KeePass | CSV (KeePass 1.x export) |
+| Chrome | CSV (Password Manager download) |
+| RoboForm | CSV (Extras → Export → Save as CSV) |
+
+**Entry points:**
+
+1. **First-run welcome** — after creating a new empty vault, OxidVault offers to import passwords or start fresh (shown once per vault path).
+2. **Settings → General → Import passwords** — available anytime while the vault is unlocked.
+
+**Import behaviour:**
+
+- **Duplicate detection** — existing `web_login` entries with the same title and URL are skipped; `secure_note` duplicates are detected by title.
+- **Secure notes (RoboForm)** — RoboForm rows with an empty password and login but a non-empty note are imported as **secure notes** (`Name` → title, `Note` → content, `Folder` → tag).
+- **Preview & confirm** — choose format, pick the export file, review a sample table, then confirm before entries are added.
+
+Technical details: [`ARCHITECTURE.md`](ARCHITECTURE.md) — section *Password Import (v2.3.0)*.
 
 ---
 
@@ -300,13 +328,21 @@ This architecture strictly separates **business logic (Rust)** from the **UI (Re
 
 | Platform | File |
 |---|---|
-| **Windows** | `OxidVault_2.2.0_x64_en-US.msi` |
+| **Windows** | `OxidVault_2.3.0_x64_en-US.msi` |
 
 > **Note:** After installation, place the license file for Enterprise at `C:\ProgramData\OxidVault\oxidvault.license` — details: [oxidvault.com](https://oxidvault.com)
 
 ---
 
 ## Changelog
+
+### [2.3.0] — Password Import
+
+- **Password Import** — client-side parsers for Bitwarden JSON, 1Password CSV, KeePass CSV, Chrome CSV, and RoboForm CSV
+- **First-run welcome modal** — offered after new empty vault creation; dismissible per vault via `importOfferedPaths` in app settings
+- **Settings entry** — Import passwords under General settings (vault unlocked)
+- **Duplicate detection** — skip existing entries (title + URL for logins; title for secure notes)
+- **RoboForm secure notes** — note-only RoboForm rows import as `secure_note` entries
 
 ### [2.2.0] — Auto-Lock & PDF Compliance
 

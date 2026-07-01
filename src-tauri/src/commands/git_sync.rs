@@ -8,7 +8,7 @@ use tauri::{AppHandle, State};
 use vault_core::policy::resolve_config;
 
 use crate::git::{self, GitSyncAuth, GitSyncResult};
-use crate::settings::{load_settings, save_settings, AppSettings, GitSyncSettings};
+use crate::settings::{self, load_settings, save_settings, AppSettings, GitSyncSettings};
 use zeroize::Zeroizing;
 
 use super::{ensure_vault_unlocked, ensure_vault_unlocked_state, AppState};
@@ -23,6 +23,12 @@ where
 
 #[tauri::command]
 pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
+    load_settings(&app)
+}
+
+#[tauri::command]
+pub fn mark_import_offered(app: AppHandle, vault_path: String) -> Result<AppSettings, String> {
+    settings::mark_import_offered(&app, vault_path.trim())?;
     load_settings(&app)
 }
 

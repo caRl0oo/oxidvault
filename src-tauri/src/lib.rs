@@ -58,6 +58,7 @@ pub fn run() {
             commands::audit::get_audit_logs,
             commands::audit::export_audit_log,
             commands::git_sync::get_app_settings,
+            commands::git_sync::mark_import_offered,
             commands::git_sync::update_auto_lock_seconds,
             commands::git_sync::update_git_sync_settings,
             commands::git_sync::trigger_git_sync,

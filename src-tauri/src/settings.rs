@@ -41,6 +41,9 @@ pub struct AppSettings {
     /// Persisted hint for browser bridge when vault is locked (no secrets).
     #[serde(default)]
     pub vault_mfa_configured: bool,
+    /// Vault file paths where the first-run import offer was already shown or dismissed.
+    #[serde(default)]
+    pub import_offered_paths: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -51,6 +54,7 @@ impl Default for AppSettings {
             force_lock_on_minimize: default_force_lock_on_minimize(),
             auto_lock_seconds: default_auto_lock_seconds(),
             vault_mfa_configured: false,
+            import_offered_paths: Vec::new(),
         }
     }
 }
@@ -112,6 +116,17 @@ pub fn save_vault_mfa_configured(app: &AppHandle, configured: bool) -> Result<()
     let mut settings = load_settings(app).unwrap_or_default();
     settings.vault_mfa_configured = configured;
     write_settings(app, &settings)
+}
+
+/// Records that the first-run import offer was shown or dismissed for a vault path.
+pub fn mark_import_offered(app: &AppHandle, vault_path: &str) -> Result<(), String> {
+    let mut settings = load_settings(app).unwrap_or_default();
+    let path = vault_path.to_string();
+    if !settings.import_offered_paths.iter().any(|p| p == &path) {
+        settings.import_offered_paths.push(path);
+        write_settings(app, &settings)?;
+    }
+    Ok(())
 }
 
 pub fn last_vault_path_if_exists(app: &AppHandle) -> Option<String> {

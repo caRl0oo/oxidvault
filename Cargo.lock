@@ -3277,7 +3277,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "oxidvault"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -5784,7 +5784,7 @@ dependencies = [
 
 [[package]]
 name = "vault-core"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -5810,7 +5810,7 @@ dependencies = [
 
 [[package]]
 name = "vault-generator"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "getrandom 0.2.17",
  "rand 0.8.6",
@@ -5820,7 +5820,7 @@ dependencies = [
 
 [[package]]
 name = "vault-wasm"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde-wasm-bindgen",
  "vault-generator",

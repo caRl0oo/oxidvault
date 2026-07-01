@@ -12,6 +12,7 @@ export interface AppSettings {
   lastVaultPath?: string | null;
   gitSync: GitSyncSettings;
   autoLockSeconds?: number;
+  importOfferedPaths?: string[];
 }
 
 export interface GitSyncResult {
