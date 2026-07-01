@@ -5,11 +5,11 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLogo } from "@/components/AppLogo";
 import { OverlayModal } from "@/components/ui/OverlayModal";
+import { useAppVersionLabel } from "@/hooks/useAppVersionLabel";
 import {
   AGPL_LICENSE_URL,
   APP_COPYRIGHT,
   APP_NAME,
-  APP_VERSION_LABEL,
 } from "@/lib/appMeta";
 import { openWebsiteUrl } from "@/lib/openWebsite";
 import { runAsync } from "@/lib/runAsync";
@@ -22,6 +22,7 @@ interface AboutModalProps {
 export function AboutModal({ open, onClose }: Readonly<AboutModalProps>) {
   const { t } = useTranslation();
   const titleId = useId();
+  const versionLabel = useAppVersionLabel(open);
 
   const handleLicenseLinkClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -54,7 +55,11 @@ export function AboutModal({ open, onClose }: Readonly<AboutModalProps>) {
       <div className="flex flex-col items-center px-5 py-6 text-center">
         <AppLogo size="lg" className="mb-4" />
         <p className="font-mono text-base font-semibold tracking-tight text-vault-text">{APP_NAME}</p>
-        <p className="mt-1 font-mono text-xs text-vault-muted">{t("about.version", { version: APP_VERSION_LABEL })}</p>
+        <p className="mt-1 font-mono text-xs text-vault-muted">
+          {versionLabel
+            ? t("about.version", { version: versionLabel })
+            : t("common.loading")}
+        </p>
         <p className="mt-4 font-mono text-[11px] text-vault-muted">{APP_COPYRIGHT}</p>
         <p className="mt-3 font-mono text-[11px] text-vault-muted">
           {t("about.licenseNotice")}{" "}

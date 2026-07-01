@@ -8,6 +8,7 @@ import { AppLogo } from "@/components/AppLogo";
 import { MfaSetupModal } from "@/components/MfaSetupModal";
 import { VaultButton } from "@/components/ui/VaultButton";
 import { ThemeSwatch } from "@/components/ui/ThemeSwatch";
+import { useAppVersionLabel } from "@/hooks/useAppVersionLabel";
 import { useTheme } from "@/hooks/useTheme";
 import { changeAppLocale } from "@/lib/i18n";
 import {
@@ -24,7 +25,7 @@ import { LOCALE_OPTIONS, isLocaleId } from "@/lib/locale";
 import { runAsync } from "@/lib/runAsync";
 import { THEME_IDS, isThemeId, type ThemeId } from "@/lib/theme";
 import { STATUS_SUCCESS_CLASS, UI } from "@/lib/uiClasses";
-import { APP_NAME, APP_VERSION_LABEL } from "@/lib/appMeta";
+import { APP_NAME } from "@/lib/appMeta";
 import type { GitSyncSettings } from "@/types/settings";
 import type { ResolvedConfig } from "@/types/policy";
 import type { SettingsCategory } from "@/components/settings/types";
@@ -403,6 +404,7 @@ function GeneralSettingsPanel({
   vaultLocked,
 }: Readonly<GeneralSettingsPanelProps>) {
   const { t } = useTranslation();
+  const versionLabel = useAppVersionLabel();
 
   return (
     <div className="flex max-w-xl flex-col gap-8">
@@ -495,7 +497,10 @@ function GeneralSettingsPanel({
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-semibold text-vault-text">{APP_NAME}</span>
             <span className="text-xs text-vault-muted">
-              {t("about.version", { version: APP_VERSION_LABEL })} · oxidvault.com
+              {versionLabel
+                ? t("about.version", { version: versionLabel })
+                : t("common.loading")}{" "}
+              · oxidvault.com
             </span>
           </div>
         </button>
