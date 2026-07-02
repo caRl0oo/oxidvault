@@ -86,12 +86,8 @@ pub fn request_open_new_secret(password: &str) -> BridgeResponse {
     forward_bridge_request("open_new_secret", None, Some(password))
 }
 
-pub fn handle_bridge_request(
-    app: &tauri::AppHandle,
-    request: BridgeRequest,
-    expected_token: &str,
-) -> BridgeResponse {
-    if request.token != expected_token {
+pub fn handle_bridge_request(app: &tauri::AppHandle, request: BridgeRequest) -> BridgeResponse {
+    if !crate::nm_bridge::bridge_token::validate(&request.token) {
         return BridgeResponse::error("unauthorized");
     }
 
@@ -253,8 +249,9 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
     }
 
     match vault.find_web_login_for_hostname(hostname) {
-        Ok(Some((username, password))) => {
+        Ok(Some((entry_id, username, password))) => {
             state.record_activity_for(&vault.info());
+            let _ = vault.record_audit(vault_core::AuditAction::SecretAutofilled { id: entry_id });
             BridgeResponse::ok_login(username, password.to_string())
         }
         Ok(None) => BridgeResponse::not_found(),

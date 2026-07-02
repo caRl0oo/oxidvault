@@ -253,6 +253,8 @@
       "SecretModified": "Secret was modified",
       "SecretCopied": "Secret was copied to clipboard",
       "SecretRevealed": "Secret was revealed",
+      "SecretAutofilled": "Secret was autofilled via browser extension",
+      "BridgeThrottled": "Browser bridge rate limit exceeded",
       "VaultKeyRotated": "Master key was rotated",
       "AuthFailed": "Unlock attempt failed",
       "SyncEvent": "Git synchronization",

@@ -15,6 +15,8 @@ const AUDIT_ACTION_KEYS = [
   "SecretModified",
   "SecretCopied",
   "SecretRevealed",
+  "SecretAutofilled",
+  "BridgeThrottled",
   "VaultKeyRotated",
   "AuthFailed",
   "SyncEvent",

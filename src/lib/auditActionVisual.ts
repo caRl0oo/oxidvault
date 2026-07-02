@@ -36,6 +36,8 @@ const ACTION_VISUALS: Record<string, AuditActionVisual> = {
   EntryDeleted: { icon: Trash2, tone: "danger" },
   SecretCopied: { icon: ClipboardCopy, tone: "neutral" },
   SecretRevealed: { icon: Eye, tone: "neutral" },
+  SecretAutofilled: { icon: ClipboardCopy, tone: "accent" },
+  BridgeThrottled: { icon: ShieldAlert, tone: "danger" },
   VaultKeyRotated: { icon: KeyRound, tone: "config" },
   AuthFailed: { icon: ShieldAlert, tone: "danger" },
   SyncEvent: { icon: GitBranch, tone: "accent" },

@@ -11,7 +11,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::audit::{audit_log_path, verify_audit_chain};
+use crate::audit::{audit_log_path, parse_audit_line, verify_audit_chain};
 use crate::error::VaultError;
 
 const REPORT_VERSION: &str = "1.0";
@@ -116,51 +116,14 @@ fn read_all_audit_entries(log_path: &Path) -> Result<Vec<AuditLogEntryExport>, V
 }
 
 fn parse_audit_export_line(line: &str) -> Result<AuditLogEntryExport, VaultError> {
-    let line = line.trim();
-    let entry_hash = parse_entry_hash(line).ok_or(VaultError::AuditLogCorrupted)?;
-    let record = line
-        .rsplit_once(" entry_hash=")
-        .map(|(prefix, _)| prefix)
-        .ok_or(VaultError::AuditLogCorrupted)?;
-
-    let timestamp = parse_bracket_field(record, 0).ok_or(VaultError::AuditLogCorrupted)?;
-    let action = parse_bracket_field(record, 1).ok_or(VaultError::AuditLogCorrupted)?;
-    let entry_id = parse_bracket_field(record, 2).ok_or(VaultError::AuditLogCorrupted)?;
-    let prev_hash = parse_prev_hash(record).ok_or(VaultError::AuditLogCorrupted)?;
-
+    let parsed = parse_audit_line(line)?;
     Ok(AuditLogEntryExport {
-        timestamp_utc: timestamp.to_string(),
-        action: action.to_string(),
-        entry_id: entry_id.to_string(),
-        prev_hash,
-        entry_hash,
+        timestamp_utc: parsed.timestamp_utc,
+        action: parsed.action,
+        entry_id: parsed.entry_id,
+        prev_hash: parsed.prev_hash,
+        entry_hash: parsed.entry_hash,
     })
-}
-
-fn parse_bracket_field(line: &str, index: usize) -> Option<&str> {
-    let mut rest = line.trim();
-    for i in 0..=index {
-        rest = rest.strip_prefix('[')?;
-        let (value, remaining) = rest.split_once(']')?;
-        rest = remaining.trim();
-        if i == index {
-            return Some(value);
-        }
-    }
-    None
-}
-
-fn parse_prev_hash(record: &str) -> Option<String> {
-    record
-        .rsplit_once("prev_hash=")
-        .map(|(_, hash)| hash.trim().to_string())
-        .filter(|hash| hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
-}
-
-fn parse_entry_hash(line: &str) -> Option<String> {
-    let tail = line.rsplit_once(" entry_hash=")?.1;
-    let hash = tail.split_whitespace().next()?;
-    (hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())).then(|| hash.to_string())
 }
 
 fn compute_report_hash(

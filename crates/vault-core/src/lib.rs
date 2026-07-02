@@ -16,6 +16,7 @@ pub mod generator;
 pub mod license;
 pub mod lock;
 pub mod mfa;
+pub mod os_protect;
 pub mod path_util;
 pub mod policy;
 pub mod probe;

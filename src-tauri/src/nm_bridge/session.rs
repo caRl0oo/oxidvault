@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use vault_core::os_protect::{self, FileProtectionProfile};
 
 const APP_IDENTIFIER: &str = "com.oxidvault.app";
 const SESSION_FILE: &str = "native_messaging_session.json";
@@ -45,7 +46,8 @@ pub fn write_session(port: u16, token: &str) -> Result<(), String> {
         token: token.to_string(),
     };
     let raw = serde_json::to_string(&info).map_err(|e| e.to_string())?;
-    fs::write(path, raw).map_err(|e| e.to_string())
+    fs::write(&path, raw).map_err(|e| e.to_string())?;
+    os_protect::secure_file(&path, FileProtectionProfile::OwnerOnly).map_err(|e| e.to_string())
 }
 
 pub fn read_session() -> Option<SessionInfo> {

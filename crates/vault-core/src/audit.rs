@@ -60,6 +60,12 @@ pub enum AuditAction {
     SecretRevealed {
         id: Uuid,
     },
+    /// Browser extension autofill served a web-login secret (entry UUID only).
+    SecretAutofilled {
+        id: Uuid,
+    },
+    /// Native-messaging bridge `get_login` rate limit exceeded.
+    BridgeThrottled,
     VaultKeyRotated,
     /// Failed vault unlock attempt (wrong master password).
     AuthFailed,
@@ -113,6 +119,8 @@ impl AuditAction {
             Self::EntryDeleted { .. } => "EntryDeleted",
             Self::SecretCopied { .. } => "SecretCopied",
             Self::SecretRevealed { .. } => "SecretRevealed",
+            Self::SecretAutofilled { .. } => "SecretAutofilled",
+            Self::BridgeThrottled => "BridgeThrottled",
             Self::VaultKeyRotated => "VaultKeyRotated",
             Self::AuthFailed => "AuthFailed",
             Self::SyncEvent { .. } => "SyncEvent",
@@ -138,12 +146,14 @@ impl AuditAction {
             | Self::AuthFailed
             | Self::EntryCreated
             | Self::EntryUpdated => "-".to_string(),
+            Self::BridgeThrottled => "-".to_string(),
             Self::VaultUnlocked { lock_id } => sanitize_detail_token(lock_id),
             Self::SecretCreated { id }
             | Self::SecretModified { id }
             | Self::EntryDeleted { id }
             | Self::SecretCopied { id }
             | Self::SecretRevealed { id }
+            | Self::SecretAutofilled { id }
             | Self::SshHostTrusted { id } => id.to_string(),
             Self::SyncEvent { status } => sanitize_detail_token(status),
             Self::ConfigChanged { area } => sanitize_detail_token(area),
@@ -183,6 +193,8 @@ impl AuditAction {
             "EntryDeleted" => parse_uuid_action(entry_id, |id| Self::EntryDeleted { id }),
             "SecretCopied" => parse_uuid_action(entry_id, |id| Self::SecretCopied { id }),
             "SecretRevealed" => parse_uuid_action(entry_id, |id| Self::SecretRevealed { id }),
+            "SecretAutofilled" => parse_uuid_action(entry_id, |id| Self::SecretAutofilled { id }),
+            "BridgeThrottled" => Self::BridgeThrottled,
             "SshHostTrusted" => parse_uuid_action(entry_id, |id| Self::SshHostTrusted { id }),
             "SyncEvent" => Self::SyncEvent {
                 status: entry_id.to_string(),
@@ -448,24 +460,57 @@ pub fn read_audit_logs(vault_path: &Path, limit: usize) -> Result<Vec<AuditLogEn
 }
 
 fn parse_audit_log_line(line: &str) -> Option<AuditLogEntry> {
+    let parsed = parse_audit_line(line).ok()?;
+    Some(AuditLogEntry {
+        timestamp_utc: parsed.timestamp_utc,
+        action: parsed.action,
+        entry_id: parsed.entry_id,
+        entry_hash: parsed.entry_hash,
+    })
+}
+
+/// Parsed audit log line including hash-chain fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedAuditLine {
+    pub timestamp_utc: String,
+    pub action: String,
+    pub entry_id: String,
+    pub prev_hash: String,
+    pub entry_hash: String,
+}
+
+/// Parses a single audit log line (metadata + hash chain; optional `hmac=` suffix tolerated).
+pub fn parse_audit_line(line: &str) -> Result<ParsedAuditLine, VaultError> {
     let line = line.trim();
     if line.is_empty() {
-        return None;
+        return Err(VaultError::AuditLogCorrupted);
     }
 
-    let entry_hash = parse_entry_hash(line)?;
-    let record = line.rsplit_once(" entry_hash=")?.0;
+    let entry_hash = parse_entry_hash(line).ok_or(VaultError::AuditLogCorrupted)?;
+    let record = line
+        .rsplit_once(" entry_hash=")
+        .map(|(prefix, _)| prefix)
+        .ok_or(VaultError::AuditLogCorrupted)?;
 
-    let timestamp = parse_bracket_field(record, 0)?;
-    let action = parse_bracket_field(record, 1)?;
-    let entry_id = parse_bracket_field(record, 2)?;
+    let timestamp = parse_bracket_field(record, 0).ok_or(VaultError::AuditLogCorrupted)?;
+    let action = parse_bracket_field(record, 1).ok_or(VaultError::AuditLogCorrupted)?;
+    let entry_id = parse_bracket_field(record, 2).ok_or(VaultError::AuditLogCorrupted)?;
+    let prev_hash = parse_prev_hash(record).ok_or(VaultError::AuditLogCorrupted)?;
 
-    Some(AuditLogEntry {
+    Ok(ParsedAuditLine {
         timestamp_utc: timestamp.to_string(),
         action: action.to_string(),
         entry_id: entry_id.to_string(),
+        prev_hash,
         entry_hash,
     })
+}
+
+fn parse_prev_hash(record: &str) -> Option<String> {
+    record
+        .rsplit_once("prev_hash=")
+        .map(|(_, hash)| hash.trim().to_string())
+        .filter(|hash| hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 fn parse_bracket_field(line: &str, index: usize) -> Option<&str> {

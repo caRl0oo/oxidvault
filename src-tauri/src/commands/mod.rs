@@ -31,6 +31,9 @@ pub(super) fn note_unlock_success(
     if let Ok(mut bridge) = state.bridge.lock() {
         bridge.clear_mfa_failed();
     }
+    if let Err(err) = crate::nm_bridge::publish_bridge_session() {
+        eprintln!("native messaging bridge: failed to publish session: {err}");
+    }
     state.touch_activity();
     let _ = settings::save_vault_mfa_configured(app, vault.mfa_status().mfa_enabled);
     crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
@@ -192,6 +195,7 @@ pub fn lock_vault(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<V
 #[tauri::command]
 pub fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     perform_lock(&state)?;
+    crate::nm_bridge::revoke_bridge_session();
     app.exit(0);
     Ok(())
 }

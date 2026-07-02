@@ -1844,10 +1844,19 @@ Chrome and Firefox use the same framing for `type: "stdio"`:
 .\scripts\build-wasm.ps1
 ```
 
-**Security (unchanged + MFA + anti-phishing):**
+**Security (bridge + MFA + anti-phishing):**
+
+| Control | Implementation |
+|---|---|
+| **Local attacker model** | Same-user malware can read the session file and call `get_login` on `127.0.0.1` while the vault is unlocked — ACLs, token rotation, rate limiting, and audit raise cost and leave traces; they do **not** eliminate this class |
+| **Session file ACL** | `native_messaging_session.json` — owner-only (`os_protect::OwnerOnly`; `chmod 0600` / single-user DACL) on every write |
+| **Token lifecycle** | New random token on each unlock; file deleted on lock and app exit |
+| **Rate limit** | Token bucket — max 10 `get_login` requests/minute per TCP peer → `{ "status": "error", "error": "rate_limited" }` |
+| **Audit** | `SecretAutofilled` (entry UUID only) on successful autofill; `BridgeThrottled` on rate-limit trips |
+| **Planned Phase 6** | Named pipe with peer verification (replace localhost TCP + shared token file) |
 
 - NM host process has **no** own vault — access only via GUI process with unlocked `AppState`.
-- Session file `%APPDATA%/com.oxidvault.app/native_messaging_session.json` contains port + token (127.0.0.1 only).
+- Session file `%APPDATA%/com.oxidvault.app/native_messaging_session.json` contains port + token (127.0.0.1 only) **only while unlocked**.
 - Passwords in Rust via `Zeroizing<String>` until JSON serialization; extension fills fields, does not persist.
 - Autofill hostname is taken from `sender.tab.url` in the service worker; vault lookup uses eTLD+1 matching (`psl`), not substring.
 - Credentials are filled only after a trusted user `focusin` on a detected login field — never on page load.
@@ -2348,6 +2357,7 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.0.0 | **Ed25519 license signing:** HMAC-SHA256 → Ed25519 asymmetric; public key via build-time env var injection; private key never in repo; open source safe |
 | 2026-06-25 | 2.4.0 | **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints` |
 | 2026-06-25 | 2.4.0 | **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority; extension `0.5.0` |
+| 2026-06-25 | 2.4.0 | **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit |
 | 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
 | 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |

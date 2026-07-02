@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::audit::{derive_audit_hmac_key, AuditAction, AuditLogger, AUDIT_CHECKPOINT_INTERVAL};
@@ -512,11 +513,11 @@ impl Vault {
 
     /// Finds the best-matching web-login for a page hostname (least-privilege: one entry).
     ///
-    /// Returns `(username, password)` only when the vault is unlocked and a match exists.
+    /// Returns `(entry_id, username, password)` only when the vault is unlocked and a match exists.
     pub fn find_web_login_for_hostname(
         &self,
         page_hostname: &str,
-    ) -> Result<Option<(String, Zeroizing<String>)>, VaultError> {
+    ) -> Result<Option<(Uuid, String, Zeroizing<String>)>, VaultError> {
         use crate::url_match::{score_web_login_url_match, UrlMatchScore};
 
         self.ensure_unlocked()?;
@@ -547,7 +548,8 @@ impl Vault {
         };
 
         let password = self.extract_secret(&entry.id, SecretField::Password)?;
-        Ok(Some((username.clone(), password)))
+        let entry_id = Uuid::parse_str(&entry.id).map_err(|_| VaultError::InvalidFormat)?;
+        Ok(Some((entry_id, username.clone(), password)))
     }
 
     pub fn probe_target_for_entry(&self, id: &str) -> Option<ProbeTarget> {
@@ -1797,8 +1799,8 @@ mod tests {
             .find_web_login_for_hostname("example.com")
             .unwrap()
             .expect("match");
-        assert_eq!(found.0, "alice");
-        assert_eq!(found.1.as_str(), "s3cret");
+        assert_eq!(found.1, "alice");
+        assert_eq!(found.2.as_str(), "s3cret");
 
         assert!(vault
             .find_web_login_for_hostname("unknown.example.org")

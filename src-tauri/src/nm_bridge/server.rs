@@ -1,17 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::sync::Arc;
+use std::sync::LazyLock;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use uuid::Uuid;
+use vault_core::AuditAction;
 
+use crate::nm_bridge::bridge_token;
 use crate::nm_bridge::client::handle_bridge_request;
 use crate::nm_bridge::framing::MAX_MESSAGE_LEN;
-use crate::nm_bridge::protocol::BridgeRequest;
-use crate::nm_bridge::session;
+use crate::nm_bridge::protocol::{BridgeRequest, BridgeResponse};
+use crate::nm_bridge::rate_limit::GetLoginRateLimiter;
+use crate::state::AppState;
+
+static RATE_LIMITER: LazyLock<GetLoginRateLimiter> = LazyLock::new(GetLoginRateLimiter::new);
 
 pub fn spawn_server(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -21,27 +25,30 @@ pub fn spawn_server(app: AppHandle) {
     });
 }
 
+pub fn publish_bridge_session() -> Result<(), String> {
+    bridge_token::publish()
+}
+
+pub fn revoke_bridge_session() {
+    bridge_token::revoke();
+}
+
 async fn run_server(app: AppHandle) -> Result<(), String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("bridge bind failed: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let token = Uuid::new_v4().to_string();
-    session::remove_session();
-    session::write_session(port, &token)?;
-
-    let token = Arc::new(token);
+    bridge_token::init(port);
 
     loop {
-        let (mut stream, _) = listener
+        let (mut stream, peer) = listener
             .accept()
             .await
             .map_err(|e| format!("bridge accept failed: {e}"))?;
         let app = app.clone();
-        let token = Arc::clone(&token);
 
         tauri::async_runtime::spawn(async move {
-            if let Err(err) = handle_connection(app, &token, &mut stream).await {
+            if let Err(err) = handle_connection(app, peer, &mut stream).await {
                 eprintln!("native messaging bridge connection failed: {err}");
             }
         });
@@ -50,7 +57,7 @@ async fn run_server(app: AppHandle) -> Result<(), String> {
 
 async fn handle_connection(
     app: AppHandle,
-    token: &str,
+    peer: std::net::SocketAddr,
     stream: &mut tokio::net::TcpStream,
 ) -> Result<(), String> {
     let payload = read_message_async(stream).await?;
@@ -60,10 +67,32 @@ async fn handle_connection(
 
     let request: BridgeRequest =
         serde_json::from_slice(&payload).map_err(|e| format!("invalid bridge request: {e}"))?;
-    let response = handle_bridge_request(&app, request, token);
+
+    if request.action == "get_login" && !RATE_LIMITER.allow(peer) {
+        eprintln!("native messaging bridge: get_login rate limited from {peer}");
+        log_bridge_throttled(&app);
+        let response = BridgeResponse::error("rate_limited");
+        let response_bytes =
+            serde_json::to_vec(&response).map_err(|e| format!("bridge response encode: {e}"))?;
+        return write_message_async(stream, &response_bytes).await;
+    }
+
+    let response = handle_bridge_request(&app, request);
     let response_bytes =
         serde_json::to_vec(&response).map_err(|e| format!("bridge response encode: {e}"))?;
     write_message_async(stream, &response_bytes).await
+}
+
+fn log_bridge_throttled(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Ok(vault) = state.vault.lock() else {
+        return;
+    };
+    if vault.info().path.is_some() {
+        let _ = vault.record_audit(AuditAction::BridgeThrottled);
+    }
 }
 
 async fn read_message_async(stream: &mut tokio::net::TcpStream) -> Result<Option<Vec<u8>>, String> {
