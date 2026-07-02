@@ -921,7 +921,7 @@ impl Vault {
 
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn audit_session_hmac_key(&self) -> Option<&[u8; 32]> {
-        self.audit_hmac_key.as_ref().map(|key| &**key)
+        self.audit_hmac_key.as_deref()
     }
 
     fn persist_v3_header(&mut self) -> Result<(), VaultError> {

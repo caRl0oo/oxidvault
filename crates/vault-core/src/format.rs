@@ -565,17 +565,23 @@ pub fn resolve_payload_key(meta: &VaultFileMeta, kek: &MasterKey) -> Result<Mast
     }
 }
 
-/// Parsed multi-user vault on disk (format v3 or v4).
+/// Parsed v3/v4 vault file on disk: plaintext user table in the header plus the
+/// still-encrypted payload block (nonce + ciphertext) that follows the header bytes.
 #[derive(Debug, Clone)]
 pub struct MultiUserVaultFile {
+    /// User records from the vault header (KDF params, wrapped DEK, MFA blobs, …).
     pub users: Vec<VaultUser>,
+    /// Serialized header bytes used as AES-GCM AAD when decrypting the payload (v4+).
     pub header_aad: Vec<u8>,
+    /// On-disk format version (`FORMAT_VERSION_V3` or `FORMAT_VERSION_V4`).
     pub format_version: u16,
+    /// AES-GCM nonce prepended to the encrypted payload blob.
     pub payload_nonce: [u8; NONCE_LEN],
+    /// AES-GCM ciphertext of the serialized [`VaultPayload`].
     pub payload_ciphertext: Vec<u8>,
 }
 
-/// Reads a multi-user vault header and encrypted payload parts.
+/// Reads a multi-user vault header and encrypted payload parts (v3 or v4).
 pub fn read_multi_user_vault_file(path: &Path) -> Result<MultiUserVaultFile, VaultError> {
     let bytes = fs::read(path)?;
     let (meta, header_len) = parse_header(&bytes)?;
@@ -597,16 +603,6 @@ pub fn read_multi_user_vault_file(path: &Path) -> Result<MultiUserVaultFile, Vau
         payload_nonce,
         payload_ciphertext: ciphertext.to_vec(),
     })
-}
-
-/// Reads a multi-user vault header and returns the user list plus encrypted payload parts.
-pub fn read_v3_vault_file(path: &Path) -> Result<(Vec<VaultUser>, Vec<u8>, Vec<u8>), VaultError> {
-    let file = read_multi_user_vault_file(path)?;
-    Ok((
-        file.users,
-        file.payload_nonce.to_vec(),
-        file.payload_ciphertext,
-    ))
 }
 
 /// Writes a new v3 vault file (fails if the path already exists).

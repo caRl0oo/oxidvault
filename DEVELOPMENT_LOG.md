@@ -46,6 +46,11 @@ _(Backlog — Ideen hier sammeln, priorisieren, dann in Issues/ARCHITECTURE übe
 
 _(Sicherheits-relevante Verbesserungen außerhalb des laufenden Sprints.)_
 
+- **quick-xml (`RUSTSEC-2026-0194` / `RUSTSEC-2026-0195`):** Ausnahme in
+  [`.cargo/audit.toml`](.cargo/audit.toml) entfernen, sobald `tauri-utils` **> 2.9.3**
+  mit `quick-xml` **≥ 0.41** verfügbar ist (transitiv über plist/Bundler-Config).
+  Vor jedem Release: `cargo update && cargo audit` **ohne** Ignore-Einträge prüfen —
+  nur die verbleibenden, dokumentierten GTK-/unic-/git2-Ausnahmen dürfen bestehen bleiben.
 - Host-Key-Trust-Modell definieren (TOFU, Vault-Fingerprint, Admin-GPO)
 - `cargo audit`: verbleibende `unic-*`-Warnungen triagieren
 - Pen-Test-Checkliste für SSH Quick Connect (Timeout, Lock → disconnect_all)
