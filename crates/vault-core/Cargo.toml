@@ -30,6 +30,7 @@ url = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 sysinfo = "0.33"
 psl = "2.1.216"
+zxcvbn = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

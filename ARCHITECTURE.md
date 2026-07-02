@@ -194,7 +194,7 @@ Detailansicht / Sidebar
 |---|---|---|
 | **Minimum length** | 12 characters | Frontend (submit button) + backend (`policy.rs`) |
 | **Blocklist** | ~45 common passwords (`password`, `admin123`, `12345678`, …) | Frontend + backend (exact match, case-insensitive) |
-| **Entropy check** | zxcvbn score ≥ 2 (0–4 scale) | Frontend (`@zxcvbn-ts/core`) — real-time feedback |
+| **Entropy check** | zxcvbn score ≥ 2 (0–4 scale) | Frontend (UX) + backend (authoritative, `zxcvbn` crate) |
 
 **UX feedback (frontend):**
 
@@ -203,9 +203,11 @@ Detailansicht / Sidebar
 - Checklist: length · blocklist · entropy
 - Submit disabled until all criteria are met
 
-**Backend module:** `crates/vault-core/src/policy.rs` · Error: `VaultError::WeakPassword`
+**Backend module:** `crates/vault-core/src/policy/password.rs` · Error: `VaultError::WeakPassword(WeakPasswordReason)` (`too_short` | `blocklisted` | `low_entropy`)
 
-**Note:** zxcvbn runs client-side for UX; the backend enforces length + blocklist as the authoritative minimum threshold.
+**Note:** zxcvbn runs client-side for real-time UX feedback; the backend enforces the same score ≥ 2 threshold authoritatively on password set.
+
+**Exception:** `migrate_to_v3` re-wraps the existing v1/v2 master password as the first admin user — password policy is not re-evaluated (set vs. re-wrap).
 
 ### Symmetric Encryption: AES-256-GCM
 
@@ -2360,6 +2362,7 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.4.0 | **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority; extension `0.5.0` |
 | 2026-06-25 | 2.4.0 | **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit |
 | 2026-06-25 | 2.4.0 | **Windows clipboard exclusion:** `SetExtWindows` history/cloud hints on secret copy + clear (`clipboard.rs`) |
+| 2026-06-25 | 2.4.0 | **Backend zxcvbn:** master password entropy score ≥ 2 enforced in `policy/password.rs`; `WeakPasswordReason` for IPC/i18n; `migrate_to_v3` exempt (re-wrap) |
 | 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
 | 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |

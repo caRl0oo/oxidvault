@@ -49,7 +49,7 @@ pub use entry::{
     RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
     SecretField, SecretKindTag, SecretPayload, REVEAL_SECRET_WARNING,
 };
-pub use error::VaultError;
+pub use error::{VaultError, WeakPasswordReason};
 pub use generator::{generate_password, PasswordGenOptions, DEFAULT_PASSWORD_LENGTH};
 pub use license::{
     community_license, load_license, ActiveLicense, LicenseError, Plan, CE_MAX_USERS,

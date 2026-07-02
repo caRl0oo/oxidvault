@@ -136,8 +136,34 @@ pub fn build_vault_user(
     dek: &MasterKey,
     mfa: Option<(String, String)>,
 ) -> Result<VaultUser, VaultError> {
+    build_vault_user_inner(username, password, role, dek, mfa, true)
+}
+
+/// Like [`build_vault_user`], but skips master password policy.
+///
+/// Used when v1/v2 → v3 migration re-wraps an existing credential — policy applies on set, not re-wrap.
+pub(crate) fn build_vault_user_from_existing_credential(
+    username: &str,
+    password: Zeroizing<String>,
+    role: UserRole,
+    dek: &MasterKey,
+    mfa: Option<(String, String)>,
+) -> Result<VaultUser, VaultError> {
+    build_vault_user_inner(username, password, role, dek, mfa, false)
+}
+
+fn build_vault_user_inner(
+    username: &str,
+    password: Zeroizing<String>,
+    role: UserRole,
+    dek: &MasterKey,
+    mfa: Option<(String, String)>,
+    enforce_password_policy: bool,
+) -> Result<VaultUser, VaultError> {
     let username = validate_username(username)?;
-    validate_master_password_for_user(password.as_str())?;
+    if enforce_password_policy {
+        validate_master_password_for_user(password.as_str())?;
+    }
 
     let kdf = KdfParams::default();
     let salt = crypto::random_salt();

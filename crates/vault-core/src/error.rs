@@ -5,6 +5,30 @@ use thiserror::Error;
 
 use crate::lock::LockMetadata;
 
+/// Why a master password failed policy validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeakPasswordReason {
+    TooShort,
+    Blocklisted,
+    LowEntropy,
+}
+
+impl WeakPasswordReason {
+    pub fn as_code(&self) -> &'static str {
+        match self {
+            Self::TooShort => "too_short",
+            Self::Blocklisted => "blocklisted",
+            Self::LowEntropy => "low_entropy",
+        }
+    }
+}
+
+impl std::fmt::Display for WeakPasswordReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_code())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum VaultError {
     #[error("vault is locked")]
@@ -33,7 +57,7 @@ pub enum VaultError {
     #[error("vault file format downgrade detected")]
     FormatDowngrade,
     #[error("weak master password: {0}")]
-    WeakPassword(String),
+    WeakPassword(WeakPasswordReason),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("crypto error: {0}")]

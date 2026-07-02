@@ -24,7 +24,8 @@ use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
 use crate::vault_user::{
-    build_vault_user, derive_user_kek, rewrap_user_dek, to_public, unwrap_user_dek,
+    build_vault_user, build_vault_user_from_existing_credential, derive_user_kek, rewrap_user_dek,
+    to_public, unwrap_user_dek,
     user_mfa_enabled, validate_username, UnlockedUser, UserRole, VaultUser, VaultUserPublic,
 };
 
@@ -1349,7 +1350,7 @@ impl Vault {
         crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
 
         let new_dek = MasterKey::generate_data_key();
-        let mut admin_user = build_vault_user(
+        let mut admin_user = build_vault_user_from_existing_credential(
             &admin_username,
             current_password.clone(),
             UserRole::Admin,
@@ -2080,6 +2081,48 @@ mod tests {
             .expect("unlock");
         assert_eq!(session.list_users().len(), 2);
         assert_eq!(session.format_version, format::FORMAT_VERSION_V4);
+    }
+
+    #[test]
+    fn migrate_v2_to_v3_accepts_legacy_weak_password() {
+        use crate::crypto::{random_salt, KdfParams, MasterKey};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("weak-legacy.oxid");
+        let password = Zeroizing::new("aaaaaaaaaaaa".to_string());
+
+        let salt = random_salt();
+        let kdf = KdfParams::default();
+        let kek = MasterKey::derive_from_password(password.as_str(), &salt, kdf).unwrap();
+        let dek = MasterKey::generate_data_key();
+        format::write_vault_file(
+            &path,
+            "WeakLegacy",
+            kdf,
+            &salt,
+            &kek,
+            &dek,
+            crate::compliance::unix_timestamp_secs(),
+            0,
+            &[],
+        )
+        .unwrap();
+
+        let mut vault = Vault::new();
+        open_vault(&mut vault, &path, password.as_str(), None);
+        vault
+            .migrate_to_v3(password.clone(), "admin")
+            .expect("migrate weak legacy password");
+
+        vault.close().unwrap();
+
+        let mut reopened = Vault::new();
+        reopened.attach_locked(&path).unwrap();
+        reopened
+            .unlock_as_user("admin", password, None)
+            .expect("unlock after migrate");
+        assert_eq!(reopened.format_version, format::FORMAT_VERSION_V4);
     }
 
     #[test]
