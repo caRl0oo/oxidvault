@@ -4,7 +4,7 @@
 > This document is the central reference for the technical architecture of OxidVault.  
 > Whenever core features, Tauri Commands, file formats, or security-relevant changes are added, **ARCHITECTURE.md** must be updated in sync with the code.
 
-**Version:** 2.2.0 · **Status:** 2026-06-29
+**Version:** 2.3.1
 
 ---
 
@@ -23,9 +23,9 @@
 11. [Audit Logging & Compliance (ISO 27001)](#11-audit-logging--compliance-iso-27001)
 12. [Vault Persistence: UNC Paths & Atomic Writes](#12-vault-persistence-unc-paths--atomic-writes)
 13. [Centralized Policy Management & Admin GPOs](#13-centralized-policy-management--admin-gpos)
-14. [Documentation Requirements & Changelog](#14-documentation-requirements--changelog)
+14. [Documentation Requirements](#14-documentation-requirements)
 15. [Key Rotation & Compliance Dashboard](#15-key-rotation--compliance-dashboard)
-16. [Admin Deployment Guide](#16-admin-deployment-guide)
+16. [Admin Deployment Guide](docs/ADMIN_DEPLOYMENT.md)
 17. [Licensing Model](#17-licensing-model)
 
 ---
@@ -118,17 +118,17 @@
 OxidVault follows a **zero-knowledge model**: the server or desktop runtime never knows the master password or the derived master key in unencrypted form outside the protected memory region in the Rust core.
 
 ```
-Master-Passwort
+Master password
       │
       ▼
 ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │  Argon2id   │────▶│   Master Key     │────▶│  AES-256-GCM    │
-│  (KDF)      │     │  (32 Byte, RAM)  │     │  Daten-Vault    │
+│  (KDF)      │     │  (32 bytes, RAM) │     │  vault payload  │
 └─────────────┘     └──────────────────┘     └─────────────────┘
       │                       │                        │
-      │ Salt (pro Vault)      │ ZeroizeOnDrop on lock   │ Nonce (pro Blob, OsRng)
+      │ Salt (per vault)      │ ZeroizeOnDrop on lock   │ Nonce (per blob, OsRng)
       ▼                       ▼                        ▼
-  .oxid Header            Nie ans Frontend         Verschlüsselte Datei
+  .oxid header            Never to frontend         Encrypted file
 ```
 
 **Guarantees:**
@@ -153,14 +153,14 @@ The **JavaScript heap (V8)** in the WebView cannot be deterministically zeroized
 | **Edit mode** | `NewSecretModal` loads secrets on open via `reveal_secret` — temporarily in form state, not in detail IPC |
 
 ```
-Detailansicht / Sidebar
+Detail view / sidebar
         │
         ├── list_entries / get_entry ──► SecretEntrySummary / SecretEntryPublic
-        │                                 (kein password, token, private_key, content)
+        │                                 (no password, token, private_key, content)
         │
-        ├── Anzeigen (Auge) ──► reveal_secret ──► kurzlebig im React-State
+        ├── Reveal (eye) ──► reveal_secret ──► short-lived in React state
         │
-        └── Kopieren ──► copy_to_clipboard ──► arboard (OS) ──► 30s Rust-Timer ──► Clear
+        └── Copy ──► copy_to_clipboard ──► arboard (OS) ──► 30s Rust timer ──► clear
 ```
 
 **Why plaintext must not go to the frontend by default:**
@@ -275,7 +275,7 @@ decrypt(ciphertext)
 Zeroizing<Vec<u8>>  ──► serde_json::from_slice ──► VaultPayload
       │                                              (Strings im Vault-RAM)
       ▼
-Drop → Heap überschrieben (K1)
+Drop → heap overwritten (K1)
 
 derive_from_password(password)
       │
@@ -283,7 +283,7 @@ derive_from_password(password)
 Zeroizing<[u8; 32]> on stack ──► Ok(MasterKey) / Err(?)
       │
       ▼
-Drop → Stack überschrieben (K2)
+Drop → stack overwritten (K2)
 ```
 
 #### Zero-Clone Policy on Persist (K3)
@@ -298,14 +298,14 @@ Previously, `persist()` copied all entries via `entries.clone()` — a deep copy
 // vault.rs — persist()
 format::update_vault_file(path, &self.name, self.kdf, &salt, key, &self.entries)
 //                                                                      ^^^^^^^^^^^^^
-//                                                              Borrow, kein Clone
+//                                                              borrow, no clone
 ```
 
 ```rust
 // format.rs
 serialize_entries_zeroizing(entries: &[SecretEntry]) → Zeroizing<Vec<u8>>
 crypto::encrypt(key, plaintext.as_ref())
-// plaintext (Zeroizing) wird nach encrypt() dropped und überschrieben
+// plaintext (Zeroizing) is dropped and overwritten after encrypt()
 ```
 
 | Aspect | Detail |
@@ -352,7 +352,7 @@ encrypt(payload) → write {dir}/{name}.oxid.tmp → sync_all()
 Closing (X) or minimizing hides the window in the system tray — the vault remains unlocked by default:
 
 ```
-Fenster schließen / minimieren
+Close window / minimize
       │
       ▼
 CloseRequested → prevent_close + hide()
@@ -462,7 +462,7 @@ Rust: Vault::extract_secret → Zeroizing<String>
 arboard::Clipboard::set() [+ SetExtWindows on Windows]
         │
         ▼
-Background-Thread: sleep(30s) → Clear wenn unverändert
+Background thread: sleep(30s) → clear if unchanged
         │
         ▼
 Frontend: notifyBackendSecureCopy() → Toast-Countdown
@@ -479,104 +479,120 @@ Bei lock_vault: cancel_pending() — Timer wird invalidiert
 
 ```
 OxidVault/
-├── ARCHITECTURE.md          ← Diese Datei (Single Source of Truth)
-├── DEVELOPMENT_LOG.md       ← Architektur-Backlog & Refactoring-Ideen
-├── Cargo.toml               ← Rust-Workspace-Root
-├── rust-toolchain.toml      ← Rust-Toolchain-Pinning
-├── package.json             ← Frontend-Abhängigkeiten & npm-Scripts
-├── vite.config.ts           ← Vite + Tailwind + Tauri-Dev-Server
-├── tsconfig*.json           ← TypeScript-Konfiguration
-├── index.html               ← Frontend-Einstiegspunkt
+├── ARCHITECTURE.md          ← This file (Single Source of Truth)
+├── CHANGELOG.md             ← Release history
+├── DEVELOPMENT_LOG.md       ← Architecture backlog & refactoring ideas
+├── Cargo.toml               ← Rust workspace root
+├── rust-toolchain.toml      ← Rust toolchain pinning
+├── package.json             ← Frontend dependencies & npm scripts
+├── vite.config.ts           ← Vite + Tailwind + Tauri dev server
+├── tsconfig*.json           ← TypeScript configuration
+├── index.html               ← Frontend entry point
 │
 ├── crates/
-│   └── vault-core/          ← ★ Rust-Kern (Krypto, Vault-Domain)
+│   └── vault-core/          ← ★ Rust core (crypto, vault domain)
 │       ├── Cargo.toml
 │       └── src/
-│           ├── lib.rs       ← Re-Exports
+│           ├── lib.rs       ← Re-exports
 │           ├── crypto.rs    ← Argon2id KDF, AES-256-GCM
-│           ├── format.rs    ← .oxid Lesen/Schreiben
-│           ├── license.rs   ← CE/EE Lizenz (Ed25519, offline)
-│           ├── lock.rs      ← exklusiver Vault-Datei-Lock
-│           ├── policy/      ← Master-Passwort-Regeln + Admin-GPO (`policy.json`)
+│           ├── format.rs    ← .oxid read/write
+│           ├── license.rs   ← CE/EE license (Ed25519, offline)
+│           ├── lock.rs      ← Exclusive vault file lock
+│           ├── policy/      ← Master password rules + admin GPO (`policy.json`)
 │           ├── entry.rs     ← SecretEntry, SecretEntryPublic, SecretField
-│           ├── vault.rs     ← Vault-Lifecycle, Persistenz
-│           ├── policy.rs    ← Master-Passwort-Richtlinie
-│           ├── generator.rs ← CSPRNG Passwort-Generator
-│           ├── audit.rs          ← ISO-27001 Compliance-Log (append-only, hash chain)
-│           ├── security_audit.rs ← Offline Security Audit (Duplikate, Schwäche, Score)
-│           ├── expiry.rs    ← Passwort-Ablauf (YYYY-MM-DD, 14-Tage-Warnung)
-│           └── probe.rs     ← Host/Port-Auflösung für Live-Ping
-│           └── error.rs     ← VaultError
+│           ├── vault.rs     ← Vault lifecycle, persistence
+│           ├── vault_user.rs← Multi-user KEK wrapping
+│           ├── auth.rs      ← Atomic unlock orchestration
+│           ├── mfa.rs       ← TOTP enrollment & verification
+│           ├── compliance.rs← GPO / audit / key-age status
+│           ├── diagnostics.rs← Admin support snapshot
+│           ├── generator.rs ← CSPRNG password generator
+│           ├── audit.rs          ← ISO-27001 compliance log (append-only, hash chain)
+│           ├── audit_export.rs   ← JSON/CSV audit export
+│           ├── audit_secure.rs   ← OS permissions for audit log
+│           ├── security_audit.rs ← Offline security audit (duplicates, weakness, score)
+│           ├── os_protect.rs     ← Owner-only file ACLs (session, audit)
+│           ├── url_match.rs      ← eTLD+1 hostname matching (extension autofill)
+│           ├── path_util.rs      ← UNC path normalization
+│           ├── unlock.rs         ← Unlock step types
+│           ├── expiry.rs         ← Password expiry (YYYY-MM-DD, 14-day warning)
+│           ├── probe.rs          ← Host/port resolution for live ping
+│           └── error.rs          ← VaultError
 │
 ├── src/                     ← ★ Frontend (React + TypeScript)
-│   ├── main.tsx             ← React-Bootstrap
-│   ├── App.tsx              ← Root-Komponente, Vault-UI
-│   ├── components/          ← Wiederverwendbare UI-Bausteine
+│   ├── main.tsx             ← React bootstrap
+│   ├── App.tsx              ← Root component, vault UI
+│   ├── components/          ← Reusable UI building blocks
 │   │   └── Layout.tsx
 │   ├── hooks/               ← Custom React Hooks
 │   │   ├── useKeyboardShortcuts.ts
 │   │   ├── useAutoLock.ts
 │   │   └── useSecureCopy.ts  ← copySecret → copy_to_clipboard IPC
-│   ├── lib/                 ← IPC, Dialoge, Theme, Suche, Clipboard
+│   ├── lib/                 ← IPC, dialogs, theme, search, clipboard
 │   │   ├── ipc.ts
 │   │   └── dialog.ts
-│   ├── types/               ← Shared TypeScript-Typen
+│   ├── types/               ← Shared TypeScript types
 │   │   └── vault.ts
 │   └── styles/
-│       └── globals.css      ← Tailwind + Design-Tokens
+│       └── globals.css      ← Tailwind + design tokens
 │
-├── src-tauri/               ← ★ Tauri-Backend (Desktop-Shell)
+├── src-tauri/               ← ★ Tauri backend (desktop shell)
 │   ├── Cargo.toml
-│   ├── tauri.conf.json      ← Tauri-App-Konfiguration
+│   ├── tauri.conf.json      ← Tauri app configuration (version source of truth)
 │   ├── build.rs
 │   ├── capabilities/
 │   │   └── default.json     ← Tauri v2 Permission-Capabilities
-│   ├── icons/               ← App-Icons (via `npm run icons` aus `logo.png`)
+│   ├── icons/               ← App icons (via `npm run icons` from `logo.png`)
 │   └── src/
-│       ├── main.rs          ← Binary-Einstiegspunkt (--native-messaging → Headless)
-│       ├── lib.rs           ← Tauri Builder, Plugin-Init, State
+│       ├── main.rs          ← Binary entry (--native-messaging → headless)
+│       ├── lib.rs           ← Tauri builder, plugin init, state
 │       ├── native_messaging.rs ← Chrome/Firefox Native Messaging Host (stdio)
 │       ├── clipboard.rs     ← SecureClipboard (arboard, 30s Auto-Clear)
 │       ├── probe/           ← Async TCP-Reachability-Checks
 │       │   └── mod.rs
-│       ├── system_tray.rs ← System Tray (Minimize to Tray, Menü)
-│       ├── window_events.rs ← Close/Minimize → Tray (+ optionales GPO-Lock)
-│       ├── settings.rs      ← App-Einstellungen (Vault-Pfad, Git-Sync, kein Secret)
-│       ├── git/                 ← In-process Git-Sync via `git2` (kein externes `git`-Binary)
+│       ├── system_tray.rs     ← System tray (minimize to tray, menu)
+│       ├── window_events.rs   ← Close/minimize → tray (+ optional GPO lock)
+│       ├── settings.rs        ← App settings (vault path, Git sync, no secrets)
+│       ├── git/                 ← In-process Git sync via `git2` (no external `git` binary)
 │       │   ├── mod.rs
 │       │   ├── git_sync.rs      ← `sync_vault`, pull/commit/push
-│       │   ├── remote_auth.rs   ← `RemoteCallbacks`, SSH-Agent → Key-Datei + Keyring, HTTPS-Basic-Auth
+│       │   ├── remote_auth.rs   ← `RemoteCallbacks`, SSH agent → key file + keyring, HTTPS basic auth
 │       │   ├── ssh_keyring.rs   ← OS keyring (`oxidvault-git` / `git-ssh-passphrase`)
 │       │   └── errors.rs        ← `GitSyncError` (code + message)
-│       ├── ssh/             ← SSH Quick Connect (russh; Provider-Abstraktion in Arbeit)
-│       │   ├── mod.rs       ← SshManager, Session-Loop, Tauri-Events
-│       │   ├── auth.rs      ← Publickey-Auth (ring)
-│       │   ├── key_loader.rs← PEM/PPK aus Vault-RAM
+│       ├── ssh/             ← SSH Quick Connect (russh; provider abstraction)
+│       │   ├── mod.rs       ← SshManager, session loop, Tauri events
+│       │   ├── auth.rs      ← Public-key auth (ring)
+│       │   ├── key_loader.rs← PEM/PPK from vault RAM
 │       │   └── provider/
 │       │       ├── mod.rs       ← Trait `SshConnection`, `ConnectContext`
-│       │       └── russh_provider.rs ← `RusshProvider` (russh-Backend)
+│       │       └── russh_provider.rs ← `RusshProvider` (russh backend)
 │       └── commands/
-│           ├── mod.rs       ← Tauri Command-Handler
-│           ├── bootstrap.rs ← Smart-Start, Vault abkoppeln
-│           ├── lock.rs      ← perform_lock (RAM-Purge)
-│           ├── open_url.rs  ← Sicheres Öffnen von http(s)-URLs
+│           ├── mod.rs       ← Tauri command handlers
+│           ├── bootstrap.rs ← Smart start, detach vault
+│           ├── lock.rs      ← perform_lock (RAM purge)
+│           ├── open_url.rs  ← Safe http(s) URL open
 │           └── ssh.rs       ← ssh_connect / ssh_write / ssh_disconnect
 │
-├── browser-extension/       ← ★ Browser-Erweiterung (Phase 2: MV3 + Background)
+├── browser-extension/       ← ★ Browser extension (Phase 2: MV3 + background)
 │   ├── manifest.json        ← Manifest V3 (nativeMessaging)
-│   ├── background.js        ← connectNative, Ping beim Start
-│   ├── README.md            ← 3-Schritte E2E-Anleitung (Ping/Pong)
+│   ├── background.js        ← connectNative, ping on start
+│   ├── README.md            ← 3-step E2E guide (ping/pong)
 │   └── host/
-│       └── com.oxidvault.app.json  ← Native-Host-Manifest (via PS-Skript)
+│       └── com.oxidvault.app.json  ← Native host manifest (via PS script)
 │
 ├── scripts/
-│   ├── register_native_host.ps1   ← Registry + Host-Manifest (Chrome/Edge)
+│   ├── register_native_host.ps1   ← Registry + host manifest (Chrome/Edge)
 │   ├── tauri-dev.ps1
 │   ├── tauri-build.ps1
-│   └── generate-icons.mjs
+│   ├── generate-icons.mjs
+│   └── sync-architecture-version.mjs ← Sync **Version:** line from tauri.conf.json
 │
-├── public/                  ← Statische Assets (SVG, etc.)
-└── dist/                    ← Vite-Production-Build (generiert)
+├── docs/
+│   ├── policy.json.example
+│   └── ADMIN_DEPLOYMENT.md
+│
+├── public/                  ← Static assets (SVG, etc.)
+└── dist/                    ← Vite production build (generated)
 ```
 
 ### Separation of Concerns
@@ -614,7 +630,7 @@ flowchart TB
 
     IPC_TS -- "invoke()" --> CMD
     STATE --> VAULT
-    VAULT -- ".oxid Datei" --> DISK[(Lokales Dateisystem)]
+    VAULT -- ".oxid file" --> DISK[(Local filesystem)]
 ```
 
 ### System Tray
@@ -652,9 +668,9 @@ flowchart TB
 7. Frontend updates sidebar (`list_entries`) and detail view (`get_entry` → Public).
 
 ```
-Bearbeiten → reveal_secret (Form) → update_entry → persist(&entries) → AES-256-GCM → .oxid
+Edit → reveal_secret (form) → update_entry → persist(&entries) → AES-256-GCM → .oxid
                               ↓
-                    list_entries + get_entry (Public) → Sidebar + Detail refresh
+                    list_entries + get_entry (Public) → sidebar + detail refresh
 ```
 
 ### Data Flow: Delete Secret (Hard Delete)
@@ -670,7 +686,7 @@ Bearbeiten → reveal_secret (Form) → update_entry → persist(&entries) → A
 4. Frontend clears selection → overview; with active Git sync: `sync_vault_git` pushes the changed `.oxid` snapshot.
 
 ```
-Detail → delete_entry → zeroize → remove from Vec → persist (atomic) → .oxid ohne Eintrag
+Detail → delete_entry → zeroize → remove from Vec → persist (atomic) → .oxid without entry
                                               ↓
                               optional: sync_vault_git → commit/push
 ```
@@ -683,36 +699,36 @@ Detail → delete_entry → zeroize → remove from Vec → persist (atomic) →
 Quick Connect (entry_id)
         │
         ▼
-ssh_connect (async) ──► Vault::extract_ssh_credentials(id)  [Key bleibt im Rust-RAM, Zeroizing]
+ssh_connect (async) ──► Vault::extract_ssh_credentials(id)  [key stays in Rust RAM, Zeroizing]
         │                        │
         │                        ▼
-        │              open_interactive_shell()  [blockiert bis Handshake fertig]
+        │              open_interactive_shell()  [blocks until handshake complete]
         │                        │
-        │                        ├── check_server_key → SHA-256-Fingerprint (OpenSSH-Format)
-        │                        ├── TCP → Pubkey-Auth → PTY (want_reply) → Shell (want_reply)
-        │                        ├── tokio::time::timeout(15s) — Auth/Shell-Schritte
-        │                        └── Fehler → generische Err(String) ans Frontend (setError)
+        │                        ├── check_server_key → SHA-256 fingerprint (OpenSSH format)
+        │                        ├── TCP → pubkey auth → PTY (want_reply) → shell (want_reply)
+        │                        ├── tokio::time::timeout(15s) — auth/shell steps
+        │                        └── errors → generic Err(String) to frontend (setError)
         │
-        │  Host-Key-Prüfung (nach Handshake):
-        │                        ├── kein gespeicherter Fingerprint → `UnknownHost` (Pending-Session)
-        │                        ├── Fingerprint stimmt → `Connected`
-        │                        └── Fingerprint abweichend → `HostKeyMismatch` + sofort disconnect
+        │  Host key check (after handshake):
+        │                        ├── no stored fingerprint → `UnknownHost` (pending session)
+        │                        ├── fingerprint matches → `Connected`
+        │                        └── fingerprint mismatch → `HostKeyMismatch` + immediate disconnect
         │
-        │  bei UnknownHost: UI-Dialog → `ssh_trust_host` (persist + promote) | `ssh_reject_host`
+        │  on UnknownHost: UI dialog → `ssh_trust_host` (persist + promote) | `ssh_reject_host`
         │
-        │  bei Connected:
+        │  on Connected:
         │                        ▼
-        │              async_runtime::spawn → run_session_loop (I/O-Loop)
+        │              async_runtime::spawn → run_session_loop (I/O loop)
         │                        │
-        │                        ├──► Tauri Event `ssh-data` (stdout/stderr, base64)
-        │                        └──► Tauri Event `ssh-closed` (EOF / exit / Laufzeitfehler)
+        │                        ├──► Tauri event `ssh-data` (stdout/stderr, base64)
+        │                        └──► Tauri event `ssh-closed` (EOF / exit / runtime error)
         ▼
-SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
+SshTerminalPanel (xterm.js)  [split view beside vault, optional fullscreen]
         │
-        ├── ssh_begin_streaming → Backlog + Live-Events
+        ├── ssh_begin_streaming → backlog + live events
         ├── listen(`ssh-data`) → term.write()
         ├── onData → ssh_write(session_id, stdin)
-        └── Schließen → Bestätigungsdialog → ssh_disconnect (graceful channel.close)
+        └── close → confirmation dialog → ssh_disconnect (graceful channel.close)
 ```
 
 | Aspect | Detail |
@@ -742,7 +758,7 @@ SshTerminalPanel (xterm.js)  [Split-View neben Tresor, optional Vollbild]
 > **Status:** ✅ `open_website_url` · `src/lib/openWebsite.ts` · Button in `EntryDetail`
 
 ```
-Website öffnen (Web-Login-Eintrag)
+Open website (web login entry)
         │
         ▼
 Frontend: validateHttpUrl(url)     [Client-Vorprüfung, ggf. https:// ergänzen]
@@ -791,7 +807,7 @@ check_entries_reachability(entry_ids[])
 EntryReachabilityStatus { status: online | offline | unsupported }
         │
         ▼
-ReachabilityDot — Sidebar + Detailansicht
+ReachabilityDot — sidebar + detail view
 ```
 
 | Aspect | Detail |
@@ -823,11 +839,13 @@ ReachabilityDot — Sidebar + Detailansicht
 3. On MFA failure before commit: KEK/DEK are not persisted on `Vault`.
 4. Enable/disable MFA: TOTP secret KEK-encrypted in plaintext header; **v4 re-encrypts payload** (header bound via AAD).
 
+**Limitation (documented honestly):** TOTP gates the **application unlock flow** only — it is **not** a second cryptographic factor for the vault file. An attacker with a copy of the `.oxid` file can brute-force the master password offline and bypass TOTP entirely. A **strong master password** (length, entropy, blocklist) remains the actual file-level defense.
+
 ---
 
 ## 6. API Interfaces (Tauri Commands)
 
-> All commands are synchronous, run in the Rust backend, and return `Result<T, String>`.
+> All commands run in the Rust backend and return `Result<T, String>`. Most are **synchronous**; a few I/O-heavy commands (`trigger_git_sync`, `sync_vault_git`, `ssh_connect`) are **async** — see the Status column.
 
 ### Vault Lock Guard (Sensitive Commands)
 
@@ -865,7 +883,7 @@ ReachabilityDot — Sidebar + Detailansicht
 | `audit_vault_security` | — | `SecurityAuditReport` | Offline password audit (duplicates, weakness, score) | ✅ |
 | `get_audit_logs` | `limit: usize` | `AuditLogEntry[]` | Latest compliance audit entries from `{vault}.audit.log` (newest first) | ✅ |
 | `export_audit_log` | `target_path`, `format` | `()` | Verify hash chain, export audit report as JSON or CSV | ✅ |
-| `get_compliance_status` | — | `ComplianceStatus` | GPO, audit chain, and key-age status | ✅ |
+| `get_compliance_status` | — | `ComplianceStatus` | GPO, audit chain, key age, vault format version | ✅ |
 | `get_system_diagnostics` | — | `SystemDiagnostics` | Admin support snapshot: vault path (UNC), GPO policy, audit log writability, version — **no secrets** | ✅ |
 | `enable_mfa` | — | `MfaSetupInfo` | TOTP enrollment — **vault lock guard** | ✅ |
 | `get_mfa_status` | — | `MfaStatus` | `{ mfaEnabled, vaultLocked }` — no secret over IPC | ✅ |
@@ -1014,6 +1032,8 @@ ReachabilityDot — Sidebar + Detailansicht
 ```
 
 > **Status:** ✅ Implemented in `vault-core/mfa.rs` — TOTP secret AES-256-GCM in vault payload (`StoredMfaConfig`), offline via `totp-rs` + `qrcode`.
+
+**Limitation (documented honestly):** Same as unlock flow above — TOTP protects the running app, not the on-disk file against offline password attacks.
 
 #### `MfaStatus`
 
@@ -1421,8 +1441,8 @@ Same header layout as v4 with `Format-Version = 3`. Payload encrypted **without*
 
 ```
 App-Start → initTheme() liest localStorage → data-theme setzen
-User wählt Theme → applyTheme() → localStorage + CustomEvent
-Alle Komponenten nutzen unverändert bg-vault-* / text-vault-* Utilities
+User selects theme → applyTheme() → localStorage + CustomEvent
+All components use bg-vault-* / text-vault-* utilities unchanged
 ```
 
 ### Keyboard Shortcuts
@@ -1950,14 +1970,14 @@ Details and troubleshooting: [`browser-extension/README.md`](browser-extension/R
 
 ```
 Software\Google\Chrome\NativeMessagingHosts\com.oxidvault.app
-  (Default) = Vollständiger Pfad zu com.oxidvault.app.json
+  (Default) = Full path to com.oxidvault.app.json
 ```
 
 **Firefox** — registry (HKCU):
 
 ```
 Software\Mozilla\NativeMessagingHosts\com.oxidvault.app
-  (Default) = Vollständiger Pfad zu com.oxidvault.app.json
+  (Default) = Full path to com.oxidvault.app.json
 ```
 
 After adjusting `path` and `allowed_origins`, the extension can use `chrome.runtime.connectNative("com.oxidvault.app")` or Firefox equivalent.
@@ -2134,9 +2154,9 @@ Public API for commands: `Vault::record_audit(action, entry_id)`.
 | **D** | **Fallback** on rename failure (e.g. SMB locking): open target (write/truncate) → `std::io::copy` → `sync_all()` → delete temp | Robustness on network shares |
 
 ```
-write_vault_bytes(.tmp) ──sync──► rename(.tmp → .oxid) ──OK──► fertig
+write_vault_bytes(.tmp) ──sync──► rename(.tmp → .oxid) ──OK──► done
                                       │
-                                   Fehler
+                                   error
                                       │
                                       ▼
                          copy(.tmp → .oxid) ──sync(.oxid)──► remove(.tmp)
@@ -2203,7 +2223,7 @@ remove(team.lock) → create_new erneut
 
 The file is loaded at app start via `policy::init_admin_policy()` and cached in process. Invalid JSON causes abort (compliance).
 
-**Template for admins:** [`docs/policy.json.example`](../docs/policy.json.example) · **GPO rollout (5 min.):** [Section 16 — Admin Deployment Guide](#16-admin-deployment-guide)
+**Template for admins:** [`docs/policy.json.example`](../docs/policy.json.example) · **GPO rollout (5 min.):** [Admin Deployment Guide](docs/ADMIN_DEPLOYMENT.md)
 
 **Example `policy.json`:**
 
@@ -2262,7 +2282,7 @@ vault_core::policy::init_admin_policy()?;
 
 ---
 
-## 14. Documentation Requirements & Changelog
+## 14. Documentation Requirements
 
 ### Sync Requirement
 
@@ -2325,108 +2345,7 @@ For the following changes, this document **must** be updated in the same commit 
 
 ### Changelog
 
-| Date | Version | Change |
-|---|---|---|
-| 2025-06-19 | 0.1.0 | Initial project setup: Tauri v2, vault-core, React frontend, 4 Tauri commands, crypto specification |
-| 2025-06-19 | 0.1.0 | Vault persistence: Argon2id + AES-256-GCM, `.oxid` format, 9 Tauri commands, secret CRUD, UI flow |
-| 2025-06-19 | 0.1.0 | Vault setup flows: password → save dialog (create), file → password (open), German error messages |
-| 2025-06-19 | 0.1.0 | Master password policy: min. 12 characters, blocklist, zxcvbn entropy (frontend + backend) |
-| 2025-06-19 | 0.1.0 | Typed secrets: web_login, ssh_key, api_token — modal, sidebar icons, copy, AES-256-GCM persistence |
-| 2025-06-19 | 0.1.0 | v0.1.0: clipboard auto-clear (30s), real-time search (title/URL/user), `username` in summary |
-| 2025-06-19 | 0.1.0 | Password generator (CSPRNG, Ctrl+G), auto-lock (120s), RAM purge via zeroize |
-| 2025-06-19 | 0.1.0 | Edit secret (`update_entry`), generator field apply in forms |
-| 2025-06-19 | 0.1.0 | Theme system: Oxid, Dracula, Nord, Matrix — CSS variables + localStorage |
-| 2025-06-19 | 0.1.0 | SSH quick connect: russh, xterm.js terminal, event streaming, key in RAM only |
-| 2025-06-19 | 0.1.0 | Enterprise hardening: atomic writes (.oxid.tmp), lock-on-minimize |
-| 2025-06-19 | 0.1.0 | Smart start: last vault path in `settings.json`, `bootstrap_vault`, `attach_locked`, "Open another vault" |
-| 2025-06-19 | 0.1.0 | Web login quick open: `open_website_url`, http(s) validation, button in EntryDetail |
-| 2025-06-19 | 0.1.0 | Web login: auto-`https://` for bare domains (google.de), scheme injection protection retained |
-| 2025-06-19 | 0.1.0 | Admin secret types: database, network_wifi, secure_note · sidebar quick actions |
-| 2025-06-19 | 0.1.0 | Live ping: TCP reachability, 10s polling, status dots sidebar + detail |
-| 2025-06-19 | 0.1.0 | Folders & tags: `folder`/`tags` on secrets, sidebar filter, folder grouping |
-| 2025-06-19 | 0.1.0 | Security dashboard: `audit_vault_security`, duplicate/weakness analysis, vault score |
-| 2025-06-19 | 0.1.0 | Git sync: `sync_vault_git`, settings `gitSync`, header sync button, `Vault::reload_from_disk` |
-| 2025-06-19 | 0.1.0 | Password expiry: `expires_at`, `ExpiryBadge`, security dashboard to-do list |
-| 2025-06-19 | 0.1.0 | Dashboard tiles as sidebar filter: clickable metrics, `DashboardFilterBar` |
-| 2025-06-19 | 1.0.0 | **Release:** Official branding (`logo.png`), Tauri icons, `AppLogo`, version 1.0.0, MSI build docs |
-| 2025-06-19 | 1.0.0 | **Security hardening K1–K4:** `Zeroizing` in crypto/format, zero-clone `persist`, `SecretEntryPublic`, `reveal_secret`, `copy_to_clipboard` (arboard, 30s Rust clear), `Zeroizing<String>` for master password IPC |
-| 2025-06-20 | 1.0.0 | **Git SSH passphrase UI:** settings field + `saveSshPassphrase` IPC; keyring INFO log on `set_password` |
-| 2025-06-20 | 1.0.0 | **Git SSH keyring:** `ssh_keyring.rs` + `keyring` 3; `save_ssh_passphrase` / `remove_ssh_passphrase`; passphrase in OS store only |
-| 2025-06-23 | 1.0.0 | **SSH host key TOFU:** `known_host_fingerprint` in `ssh_key` payload; `SshConnectResponse`; `ssh_trust_host` / `ssh_reject_host` |
-| 2026-06-24 | 1.0.0 | **SSH known hosts (TOFU):** `known_host_fingerprint` in `SecretPayload`, `SshConnectResponse` with `Connected`/`UnknownHost`/`HostKeyMismatch`, `ssh_trust_host` / `ssh_reject_host` / `ssh_clear_host_fingerprint`, pending session cleanup on lock |
-| 2026-06-25 | 1.0.0 | **Multi-user vault phase 1:** format v3 (`VaultUser[]` in plaintext header, shared DEK), `vault_user.rs`, `create_v3` / `unlock_as_user` / user management / `migrate_to_v3`, new audit events |
-| 2026-06-25 | 2.0.0 | **Multi-user phase 2:** Tauri commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), auth flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
-| 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK retained after Git sync pull; user list read from new header; lock guard before reload |
-| 2026-06-25 | 2.0.0 | **Ed25519 license signing:** HMAC-SHA256 → Ed25519 asymmetric; public key via build-time env var injection; private key never in repo; open source safe |
-| 2026-06-25 | 2.4.0 | **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints` |
-| 2026-06-25 | 2.4.0 | **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority; extension `0.5.0` |
-| 2026-06-25 | 2.4.0 | **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit |
-| 2026-06-25 | 2.4.0 | **Windows clipboard exclusion:** `SetExtWindows` history/cloud hints on secret copy + clear (`clipboard.rs`) |
-| 2026-06-25 | 2.4.0 | **Backend zxcvbn:** master password entropy score ≥ 2 enforced in `policy/password.rs`; `WeakPasswordReason` for IPC/i18n; `migrate_to_v3` exempt (re-wrap) |
-| 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
-| 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
-| 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |
-| 2026-06-29 | 2.2.0 | **Auto-lock UI:** configurable timer (1/5/10/15/30 min/never); default 10 min; GPO-compatible |
-| 2026-06-28 | 2.1.0 | **NM bridge tray-focus fix:** `minimized` incl. tray hide (`!is_visible`); `request_unlock` without vault mutex during focus; `perform_lock` mutex timeout 5s |
-| 2026-06-28 | 2.1.0 | **System tray:** minimize to tray, vault stays unlocked, tray menu (open/lock/quit), `forceLockOnMinimize` GPO-compatible |
-| 2026-06-25 | 2.0.0 | **Extension in-page banner removed:** `content.js` shows no lock/MFA banner; status only in popup; unlock polling remains for autofill |
-| 2026-06-25 | 2.0.0 | **NM bridge focus-loop fix:** `vault_status.minimized`; `request_unlock` without focus when window minimized; `AppState.nm_bridge_focusing` suppresses lock-on-minimize during NM focus |
-| 2026-06-25 | 2.0.0 | **License HMAC key:** external via `OXIDVAULT_LICENSE_KEY` / `license_hmac.key` — no longer in source (replaced by Ed25519) |
-| 2026-06-25 | 2.0.0 | **License feature gate:** `license.rs` HMAC-SHA256 offline validation, CE 5-user limit, `get_license_info` command, upgrade banner in `UserManagementPanel` |
-| 2026-06-25 | 2.0.0 | **MFA v3:** `session_kek` in vault RAM, enable/disable/verify per user entry (KEK-encrypted in header), `persist_v3_header` (no payload re-encrypt), unlock MFA check in `unlock_as_user`, routing in `enable_mfa`/`disable_mfa`/`verify_mfa_code`/`get_mfa_status` |
-| 2026-06-25 | 1.0.0 | **MSI native messaging auto-setup:** WiX fragment `src-tauri/wix/native_messaging.wxs` registers host manifest + Chrome/Edge HKCU keys automatically on install (cleanup on uninstall) |
-| 2025-06-23 | 1.0.0 | **Vault lock guard:** `commands/vault_guard.rs` — `ensure_vault_unlocked`; sensitive commands return `Err("Vault locked")` |
-| 2025-06-23 | 1.0.0 | **SettingsView lock:** sync/security only when vault unlocked; `SettingsLockedView` with navigation to unlock |
-| 2025-06-23 | 1.0.0 | **SettingsView:** fullscreen settings page with nav (general/sync/security); `SettingsMenu` dropdown removed |
-| 2025-06-23 | 1.0.0 | **Git sync header:** `GitSyncStatusIndicator` in status cluster top right; lower status bar removed |
-| 2025-06-23 | 1.0.0 | **Git sync status bar:** `GitSyncStatusBar` at window footer (full width); header sync icon removed; click opens Git settings |
-| 2025-06-23 | 1.0.0 | **Git sync UI:** SSH key/passphrase in collapsed "Advanced" section; SSH secret passphrase clearly named; keyring service `oxidvault-git` (migration from `oxidvault`) |
-| 2025-06-23 | 1.0.0 | **Git push:** enforce branch `main` (not `master`/HEAD), FF check before push, transfer progress logs, 120s timeout |
-| 2025-06-23 | 1.0.0 | **Git sync scope:** status/commit only for `.oxid` file (no `add_all("*")`); default `.gitignore` on first init |
-| 2025-06-23 | 1.0.0 | **Git SSH auth:** `remote_auth` tries `ssh-agent` first, then key file with keyring passphrase and explicit `.pub` path |
-| 2025-06-20 | 1.0.0 | **Git sync git2:** in-process sync via `git2` 0.19; `RemoteCallbacks` (SSH key path, HTTPS basic); structured `GitSyncError` |
-| 2025-06-20 | 1.0.0 | **Git sync module:** `src-tauri/src/git/git_sync.rs`; Tauri command `trigger_git_sync` (`spawn_blocking`, `GitSyncResult`) |
-| 2025-06-20 | 1.0.0 | **SSH provider scaffold:** `ssh/provider/mod.rs` with trait `SshConnection`; `DEVELOPMENT_LOG.md` for refactoring backlog |
-| 2025-06-20 | 1.0.0 | **Dependency audit:** `rsa` feature removed from `russh` (RUSTSEC-2023-0071); `.cargo/audit.toml` with allowlist for Linux GTK bindings (Tauri/wry) |
-| 2025-06-19 | 1.0.0 | Dependency audit: `russh` 0.61 (`ring`), `rsa` removed from dependency tree |
-| 2025-06-19 | 1.0.0 | **Native messaging phase 1:** CLI `--native-messaging` (headless), `native_messaging.rs` (stdio LE framing), dummy `ping`→`pong`, manifest `browser-extension/host/com.oxidvault.app.json` |
-| 2025-06-19 | 1.0.0 | **Native messaging phase 2:** MV3 extension (`manifest.json`, `background.js`), `register_native_host.ps1` (Chrome/Edge registry), E2E guide in `browser-extension/README.md` |
-| 2025-06-20 | 1.0.0 | **Native messaging Windows fix:** dedicated console binary `oxidvault-nmh.exe` (stdout pipe with Chrome/Edge), register script + extension timeout logging |
-| 2025-06-20 | 1.0.0 | **Native messaging phase 3:** `content.js` login detection + autofill, `get_login` via NM→localhost IPC→vault, `url_match.rs`, `find_web_login_for_hostname` |
-| 2025-06-20 | 1.0.0 | **ISO 27001 audit log:** `audit.rs` (append-only, hash chain), `AuditAction`/`AuditLogger`, vault integration; security dashboard → `security_audit.rs` |
-| 2025-06-20 | 1.0.0 | **ISO 27001 OS protection:** `audit_secure.rs` — Windows DACL (user + administrators), Unix `0o600`, `audit::init()` startup check in `main.rs` |
-| 2025-06-20 | 1.0.0 | **UNC + atomic writes:** `path_util.rs`, robust `atomic_write_vault` (temp in same share, rename + SMB copy fallback), docs §12 |
-| 2025-06-20 | 1.0.0 | **Vault file lock:** `lock.rs` — exclusive `{vault}.lock`, stale repair via `sysinfo`, `LockedBy` error, `Vault::open`/`close`/`Drop` |
-| 2025-06-20 | 1.0.0 | **Lock assertion:** `unlock` + smart start (`attach_locked`) with `assert_lock_valid`, `LockLost`, audit `VaultUnlocked` with lock ID |
-| 2025-06-20 | 1.0.0 | **Admin GPO:** `policy/admin.rs`, `policy.json` (ProgramData/etc), `ResolvedConfig`, `get_resolved_config`, UI `disabled` flags |
-| 2025-06-20 | 1.0.0 | **Audit log UI:** `get_audit_logs`, `read_audit_logs`/`AuditLogEntry`, tab **Activity**, `AuditLogTable.tsx` (search, local time, DE labels) |
-| 2025-06-20 | 1.0.0 | **Dual-format audit export:** `audit_export.rs`, `export_audit_log`, hash chain validation, JSON integrity header, CSV export, UI save dialog |
-| 2025-06-20 | 1.0.0 | **Enterprise v1.0:** format v2 (wrapped DEK), `reencrypt_vault`, `ComplianceDashboard`, `get_compliance_status`, `VaultKeyRotated` |
-| 2025-06-20 | 1.0.0 | **Password rotation UI:** `RotationDialog.tsx`, policy validation, lock check (`LockedBy`), audit export verification |
-| 2025-06-20 | 1.0.0 | **Compliance dashboard rotation:** primary button when key age >90 days, toast on success, compliance badge, v2 migration hint |
-| 2025-06-20 | 1.0.0 | **Frontend i18n:** `i18next`/`react-i18next`, `src/locales/de.json` + `en.json`, language selection in `SettingsMenu`, security/compliance UI |
-| 2025-06-20 | 1.0.0 | **Full-coverage i18n:** all UI components, `auditLogLabels.ts`, `errors.ts`, `vaultLabels.ts`, `passwordPolicy.ts`; `fallbackLng: false` |
-| 2025-06-20 | 1.0.0 | **Admin system diagnostics:** `vault-core/diagnostics.rs`, `get_system_diagnostics`, security tab `SystemDiagnosticsPanel`, markdown clipboard export, i18n status codes |
-| 2025-06-20 | 1.0.0 | **Theme refresh:** Matrix removed; new **Oxid Light** (enterprise light mode); semantic tokens `vault-on-accent`, `vault-overlay`, `vault-elevated-shadow` |
-| 2025-06-20 | 1.0.0 | **2FA (TOTP) — UI + placeholder API:** `vault-core/mfa.rs`, `enable_mfa` / `verify_mfa_code`, settings submenu "Two-factor authentication", `MfaSetupModal` with QR placeholder and code input |
-| 2025-06-20 | 1.0.0 | **2FA (TOTP) — full implementation:** `totp-rs` + `qrcode`, CSPRNG secret, QR PNG, AES-256-GCM persistence in vault payload, offline RFC 6238 verification (`bool`) |
-| 2025-06-20 | 1.0.0 | **2FA settings UI:** `get_mfa_status` / `disable_mfa`, dynamic button in `SettingsMenu`, status badge, deactivation confirmation, live update after verification |
-| 2025-06-20 | 1.0.0 | **2FA-gated unlock:** `PendingUnlock` in `vault-core`, two-step `open_vault`/`unlock_vault` → `UnlockVaultResponse`, `complete_unlock_vault` / `cancel_pending_unlock`, dynamic MFA field in `AuthForm` |
-| 2025-06-20 | 1.0.0 | **Atomic auth flow:** `vault-core/auth.rs` — `unlock_vault(password, mfa_code)` → `VaultHandle` / `AuthError`; no `PendingUnlock`; IPC `mfa_code?` on `open_vault`/`unlock_vault`; frontend sends password+MFA atomically |
-| 2025-06-20 | 1.0.0 | **Browser extension MFA (phase 4):** `mfa_required`/`mfa_failed`/`success` in NM protocol, `vault_status` + `request_unlock`, popup + in-page banner, `settings.vaultMfaConfigured`, no MFA input in extension |
-| 2025-06-20 | 1.0.0 | **Browser extension WASM generator (phase 5):** `vault-generator`/`vault-wasm`, popup generator with desktop themes, `open_new_secret` → `NewSecretModal` prefill |
-| 2025-06-20 | 1.0.0 | **Secret hard delete:** `Vault::delete_entry`/`delete_secret`, zeroizing before removal, `delete_entry` IPC, `DeleteConfirmationModal`, Git sync after delete, audit `EntryDeleted` |
-| 2026-06-20 | 1.0.0 | **UI header & sidebar nav:** command bar without double branding, sidebar `w-80`, tab nav with lucide icons (FolderLock/Shield/Activity), full label view without ellipsis |
-| 2026-06-20 | 1.0.0 | **Audit log extension:** `SecretCreated`/`SecretModified`, `AuthFailed`, `SyncEvent`, `ConfigChanged`; UUID-only secret references; activity UI with icons/color codes |
-| 2026-06-20 | 1.0.0 | **Enterprise MSI browser extension:** fixed extension ID (RSA/CRX), force-install policy (Chrome/Edge), WiX custom action, `installer/README.md` |
-| 2026-06-22 | 1.0.0 | **Admin deployment guide:** section 16, `docs/policy.json.example`, README enterprise & compliance |
-| 2026-06-22 | 1.0.0 | **Backend idle lock:** `state.rs`, `idle_worker.rs`, `touch_activity` IPC, `vault-idle-warning`, frontend warning banner |
-| 2026-06-20 | 1.0.0 | **SSH command-await:** `ssh_connect` async with 15s timeout, PTY/shell `want_reply`, errors via `Result` to frontend; I/O loop still via event |
-| 2026-06-20 | 1.0.0 | **SSH key loader:** `key_loader.rs`, vault-only keys, PEM validation, format-specific russh parsing, backend logging; test keys removed |
-| 2026-06-20 | 1.0.0 | **SSH terminal streaming:** output backlog + `ssh_begin_streaming`, `ssh_resize_pty`, listener race fixed |
-| 2026-06-20 | 1.0.0 | **SSH terminal layout:** pixel split + ResizeObserver init, focus mode, `ssh_connect(cols, rows)` for initial PTY size |
-
----
+Full release history: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## 15. Key Rotation & Compliance Dashboard
 
@@ -2447,9 +2366,9 @@ For the following changes, this document **must** be updated in the same commit 
 | **UI** | `RotationDialog.tsx` — spinner during rotation, success updates compliance dashboard |
 
 ```
-Altes Passwort → KEK_alt → unwrap(DEK)
-Neues Passwort → KEK_neu → wrap(DEK) → neuer Header
-Payload-Block   → unverändert kopiert (nur v1/v2)
+Old password → KEK_old → unwrap(DEK)
+New password → KEK_new → wrap(DEK) → new header
+Payload block → copied unchanged (v1/v2 only)
 ```
 
 **v4 note:** Multi-user vaults use per-user KEK wrapping in `users_json`. Header or user-entry changes always trigger full payload re-encryption with fresh nonce and header AAD.
@@ -2465,7 +2384,8 @@ Payload-Block   → unverändert kopiert (nur v1/v2)
 | **Audit status** | Structural: `verify_audit_chain` · Authenticated (unlocked v2+): `verify_audit_chain_keyed` |
 | **Key age** | Days since `key_rotated_at` (fallback: `key_created_at`, v1: file mtime) |
 | **Hint** | When key age > **90 days**: primary button **Rotate password** → `RotationDialog`; toast + refetch after `reencrypt_vault` |
-| **Compliance badge** | "Compliance OK" (green) when audit chain valid and key age ≤ 90 days |
+| **Legacy format** | When `vaultFormatVersion` < 3 (v1/v2): hint + **Migrate to multi-user format** → `MigrateToV3Modal` (password policy exempt on re-wrap) |
+| **Compliance badge** | "Compliance OK" (green) when audit chain valid, HMAC checkpoints OK (when applicable), key age ≤ 90 days, and format ≥ v3 |
 | **Rotation hint** | Below button: secure key migration (v2), payload stays encrypted |
 
 **`ComplianceStatus` (IPC):**
@@ -2479,7 +2399,9 @@ Payload-Block   → unverändert kopiert (nur v1/v2)
   "keyCreatedAt": "2025-03-01T00:00:00+00:00",
   "keyRotatedAt": null,
   "keyAgeDays": 112,
-  "keyRotationRecommended": true
+  "keyRotationRecommended": true,
+  "vaultFormatVersion": 2,
+  "legacyFormatMigrationRecommended": true
 }
 ```
 
@@ -2508,103 +2430,7 @@ Stable status codes (backend → frontend): `ok`, `vault_not_loaded`, `vault_fil
 
 ## 16. Admin Deployment Guide
 
-> **Audience:** IT administrators · **Rollout time:** ~5 minutes per tenant (MSI + `policy.json` + optional Chrome Web Store)  
-> **Technical reference:** [Section 13 — Policy Management](#13-centralized-policy-management--admin-gpos) · **Template:** [`docs/policy.json.example`](../docs/policy.json.example)
-
-### 1. Overview
-
-OxidVault separates **installation** (MSI / desktop app, Chrome Web Store extension) from **governance** (`policy.json`). The policy file is **not** created by the installer — admins deploy it deliberately via GPO, Intune, Ansible, or image build.
-
-| Component | Deployed by | Path / source |
-|---|---|---|
-| Desktop app (MSI) | IT | `C:\Program Files\OxidVault\` |
-| Browser extension | User / IT (web store) | [Chrome Web Store](https://chrome.google.com/webstore) (unlisted) |
-| Admin policy | IT (required only for central policies) | see below |
-| Native messaging | User/dev or script after store ID | `register_native_host.ps1` |
-
-### 2. Policy File — Paths
-
-| Platform | Directory | File |
-|---|---|---|
-| **Windows** | `C:\ProgramData\OxidVault\` | `policy.json` |
-| **Linux / macOS** | `/etc/oxidvault/` | `policy.json` |
-
-End users need **no** write access to these paths. On Windows: create folder, deploy JSON, ACLs to `Administrators` + `SYSTEM` (read for `Users` sufficient).
-
-### 3. Example `policy.json`
-
-All fields are **optional** — only set keys are binding for users. Template with field descriptions: [`docs/policy.json.example`](../docs/policy.json.example).
-
-```json
-{
-  "forceLockOnMinimize": true,
-  "autoLockSeconds": 120,
-  "gitSyncEnabled": false,
-  "minMasterPasswordLen": 16
-}
-```
-
-| Field (camelCase) | Type | Effect |
-|---|---|---|
-| `forceLockOnMinimize` | `bool` | Vault locks when window minimized |
-| `autoLockSeconds` | `u32` | Inactivity auto-lock (seconds) |
-| `gitSyncEnabled` | `bool` | Allow/forbid Git sync |
-| `minMasterPasswordLen` | `u32` | Minimum master password length (default without policy: **12**) |
-
-No further fields exist in `AdminPolicy` currently — unknown JSON keys are **ignored** by serde (incl. `_documentation` in template).
-
-### 4. Fail-Safe — Why the App Won't Start on Broken JSON
-
-On start, `main.rs` calls `vault_core::policy::init_admin_policy()`:
-
-| State | Behavior |
-|---|---|
-| `policy.json` **missing** | Normal — app starts with user defaults (`settings.json`) |
-| File **present, valid JSON** | Admin values override user settings; UI fields with `disabled: true` |
-| File **present, invalid JSON** | **Process exits** — message `OxidVault policy error: admin policy init failed` |
-
-**Rationale (compliance):** A defective or tampered policy must not be silently ignored. Otherwise enforced auto-lock or minimum password rules could be bypassed without admins noticing. Better **no start** than unsafe operation.
-
-### 5. Verification — System Diagnostics & UI
-
-After rollout on a test client:
-
-1. Start OxidVault → tab **Security**
-2. **Compliance dashboard:** "GPO managed?" (`adminPolicyActive` / `policyManagedByGpo`)
-3. **System diagnostics** → "Copy diagnostics report"
-
-The markdown export includes e.g.:
-
-| Diagnostic field | Meaning |
-|---|---|
-| `policyStatus.path` | Expected policy path |
-| `policyStatus.ok` / `status` | `ok`, `policy_not_configured`, `policy_invalid`, … |
-| `policyStatus.policyHash` | SHA-256 of file (integrity proof) |
-
-In the app, `get_resolved_config` → `adminPolicyActive: true` when `policy.json` exists. Locked settings show hint "Admin policy active".
-
-### 6. GPO Rollout — Checklist (Windows, ~5 min.)
-
-1. **MSI** on clients (`npm run tauri:build` → MSI from `src-tauri/target/release/bundle/msi/`)
-2. **Extension:** user installs from Chrome Web Store (unlisted) **or** IT sets `ExtensionInstallForcelist` with store update URL:  
-   `<extension_id>;https://clients2.google.com/service/update2/crx`
-3. **`policy.json`** from [`docs/policy.json.example`](../docs/policy.json.example) customize
-4. Via **GPO** (Computer Configuration → Preferences → Files) or Intune **File** deploy to:  
-   `C:\ProgramData\OxidVault\policy.json`
-5. **Native messaging:** automatic with MSI (Chrome/Edge HKCU + host manifest).  
-   Dev/debug still manual: `register_native_host.ps1 -BuildProfile release -ExtensionId <id>`
-6. **Test client:** system diagnostics + open vault → policy fields locked?
-
-### 7. Linux / macOS
-
-```bash
-sudo mkdir -p /etc/oxidvault
-sudo cp docs/policy.json.example /etc/oxidvault/policy.json
-sudo chmod 644 /etc/oxidvault/policy.json
-# Edit JSON — remove or keep keys with '_' (ignored)
-```
-
----
+IT administrator rollout (MSI, `policy.json`, GPO): [`docs/ADMIN_DEPLOYMENT.md`](docs/ADMIN_DEPLOYMENT.md).
 
 ## 17. Licensing Model
 

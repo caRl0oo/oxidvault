@@ -558,6 +558,7 @@
       "vaultLockedHint": "Unlock the vault to manage 2FA.",
       "modalTitle": "Set up 2FA",
       "modalHint": "Scan the QR code with your authenticator app (e.g. Microsoft Authenticator) and enter the 6-digit code.",
+      "fileProtectionLimitation": "TOTP protects the app unlock flow only — not the vault file. Anyone with the .oxid file can brute-force the password offline and bypass TOTP. Use a strong master password as your real file-level defense.",
       "qrPlaceholder": "QR code",
       "qrAlt": "QR code for authenticator app",
       "qrLoading": "Loading…",
@@ -594,7 +595,10 @@
     "rotation_recommended": "Your security policy recommends a password rotation (threshold: {{days}} days).",
     "rotate_password": "Rotate password",
     "rotation_hint": "Rotation uses secure key migration (v2 format) without decrypting vault data.",
-    "rotation_success_toast": "Key rotated successfully. Your vault is now protected with the new master key."
+    "rotation_success_toast": "Key rotated successfully. Your vault is now protected with the new master key.",
+    "legacy_format_hint": "Vault format outdated (v{{version}}) — header not authenticated. Migration to multi-user format recommended.",
+    "migrate_to_v3": "Migrate to multi-user format",
+    "legacy_format_migration_note": "Migration re-wraps your existing master password as the first admin user. No new password policy check applies."
   },
   "security": {
     "title": "Security Dashboard",

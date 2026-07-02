@@ -1,12 +1,12 @@
 # cargo-audit configuration for OxidVault
 #
-# GTK3/gtk-rs bindings are transitive Linux-only dependencies of the Tauri/wry
-# stack (webkit2gtk, tao, muda). They are unmaintained upstream but required for
-# Linux desktop builds until Tauri migrates to GTK4 bindings.
+# Verify before each release: temporarily set `ignore = []` and run `cargo audit`.
+# Every entry below must remain justified; remove when the expiry condition is met.
 
 [advisories]
 ignore = [
-    # gtk-rs GTK3 bindings (unmaintained) — Tauri/wry Linux WebView stack
+    # gtk-rs GTK3 bindings (unmaintained) — Tauri/wry Linux WebView stack.
+    # Expiry: remove when Tauri/wry no longer pulls gtk-rs 0.18 / GTK3.
     "RUSTSEC-2024-0411", # gdkwayland-sys
     "RUSTSEC-2024-0412", # gdk
     "RUSTSEC-2024-0413", # atk
@@ -17,25 +17,29 @@ ignore = [
     "RUSTSEC-2024-0415", # gtk
     "RUSTSEC-2024-0419", # gtk3-macros
     "RUSTSEC-2024-0420", # gtk-sys
-    # glib gtk-rs binding (unsound advisory) — same Linux-only Tauri stack
+    # glib gtk-rs binding (unsound) — same Linux-only Tauri stack.
+    # Expiry: remove when Tauri/wry upgrades glib bindings past affected versions.
     "RUSTSEC-2024-0429", # glib
-    # Transitive via gtk3-macros — no fix without upstream gtk-rs migration
+    # Transitive via gtk3-macros — no fix without upstream gtk-rs migration.
+    # Expiry: remove with GTK3 stack removal above.
     "RUSTSEC-2024-0370", # proc-macro-error
-    # unic-* unmaintained — transitive via totp-rs, no security risk
+    # unic-* unmaintained — transitive via totp-rs, no runtime security risk.
+    # Expiry: remove when totp-rs drops unic-* or we replace totp-rs.
     "RUSTSEC-2025-0081",
     "RUSTSEC-2025-0075",
     "RUSTSEC-2025-0080",
     "RUSTSEC-2025-0100",
     "RUSTSEC-2025-0098",
-    # proc-macro-error2 unmaintained — build-time only, no runtime risk
+    # proc-macro-error2 unmaintained — build-time only, no runtime risk.
+    # Expiry: remove when no proc-macro crate in the dependency tree depends on it.
     "RUSTSEC-2026-0173",
-    # git2 unsound — known, no direct attack vector in our use case
+    # git2 unsound — no direct attack vector in our git-sync use case.
+    # Expiry: remove when git2 >= fixed release is available and upgraded in Cargo.lock.
     "RUSTSEC-2026-0008",
     "RUSTSEC-2026-0183",
     "RUSTSEC-2026-0184",
-    # quick-xml DoS (RUSTSEC-2026-0194/0195) — transitive via
-    # tauri-utils 2.9.3 (plist/bundler config parsing). No untrusted
-    # XML parsed at runtime. Remove when Tauri ships quick-xml >=0.41.
+    # quick-xml DoS — transitive via tauri-utils (plist/bundler config parsing).
+    # No untrusted XML at runtime. Expiry: remove when Tauri ships quick-xml >= 0.41.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 ]

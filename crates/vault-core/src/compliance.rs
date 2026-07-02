@@ -13,7 +13,7 @@ use crate::audit::{
     AUDIT_NO_CHECKPOINTS,
 };
 use crate::error::VaultError;
-use crate::format::{self, VaultFileMeta, FORMAT_VERSION_V1};
+use crate::format::{self, VaultFileMeta, FORMAT_VERSION_V1, FORMAT_VERSION_V3};
 use crate::policy::admin_policy_active;
 
 pub const KEY_ROTATION_THRESHOLD_DAYS: u64 = 90;
@@ -29,6 +29,8 @@ pub struct ComplianceStatus {
     pub key_rotated_at: Option<String>,
     pub key_age_days: u32,
     pub key_rotation_recommended: bool,
+    pub vault_format_version: u16,
+    pub legacy_format_migration_recommended: bool,
 }
 
 pub fn compliance_status(
@@ -50,7 +52,7 @@ pub fn compliance_status(
 pub fn compliance_status_with_meta(
     vault_path: &Path,
     meta: &VaultFileMeta,
-    _format_version: u16,
+    format_version: u16,
     audit_hmac_key: Option<&[u8]>,
     checkpoints_applicable: bool,
 ) -> Result<ComplianceStatus, VaultError> {
@@ -68,6 +70,8 @@ pub fn compliance_status_with_meta(
     let key_age_days = age_days_from_unix(reference_ts);
     let key_rotation_recommended = u64::from(key_age_days) > KEY_ROTATION_THRESHOLD_DAYS;
 
+    let legacy_format_migration_recommended = format_version < FORMAT_VERSION_V3;
+
     Ok(ComplianceStatus {
         policy_managed_by_gpo: admin_policy_active(),
         audit_chain_valid,
@@ -77,6 +81,8 @@ pub fn compliance_status_with_meta(
         key_rotated_at: iso_from_unix(meta.key_rotated_at),
         key_age_days,
         key_rotation_recommended,
+        vault_format_version: format_version,
+        legacy_format_migration_recommended,
     })
 }
 
@@ -185,5 +191,7 @@ mod tests {
             status.audit_authentication_status.as_deref(),
             Some(AUDIT_NO_CHECKPOINTS)
         );
+        assert_eq!(status.vault_format_version, format::FORMAT_VERSION_V1);
+        assert!(status.legacy_format_migration_recommended);
     }
 }

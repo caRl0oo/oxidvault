@@ -30,7 +30,12 @@ function formatComplianceDate(iso: string | null, dash: string): string {
 function isComplianceOk(status: ComplianceStatus): boolean {
   const auditAuthenticated =
     status.auditChainAuthenticated === null || status.auditChainAuthenticated;
-  return status.auditChainValid && auditAuthenticated && !status.keyRotationRecommended;
+  return (
+    status.auditChainValid &&
+    auditAuthenticated &&
+    !status.keyRotationRecommended &&
+    !status.legacyFormatMigrationRecommended
+  );
 }
 
 function auditAuthenticationLabel(
@@ -50,7 +55,11 @@ function keyAgeClass(recommended: boolean): string {
   return recommended ? "text-vault-danger" : "text-vault-success";
 }
 
-export function ComplianceDashboard() {
+export function ComplianceDashboard({
+  onOpenMigrateModal,
+}: Readonly<{
+  onOpenMigrateModal?: () => void;
+}>) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,6 +181,25 @@ export function ComplianceDashboard() {
             </span>
           </div>
         </div>
+
+        {status.legacyFormatMigrationRecommended ? (
+          <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
+            <p className="text-sm text-vault-accent">
+              {t("compliance.legacy_format_hint", { version: status.vaultFormatVersion })}
+            </p>
+            <button
+              type="button"
+              onClick={onOpenMigrateModal}
+              disabled={!onOpenMigrateModal}
+              className="vault-btn-primary mt-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("compliance.migrate_to_v3")}
+            </button>
+            <p className="mt-2 text-xs leading-relaxed text-vault-muted">
+              {t("compliance.legacy_format_migration_note")}
+            </p>
+          </div>
+        ) : null}
 
         {status.keyRotationRecommended ? (
           <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">

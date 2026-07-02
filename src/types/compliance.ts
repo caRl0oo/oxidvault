@@ -12,4 +12,9 @@ export interface ComplianceStatus {
   keyRotatedAt: string | null;
   keyAgeDays: number;
   keyRotationRecommended: boolean;
+  vaultFormatVersion: number;
+  legacyFormatMigrationRecommended: boolean;
 }
+
+/** On-disk vault header format versions below v3 lack authenticated multi-user headers. */
+export const LEGACY_VAULT_FORMAT_MAX_VERSION = 2;

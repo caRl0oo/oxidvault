@@ -43,6 +43,9 @@ Installiere Visual Studio Build Tools mit C++:
 
 Set-Location $root
 
+node (Join-Path $root "scripts\sync-architecture-version.mjs")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "Building Native-Messaging host (oxidvault-nmh.exe)..."
 cargo build --release --manifest-path (Join-Path $root "src-tauri\Cargo.toml") --bin oxidvault-nmh
 
