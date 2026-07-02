@@ -216,20 +216,22 @@ Detailansicht / Sidebar
 | **Nonce / IV** | 12 bytes, unique per encrypted blob (never reuse) |
 | **Nonce source** | `aes_gcm::aead::OsRng` — OS CSPRNG, fresh per `encrypt()` call |
 | **Auth tag** | 128 bit (standard GCM) |
-| **AAD** | Optional: vault ID + entry ID as additional authenticated metadata (planned) |
+| **AAD** | v4 multi-user: full plaintext header (magic → end of `users_json`) as AES-GCM AAD; v1–v3: empty AAD (legacy) |
 
 **Use cases:**
 
 - Vault file body (secret entries, notes, attachments)
 - Export bundles (optionally password-protected with separate ephemeral key)
 
-**Implementation status:** ✅ Implemented in `crates/vault-core/src/crypto.rs` (`encrypt` / `decrypt`).
+**Implementation status:** ✅ Implemented in `crates/vault-core/src/crypto.rs` (`encrypt` / `decrypt` / `encrypt_with_aad` / `decrypt_with_aad`).
 
 | Function | Return / behavior |
 |---|---|
-| `encrypt(key, plaintext)` | Fresh 12-byte nonce + ciphertext |
+| `encrypt(key, plaintext)` | Fresh 12-byte nonce + ciphertext (empty AAD — legacy v1–v3) |
+| `encrypt_with_aad(key, plaintext, aad)` | Same, with associated authenticated data |
 | `decrypt(key, nonce, ciphertext)` | **`Zeroizing<Vec<u8>>`** — plaintext heap overwritten on drop (K1) |
-| Wrong password | GCM auth error → `VaultError::InvalidPassword` (no distinction at API level) |
+| `decrypt_with_aad(key, nonce, ciphertext, aad)` | Same with AAD verification |
+| Wrong password / tampered ciphertext or AAD | GCM auth error → `VaultError::InvalidPassword` (no distinction — intentional, no decryption oracle) |
 
 **Consumer:** `format.rs` deserializes from `plaintext.as_ref()` and releases `Zeroizing<Vec<u8>>` at scope end.
 
@@ -816,7 +818,7 @@ ReachabilityDot — Sidebar + Detailansicht
 1. Password → derive user KEK → unwrap shared DEK → store `session_kek` in RAM.
 2. MFA (if active in `VaultUser` header): decrypt TOTP secret with KEK → verify code (TOTP account internally: `{vault_name}/{username}`; display label: `OxidVault:{vault}:{user}`).
 3. On MFA failure before commit: KEK/DEK are not persisted on `Vault`.
-4. Enable/disable MFA: TOTP secret KEK-encrypted in plaintext header (`persist_v3_header` — payload unchanged).
+4. Enable/disable MFA: TOTP secret KEK-encrypted in plaintext header; **v4 re-encrypts payload** (header bound via AAD).
 
 ---
 
@@ -1280,7 +1282,7 @@ ReachabilityDot — Sidebar + Detailansicht
 
 ### `.oxid` — OxidVault File Format
 
-> **Status:** ✅ Implemented in `crates/vault-core/src/format.rs` (version **1** legacy · version **2** enterprise with wrapped DEK · version **3** multi-user with shared DEK).
+> **Status:** ✅ Implemented in `crates/vault-core/src/format.rs` (version **1** legacy · version **2** enterprise with wrapped DEK · version **3** multi-user legacy · version **4** multi-user with header AAD).
 
 **Version 1 (Legacy):**
 
@@ -1314,24 +1316,26 @@ ReachabilityDot — Sidebar + Detailansicht
 └──────────────────────────────────────────────┘
 ```
 
-**Version 3 (Multi-User — shared DEK):**
+**Version 3 (Multi-User — shared DEK, legacy read-only):**
+
+Same header layout as v4 with `Format-Version = 3`. Payload encrypted **without** header AAD. On first persist, upgraded to v4.
+
+**Version 4 (Multi-User — header-bound payload):**
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  Header (Klartext)                               │
+│  Header (Klartext) — also AES-GCM AAD for body   │
 │  ─ Magic: "OXID" (4 Byte)                        │
-│  ─ Format-Version: u16 LE (= 3)                  │
+│  ─ Format-Version: u16 LE (= 4)                  │
 │  ─ Vault name: u16 LE length + UTF-8 bytes       │
 │  ─ key_created_at: u64 LE (Unix)                 │
 │  ─ key_rotated_at: u64 LE (0 = nie)              │
 │  ─ users_json_len: u32 LE                        │
 │  ─ users_json: UTF-8 JSON array of VaultUser[]   │
-│    (Klartext — nur wrapped DEK + Metadaten,      │
-│     keine nutzbaren Secrets ohne User-Passwort)  │
 ├──────────────────────────────────────────────────┤
 │  Payload-Nonce: 12 Byte                          │
 │  Payload-Ciphertext + GCM Tag                    │
-│  (verschlüsselt mit shared DEK — wie v2)          │
+│  (AES-256-GCM with AAD = exact header bytes above)│
 └──────────────────────────────────────────────────┘
 ```
 
@@ -1344,16 +1348,22 @@ ReachabilityDot — Sidebar + Detailansicht
 | `mfa_nonce` / `mfa_ciphertext` | Optional: TOTP secret, encrypted with user KEK |
 | `created_at` / `password_changed_at` | Unix timestamps |
 
-**v3 key model:** A random **shared DEK** (32 bytes) encrypts the payload. Each user derives a **KEK** from their own password and wraps the same DEK in their `VaultUser` entry. Password rotation for one user rewraps only that DEK entry — payload remains untouched.
+**v3/v4 key model:** A random **shared DEK** (32 bytes) encrypts the payload. Each user derives a **KEK** from their own password and wraps the same DEK in their `VaultUser` entry.
 
-**Migration:** `Vault::migrate_to_v3` converts v1/v2 vaults; existing master password becomes the first admin user (configurable username, default `admin`).
+**v4 integrity:** `serialize_header_v4()` produces identical bytes for write and read; any header mutation (user add/remove, role change, MFA, key timestamps, per-user password rewrap) requires **payload re-encryption** with a fresh nonce while the vault is unlocked (DEK in RAM).
+
+**v4 downgrade guard:** Encrypted payload JSON includes `"format_version": 4`. After decrypt, must match header version; payload `format_version` > header → `VaultError::FormatDowngrade`. Legacy v1–v3 payloads omit the field.
+
+**Migration:** `Vault::migrate_to_v3` (command name unchanged) writes **v4** directly. Reading v1–v3 remains supported; first persist of a v3 vault upgrades to v4. v1/v2 single-user vaults are unchanged until explicit migration.
+
+**Tampering UX:** GCM cannot distinguish wrong password from tampered header/payload — both return `VaultError::InvalidPassword` (no oracle). Downgrade attempts with mismatched inner `format_version` return `FormatDowngrade`.
 
 | Property | Value |
 |---|---|
 | **Extension** | `.oxid` |
 | **Magic bytes** | `0x4F 0x58 0x49 0x44` (`"OXID"`) |
 | **Versioning** | Header version for forward compatibility |
-| **Integrity** | GCM auth tag per body block |
+| **Integrity** | GCM auth tag per body block; v4 additionally binds header to payload via AAD |
 
 ---
 
@@ -1946,13 +1956,25 @@ Expected stdout response (hex-decoded): 4-byte length + `{"status":"pong"}`.
 
 ## 11. Audit Logging & Compliance (ISO 27001)
 
-> **Status:** ✅ Append-only compliance log · metadata-only · SHA-256 hash chain  
+> **Status:** ✅ Append-only compliance log · metadata-only · SHA-256 hash chain · HMAC checkpoints (v2+)  
 > **Module:** `crates/vault-core/src/audit.rs`  
 > **Password weakness dashboard:** still `crates/vault-core/src/security_audit.rs` (separate module)
 
 ### Goal
 
-Tamper-evident logging of security-relevant vault events for ISO 27001-compliant traceability — **without** plaintext secrets in the log.
+Logging of security-relevant vault events for ISO 27001-compliant traceability — **without** plaintext secrets in the log. Integrity is layered: a structural hash chain plus optional HMAC checkpoints when a vault session is unlocked.
+
+### Threat model (honest limitations)
+
+| Layer | What it detects | What it does **not** detect |
+|---|---|---|
+| **SHA-256 hash chain** | Casual line edits, deletions, reordering | A full log rewrite with a recomputed consistent chain |
+| **HMAC checkpoints (v2+)** | Full-rewrite forgery by anyone **without** the vault DEK-derived `audit_hmac_key` | Forgery by an attacker who already obtained the DEK (same trust boundary as vault data) |
+| **OS ACLs (`audit_secure`)** | Unauthorized read/write of `{vault}.audit.log` on disk | Compromise of an unlocked session or admin with file access + live DEK |
+
+**v1 exclusion:** Legacy v1 vaults have no separate DEK — checkpoints are **not** written. Compliance reports `auditChainAuthenticated: false` with status `audit_no_checkpoints`. Pre-upgrade logs without checkpoint lines behave the same until the next unlocked v2+ session appends checkpoints.
+
+**Checkpoint schedule:** immediately after unlock, on lock, and every 50 metadata events while unlocked. Events during locked state (e.g. `AuthFailed`) have no HMAC; the next unlock checkpoint covers them.
 
 ### Privacy Rules (Strict API)
 
@@ -1979,6 +2001,7 @@ Tamper-evident logging of security-relevant vault events for ISO 27001-compliant
 | `AuthFailed` | Failed unlock (wrong master password on `open`/`unlock`) | `-` |
 | `SyncEvent { status }` | `sync_vault_git` success/failure | `success` / `failed` |
 | `ConfigChanged { area }` | Git sync settings, MFA on/off | e.g. `git_sync`, `mfa_enabled`, `mfa_disabled` |
+| `Checkpoint` | Unlock, lock, every 50 events (v2+ unlocked) | `-` + `hmac=<hex>` (HMAC-SHA256 of `entry_hash`) |
 
 **Legacy (read old logs only):** `EntryCreated`, `EntryUpdated` — displayed in frontend as `SecretCreated` / `SecretModified`.
 
@@ -1988,7 +2011,7 @@ Tamper-evident logging of security-relevant vault events for ISO 27001-compliant
 |---|---|
 | **Traceability** | Who/when/what at vault level: unlock, secret lifecycle, sync, security-relevant settings |
 | **Privacy** | No plaintext credentials; secret events reference UUIDs only; sync/config details without paths or remote URLs |
-| **Integrity** | Append-only + SHA-256 hash chain unchanged |
+| **Integrity** | Append-only + SHA-256 hash chain; v2+ adds HMAC checkpoints keyed via `HKDF-SHA256(DEK, info="oxidvault-audit-v1")` |
 
 ### Storage Format
 
@@ -2027,7 +2050,7 @@ Each entry contains:
 1. **`prev_hash`** — SHA-256 of previous entry (genesis: 64× `0`)
 2. **`entry_hash`** — SHA-256 over record string `[TIMESTAMP] [ACTION] [ENTRY_ID] prev_hash=…`
 
-Tampering breaks the chain; verification via `verify_audit_chain(path)`.
+Tampering breaks the structural chain (`verify_audit_chain`); full-rewrite forgery is caught by `verify_audit_chain_keyed` when HMAC checkpoints exist and the DEK-derived key is available.
 
 ### Integration in `Vault`
 
@@ -2311,6 +2334,8 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.0.0 | **Multi-user phase 2:** Tauri commands (`create_vault_v3`, `unlock_vault_as_user`, `add`/`remove_vault_user`, `change_user_password`, `migrate_vault_to_v3`), auth flow v3, `UserManagementPanel`, `MigrateToV3Modal`, i18n |
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK retained after Git sync pull; user list read from new header; lock guard before reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 license signing:** HMAC-SHA256 → Ed25519 asymmetric; public key via build-time env var injection; private key never in repo; open source safe |
+| 2026-06-25 | 2.4.0 | **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints` |
+| 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
 | 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |
 | 2026-06-29 | 2.2.0 | **Auto-lock UI:** configurable timer (1/5/10/15/30 min/never); default 10 min; GPO-compatible |
@@ -2385,7 +2410,8 @@ For the following changes, this document **must** be updated in the same commit 
 |---|---|
 | **API** | `Vault::reencrypt_vault(new_password)` → internally `format::rotate_vault_key_container` |
 | **Principle** | Password → KEK (Argon2id) · random DEK encrypts payload · DEK in header (wrapped) |
-| **Rotation** | New salt + new KEK; DEK unchanged; **payload blob (nonce + ciphertext) copied 1:1** |
+| **Rotation** | New salt + new KEK; DEK unchanged; **payload blob copied 1:1** (v1/v2 only) |
+| **Format v4 multi-user** | Per-user password change (`change_own_password`) rewraps DEK in header **and** re-encrypts payload (header AAD binding) |
 | **Format v1** | Legacy: master key encrypts payload directly; first rotation migrates to v2 without payload re-encrypt |
 | **Format v2 header** | Additionally: `key_created_at`, `key_rotated_at`, `dek_nonce`, `dek_ciphertext` |
 | **Audit** | Mandatory event `AuditAction::VaultKeyRotated` |
@@ -2395,8 +2421,10 @@ For the following changes, this document **must** be updated in the same commit 
 ```
 Altes Passwort → KEK_alt → unwrap(DEK)
 Neues Passwort → KEK_neu → wrap(DEK) → neuer Header
-Payload-Block   → unverändert kopiert
+Payload-Block   → unverändert kopiert (nur v1/v2)
 ```
+
+**v4 note:** Multi-user vaults use per-user KEK wrapping in `users_json`. Header or user-entry changes always trigger full payload re-encryption with fresh nonce and header AAD.
 
 ### Compliance Dashboard (Frontend)
 
@@ -2406,7 +2434,7 @@ Payload-Block   → unverändert kopiert
 | **Placement** | Tab **Security** — above password audit `SecurityDashboard` |
 | **Command** | `get_compliance_status` → `ComplianceStatus` |
 | **Policy status** | "GPO managed?" — `admin_policy_active()` |
-| **Audit status** | "Hash chain valid?" — `verify_audit_chain({vault}.audit.log)` |
+| **Audit status** | Structural: `verify_audit_chain` · Authenticated (unlocked v2+): `verify_audit_chain_keyed` |
 | **Key age** | Days since `key_rotated_at` (fallback: `key_created_at`, v1: file mtime) |
 | **Hint** | When key age > **90 days**: primary button **Rotate password** → `RotationDialog`; toast + refetch after `reencrypt_vault` |
 | **Compliance badge** | "Compliance OK" (green) when audit chain valid and key age ≤ 90 days |
@@ -2418,6 +2446,8 @@ Payload-Block   → unverändert kopiert
 {
   "policyManagedByGpo": true,
   "auditChainValid": true,
+  "auditChainAuthenticated": true,
+  "auditAuthenticationStatus": "ok",
   "keyCreatedAt": "2025-03-01T00:00:00+00:00",
   "keyRotatedAt": null,
   "keyAgeDays": 112,

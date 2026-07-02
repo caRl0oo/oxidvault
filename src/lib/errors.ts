@@ -45,6 +45,7 @@ const DIAGNOSTIC_STATUS_CODES: ReadonlyArray<{ code: string; key: string }> = [
   { code: "audit_not_writable", key: "diagnostics.statusCodes.audit_not_writable" },
   { code: "audit_chain_invalid", key: "diagnostics.statusCodes.audit_chain_invalid" },
   { code: "audit_not_present", key: "diagnostics.statusCodes.audit_not_present" },
+  { code: "audit_no_checkpoints", key: "diagnostics.statusCodes.audit_no_checkpoints" },
 ];
 
 export function formatDiagnosticStatus(statusCode: string): string {

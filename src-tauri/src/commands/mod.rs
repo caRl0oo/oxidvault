@@ -67,7 +67,9 @@ pub(super) fn sync_vault_format_state(state: &AppState, vault: &vault_core::Vaul
 fn is_v3_vault_path(path: &str) -> Result<bool, String> {
     let meta = vault_core::format::read_vault_meta(std::path::Path::new(path))
         .map_err(|e| e.to_string())?;
-    Ok(meta.format_version == vault_core::format::FORMAT_VERSION_V3)
+    Ok(vault_core::format::is_multi_user_format(
+        meta.format_version,
+    ))
 }
 
 #[tauri::command]

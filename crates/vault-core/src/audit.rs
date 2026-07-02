@@ -12,11 +12,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::Utc;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+type HmacSha256 = Hmac<Sha256>;
+
+const AUDIT_HKDF_INFO: &[u8] = b"oxidvault-audit-v1";
+pub const AUDIT_CHECKPOINT_INTERVAL: u32 = 50;
 
 use crate::audit_secure;
+use crate::crypto::MasterKey;
 use crate::error::VaultError;
 use crate::vault_user::UserRole;
 
@@ -87,6 +95,8 @@ pub enum AuditAction {
     VaultMigratedToV3 {
         admin_username: String,
     },
+    /// HMAC-signed chain anchor (v2+ vaults, unlocked session only).
+    Checkpoint,
 }
 
 impl AuditAction {
@@ -115,6 +125,7 @@ impl AuditAction {
             Self::UserMfaEnabled { .. } => "UserMfaEnabled",
             Self::UserMfaDisabled { .. } => "UserMfaDisabled",
             Self::VaultMigratedToV3 { .. } => "VaultMigratedToV3",
+            Self::Checkpoint => "Checkpoint",
         }
     }
 
@@ -144,6 +155,7 @@ impl AuditAction {
             | Self::VaultMigratedToV3 {
                 admin_username: username,
             } => sanitize_detail_token(username),
+            Self::Checkpoint => "-".to_string(),
             Self::UserRoleChanged { username, new_role } => {
                 let role = match new_role {
                     UserRole::Member => "member",
@@ -201,6 +213,7 @@ impl AuditAction {
             "VaultMigratedToV3" => Self::VaultMigratedToV3 {
                 admin_username: entry_id.to_string(),
             },
+            "Checkpoint" => Self::Checkpoint,
             "UserRoleChanged" => {
                 let (username, role) = entry_id.split_once(':').unwrap_or((entry_id, "member"));
                 let new_role = if role == "admin" {
@@ -254,6 +267,24 @@ pub trait AuditLog {
 }
 
 const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+pub const AUDIT_NO_CHECKPOINTS: &str = "audit_no_checkpoints";
+
+/// Derives the per-vault audit HMAC key from the shared DEK (stable across user password rewraps).
+pub fn derive_audit_hmac_key(dek: &MasterKey) -> Zeroizing<[u8; 32]> {
+    use hkdf::Hkdf;
+
+    let hkdf = Hkdf::<Sha256>::new(None, dek.as_bytes());
+    let mut key = Zeroizing::new([0u8; 32]);
+    hkdf.expand(AUDIT_HKDF_INFO, key.as_mut())
+        .expect("HKDF expand to 32 bytes");
+    key
+}
+
+fn compute_checkpoint_hmac(hmac_key: &[u8; 32], entry_hash: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(hmac_key).expect("HMAC accepts 32-byte keys");
+    mac.update(entry_hash.as_bytes());
+    hex_encode(&mac.finalize().into_bytes())
+}
 
 /// Append-only, hash-chained audit logger bound to a vault file path.
 #[derive(Debug)]
@@ -307,6 +338,33 @@ impl AuditLogger {
         file.write_all(line.as_bytes())?;
         file.write_all(b"\n")?;
         file.flush()?;
+        Ok(())
+    }
+
+    /// Records an HMAC-signed checkpoint (v2+ unlocked sessions).
+    pub fn log_checkpoint(&self, hmac_key: &[u8]) -> Result<(), VaultError> {
+        if hmac_key.len() != 32 {
+            return Err(VaultError::Other("audit HMAC key must be 32 bytes".into()));
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(hmac_key);
+        if self.path.is_none() {
+            return Ok(());
+        }
+
+        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let mut last_hash = self
+            .last_hash
+            .lock()
+            .map_err(|_| VaultError::Other("audit logger lock poisoned".into()))?;
+
+        let record = Self::build_record(&timestamp, "Checkpoint", "-", &last_hash);
+        let entry_hash = Self::compute_hash(&record);
+        let hmac = compute_checkpoint_hmac(&key, &entry_hash);
+        let line = format!("{record} entry_hash={entry_hash} hmac={hmac}");
+
+        self.append_line(&line)?;
+        *last_hash = entry_hash;
         Ok(())
     }
 
@@ -472,9 +530,25 @@ fn read_last_entry_hash(path: &Path) -> Result<String, VaultError> {
 }
 
 fn parse_entry_hash(line: &str) -> Option<String> {
-    line.rsplit_once(" entry_hash=")
-        .map(|(_, hash)| hash.trim().to_string())
-        .filter(|hash| hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+    let tail = line.rsplit_once(" entry_hash=")?.1;
+    let hash = tail.split_whitespace().next()?;
+    (hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())).then(|| hash.to_string())
+}
+
+fn parse_checkpoint_hmac(line: &str) -> Option<String> {
+    let tail = line.rsplit_once(" hmac=")?.1;
+    let hmac = tail.trim();
+    (hmac.len() == 64 && hmac.chars().all(|c| c.is_ascii_hexdigit())).then(|| hmac.to_string())
+}
+
+/// Returns whether the audit log contains at least one [`Checkpoint`] line.
+pub fn audit_log_has_checkpoints(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    content
+        .lines()
+        .any(|line| line.contains("[Checkpoint]") && line.contains(" hmac="))
 }
 
 /// Verifies the hash chain of an audit log file (integrity check).
@@ -501,6 +575,39 @@ pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
         }
 
         prev_hash = entry_hash;
+    }
+
+    Ok(())
+}
+
+/// Verifies checkpoint HMACs in addition to the structural hash chain.
+///
+/// Returns `Err(VaultError::Other(AUDIT_NO_CHECKPOINTS))` when no checkpoint lines exist.
+pub fn verify_audit_chain_keyed(path: &Path, hmac_key: &[u8]) -> Result<(), VaultError> {
+    if hmac_key.len() != 32 {
+        return Err(VaultError::Other("audit HMAC key must be 32 bytes".into()));
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(hmac_key);
+    verify_audit_chain(path)?;
+
+    if !audit_log_has_checkpoints(path) {
+        return Err(VaultError::Other(AUDIT_NO_CHECKPOINTS.into()));
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    for line in content.lines().filter(|line| !line.trim().is_empty()) {
+        if !line.contains("[Checkpoint]") {
+            continue;
+        }
+        let entry_hash = parse_entry_hash(line)
+            .ok_or_else(|| VaultError::Other(format!("malformed checkpoint line: {line}")))?;
+        let hmac = parse_checkpoint_hmac(line)
+            .ok_or_else(|| VaultError::Other(format!("checkpoint missing hmac: {line}")))?;
+        let expected = compute_checkpoint_hmac(&key, &entry_hash);
+        if expected != hmac {
+            return Err(VaultError::AuditLogCorrupted);
+        }
     }
 
     Ok(())
@@ -639,5 +746,178 @@ mod tests {
             action,
             AuditAction::SecretCreated { id } if id.to_string() == "550e8400-e29b-41d4-a716-446655440000"
         ));
+    }
+
+    fn forged_log_without_hmac(path: &Path) -> String {
+        let content = std::fs::read_to_string(path).unwrap();
+        let mut prev_hash = GENESIS_HASH.to_string();
+        let mut forged = String::new();
+        for line in content.lines().filter(|line| !line.trim().is_empty()) {
+            let record = line
+                .rsplit_once(" entry_hash=")
+                .map(|(prefix, _)| prefix)
+                .unwrap();
+            let entry_hash = AuditLogger::compute_hash(record);
+            forged.push_str(&format!("{record} entry_hash={entry_hash}\n"));
+            prev_hash = entry_hash;
+        }
+        let _ = prev_hash;
+        forged
+    }
+
+    #[test]
+    fn forged_rewrite_passes_structural_fails_keyed() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("forge.oxid");
+        let mut vault = crate::vault::Vault::new();
+        vault
+            .create(&path, "ForgeVault", "correct-horse-battery-staple")
+            .unwrap();
+        vault
+            .record_audit(AuditAction::SecretCreated {
+                id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            })
+            .unwrap();
+
+        let log_path = audit_log_path(&path);
+        let key = vault
+            .audit_session_hmac_key()
+            .expect("audit key after create");
+        verify_audit_chain_keyed(&log_path, key).expect("keyed ok");
+
+        std::fs::write(&log_path, forged_log_without_hmac(&log_path)).unwrap();
+        verify_audit_chain(&log_path).expect("structural still valid");
+        let err = verify_audit_chain_keyed(&log_path, key).unwrap_err();
+        assert!(matches!(
+            err,
+            VaultError::Other(ref message) if message == AUDIT_NO_CHECKPOINTS
+        ));
+    }
+
+    #[test]
+    fn truncate_after_checkpoint_fails_keyed_verification() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("truncate.oxid");
+        let mut vault = crate::vault::Vault::new();
+        vault
+            .create(&path, "TruncateVault", "correct-horse-battery-staple")
+            .unwrap();
+        vault.record_audit(AuditAction::VaultOpened).unwrap();
+
+        let log_path = audit_log_path(&path);
+        let key = vault.audit_session_hmac_key().expect("key");
+        verify_audit_chain_keyed(&log_path, key).expect("initial ok");
+
+        let content = std::fs::read(&log_path).unwrap();
+        let truncate_at = content.len() / 2;
+        std::fs::write(&log_path, &content[..truncate_at]).unwrap();
+
+        assert!(verify_audit_chain(&log_path).is_err());
+        assert!(verify_audit_chain_keyed(&log_path, key).is_err());
+    }
+
+    #[test]
+    fn audit_chain_survives_key_rotation_export_path() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("rotate-export.oxid");
+        let mut vault = crate::vault::Vault::new();
+        vault
+            .create(&path, "ExportVault", "correct-horse-battery-staple")
+            .unwrap();
+        vault
+            .reencrypt_vault("correct-horse-battery-staple", "rotation-export-test-pw")
+            .unwrap();
+        let log_path = audit_log_path(&path);
+        verify_audit_chain(&log_path).expect("structural after rotation");
+        let key = vault.audit_session_hmac_key().expect("key");
+        verify_audit_chain_keyed(&log_path, key).expect("keyed after rotation");
+    }
+
+    #[test]
+    fn happy_path_many_entries_passes_both_verifiers() {
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("many.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let vault = crate::vault::Vault::create_v3(&path, "ManyVault", "admin", password).unwrap();
+
+        for i in 0..120 {
+            vault
+                .record_audit(AuditAction::SecretCreated {
+                    id: Uuid::parse_str(&format!("550e8400-e29b-41d4-a716-44665544{i:04x}"))
+                        .unwrap(),
+                })
+                .unwrap();
+        }
+
+        let log_path = audit_log_path(&path);
+        let key = vault.audit_session_hmac_key().expect("key");
+        verify_audit_chain(&log_path).expect("structural");
+        verify_audit_chain_keyed(&log_path, key).expect("keyed");
+        assert!(audit_log_has_checkpoints(&log_path));
+    }
+
+    #[test]
+    fn two_users_derive_identical_audit_hmac_key() {
+        use crate::crypto::MasterKey;
+        use crate::vault_user::{build_vault_user, unwrap_user_dek, UserRole};
+        use zeroize::Zeroizing;
+
+        let dek = MasterKey::generate_data_key();
+        let admin_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let member_password = Zeroizing::new("another-strong-password-1".to_string());
+        let admin =
+            build_vault_user("admin", admin_password.clone(), UserRole::Admin, &dek, None).unwrap();
+        let member = build_vault_user(
+            "member",
+            member_password.clone(),
+            UserRole::Member,
+            &dek,
+            None,
+        )
+        .unwrap();
+
+        let admin_kek =
+            crate::vault_user::derive_user_kek(&admin, admin_password.as_str()).unwrap();
+        let member_kek =
+            crate::vault_user::derive_user_kek(&member, member_password.as_str()).unwrap();
+        let admin_dek = unwrap_user_dek(&admin, &admin_kek).unwrap();
+        let member_dek = unwrap_user_dek(&member, &member_kek).unwrap();
+
+        let key_a = derive_audit_hmac_key(&admin_dek);
+        let key_b = derive_audit_hmac_key(&member_dek);
+        assert_eq!(key_a.as_ref(), key_b.as_ref());
+    }
+
+    #[test]
+    fn v1_vault_writes_no_checkpoints() {
+        use crate::compliance::compliance_status;
+        use crate::crypto::{random_salt, KdfParams, MasterKey};
+        use crate::format::{write_vault_file_v1, FORMAT_VERSION_V1};
+        use crate::vault::Vault;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("v1.oxid");
+        let salt = random_salt();
+        let kdf = KdfParams::default();
+        let key =
+            MasterKey::derive_from_password("correct-horse-battery-staple", &salt, kdf).unwrap();
+        write_vault_file_v1(&path, "V1Vault", kdf, &salt, &key, &[]).unwrap();
+
+        let mut vault = Vault::new();
+        vault
+            .open(&path, "correct-horse-battery-staple", None)
+            .unwrap();
+
+        let log_path = audit_log_path(&path);
+        assert!(!audit_log_has_checkpoints(&log_path));
+        assert!(vault.audit_session_hmac_key().is_none());
+
+        let status = compliance_status(&path, FORMAT_VERSION_V1, None, true).unwrap();
+        assert_eq!(
+            status.audit_authentication_status.as_deref(),
+            Some(AUDIT_NO_CHECKPOINTS)
+        );
     }
 }

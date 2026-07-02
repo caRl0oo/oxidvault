@@ -158,9 +158,9 @@ fn parse_prev_hash(record: &str) -> Option<String> {
 }
 
 fn parse_entry_hash(line: &str) -> Option<String> {
-    line.rsplit_once(" entry_hash=")
-        .map(|(_, hash)| hash.trim().to_string())
-        .filter(|hash| hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+    let tail = line.rsplit_once(" entry_hash=")?.1;
+    let hash = tail.split_whitespace().next()?;
+    (hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())).then(|| hash.to_string())
 }
 
 fn compute_report_hash(

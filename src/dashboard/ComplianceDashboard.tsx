@@ -28,7 +28,22 @@ function formatComplianceDate(iso: string | null, dash: string): string {
 }
 
 function isComplianceOk(status: ComplianceStatus): boolean {
-  return status.auditChainValid && !status.keyRotationRecommended;
+  const auditAuthenticated =
+    status.auditChainAuthenticated === null || status.auditChainAuthenticated;
+  return status.auditChainValid && auditAuthenticated && !status.keyRotationRecommended;
+}
+
+function auditAuthenticationLabel(
+  status: ComplianceStatus,
+  translate: (key: string) => string,
+): string {
+  if (status.auditChainAuthenticated === null) {
+    return translate("compliance.audit_auth_locked");
+  }
+  if (status.auditAuthenticationStatus === "audit_no_checkpoints") {
+    return translate("diagnostics.statusCodes.audit_no_checkpoints");
+  }
+  return status.auditChainAuthenticated ? translate("common.yes") : translate("common.no");
 }
 
 function keyAgeClass(recommended: boolean): string {
@@ -105,7 +120,7 @@ export function ComplianceDashboard() {
           {complianceOk ? t("compliance.compliance_ok") : t("compliance.action_required")}
         </div>
 
-        <div className="mb-6 grid grid-cols-3 gap-3">
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="vault-card flex flex-col gap-2">
             <span className="vault-field-label">{t("compliance.policy_status")}</span>
             <span className="text-sm text-vault-text">{t("compliance.gpo_managed")}</span>
@@ -121,6 +136,20 @@ export function ComplianceDashboard() {
             <span className="text-sm text-vault-text">{t("compliance.hash_chain_valid")}</span>
             <span className={`text-sm font-semibold ${statusClass(status.auditChainValid)}`}>
               {statusLabel(status.auditChainValid)}
+            </span>
+          </div>
+
+          <div className="vault-card flex flex-col gap-2">
+            <span className="vault-field-label">{t("compliance.audit_status")}</span>
+            <span className="text-sm text-vault-text">{t("compliance.audit_hmac_valid")}</span>
+            <span
+              className={`text-sm font-semibold ${
+                status.auditChainAuthenticated === null
+                  ? "text-vault-muted"
+                  : statusClass(status.auditChainAuthenticated)
+              }`}
+            >
+              {auditAuthenticationLabel(status, t)}
             </span>
           </div>
 

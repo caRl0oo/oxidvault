@@ -264,7 +264,8 @@
       "UserRoleChanged": "Benutzerrolle geändert",
       "UserMfaEnabled": "2FA für Benutzer aktiviert",
       "UserMfaDisabled": "2FA für Benutzer deaktiviert",
-      "VaultMigratedToV3": "Tresor auf Multi-User migriert"
+      "VaultMigratedToV3": "Tresor auf Multi-User migriert",
+      "Checkpoint": "Integritäts-Checkpoint (HMAC)"
     },
     "syncStatus": {
       "success": "Erfolgreich",
@@ -579,6 +580,8 @@
     "gpo_managed": "GPO verwaltet?",
     "audit_status": "Audit-Status",
     "hash_chain_valid": "Hash-Kette valide?",
+    "audit_hmac_valid": "HMAC-Checkpoints valide?",
+    "audit_auth_locked": "Vault entsperren, um HMAC-Checkpoints zu prüfen",
     "key_age": "Schlüssel-Alter",
     "last_rotated": "Zuletzt rotiert: {{date}}",
     "created": "Erstellt: {{date}}",
@@ -655,7 +658,8 @@
       "audit_no_vault": "Kein Vault — Audit-Log nicht prüfbar",
       "audit_not_writable": "Audit-Log nicht beschreibbar",
       "audit_chain_invalid": "Audit-Hash-Kette beschädigt",
-      "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)"
+      "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)",
+      "audit_no_checkpoints": "Keine HMAC-Checkpoints (Legacy v1 oder Log vor Upgrade)"
     }
   },
   "users": {

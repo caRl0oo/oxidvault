@@ -264,7 +264,8 @@
       "UserRoleChanged": "User role changed",
       "UserMfaEnabled": "2FA enabled for user",
       "UserMfaDisabled": "2FA disabled for user",
-      "VaultMigratedToV3": "Vault migrated to multi-user"
+      "VaultMigratedToV3": "Vault migrated to multi-user",
+      "Checkpoint": "Integrity checkpoint (HMAC)"
     },
     "syncStatus": {
       "success": "Successful",
@@ -579,6 +580,8 @@
     "gpo_managed": "Managed by GPO?",
     "audit_status": "Audit status",
     "hash_chain_valid": "Hash chain valid?",
+    "audit_hmac_valid": "HMAC checkpoints valid?",
+    "audit_auth_locked": "Unlock vault to verify HMAC checkpoints",
     "key_age": "Key age",
     "last_rotated": "Last rotated: {{date}}",
     "created": "Created: {{date}}",
@@ -655,7 +658,8 @@
       "audit_no_vault": "No vault — audit log cannot be checked",
       "audit_not_writable": "Audit log not writable",
       "audit_chain_invalid": "Audit hash chain corrupted",
-      "audit_not_present": "No audit log yet (directory writable)"
+      "audit_not_present": "No audit log yet (directory writable)",
+      "audit_no_checkpoints": "No HMAC checkpoints (legacy v1 or pre-upgrade log)"
     }
   },
   "users": {

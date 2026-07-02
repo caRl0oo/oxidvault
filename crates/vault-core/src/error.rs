@@ -29,6 +29,9 @@ pub enum VaultError {
     AuditLogCorrupted,
     #[error("invalid vault file")]
     InvalidFormat,
+    /// Payload `format_version` is newer than the on-disk header (downgrade tampering).
+    #[error("vault file format downgrade detected")]
+    FormatDowngrade,
     #[error("weak master password: {0}")]
     WeakPassword(String),
     #[error("io error: {0}")]
