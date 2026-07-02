@@ -33,6 +33,10 @@ pub fn app_data_dir() -> Option<PathBuf> {
 }
 
 fn session_path() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Ok(dir) = std::env::var("OXIDVAULT_TEST_SESSION_DIR") {
+        return Some(PathBuf::from(dir).join(SESSION_FILE));
+    }
     app_data_dir().map(|dir| dir.join(SESSION_FILE))
 }
 
@@ -60,4 +64,47 @@ pub fn remove_session() {
     if let Some(path) = session_path() {
         let _ = fs::remove_file(path);
     }
+}
+
+#[cfg(test)]
+pub fn session_file_path() -> Option<PathBuf> {
+    session_path()
+}
+
+#[cfg(test)]
+pub struct TestSessionEnv {
+    _guard: std::sync::MutexGuard<'static, ()>,
+    _dir: tempfile::TempDir,
+}
+
+#[cfg(test)]
+impl Drop for TestSessionEnv {
+    fn drop(&mut self) {
+        remove_session();
+        std::env::remove_var("OXIDVAULT_TEST_SESSION_DIR");
+    }
+}
+
+/// Isolated NM session directory for tests (empty — no session file until written).
+///
+/// Serializes via [`test_env_lock`] so parallel tests do not read the real
+/// `%APPDATA%/com.oxidvault.app/native_messaging_session.json`.
+#[cfg(test)]
+pub fn test_env() -> TestSessionEnv {
+    let guard = test_env_lock();
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::env::set_var("OXIDVAULT_TEST_SESSION_DIR", dir.path());
+    TestSessionEnv {
+        _guard: guard,
+        _dir: dir,
+    }
+}
+
+#[cfg(test)]
+pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::Mutex;
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+    ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

@@ -184,6 +184,7 @@ fn quit_from_tray(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         let _ = perform_lock(&state);
     }
+    crate::nm_bridge::revoke_bridge_session();
     // Bypass RunEvent::ExitRequested prevent_exit (hide-to-tray) — hard exit.
     std::process::exit(0);
 }

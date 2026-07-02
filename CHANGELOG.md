@@ -11,7 +11,7 @@ Release history for OxidVault. Architecture sync requirements remain in [ARCHITE
 - **Format v4:** `encrypt_with_aad` / `decrypt_with_aad`; header-bound payload integrity for multi-user vaults.
 - **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints`.
 - **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority.
-- **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit.
+- **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; session file persists while locked for `vault_status` / `request_unlock`; locked-action allowlist at bridge dispatch; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit.
 - **Windows clipboard exclusion:** `SetExtWindows` history/cloud hints on secret copy + clear (`clipboard.rs`).
 - **Backend zxcvbn:** master password entropy score ≥ 2 enforced in `policy/password.rs`; `WeakPasswordReason` for IPC/i18n; `migrate_to_v3` exempt (re-wrap).
 - **Documentation:** changelog in `CHANGELOG.md`; admin deployment guide in `docs/ADMIN_DEPLOYMENT.md`; architecture version sync script; compliance legacy-format migration hint.

@@ -4,7 +4,7 @@
 > This document is the central reference for the technical architecture of OxidVault.  
 > Whenever core features, Tauri Commands, file formats, or security-relevant changes are added, **ARCHITECTURE.md** must be updated in sync with the code.
 
-**Version:** 2.3.1
+**Version:** 2.4.0
 
 ---
 
@@ -585,7 +585,7 @@ OxidVault/
 │   ├── tauri-dev.ps1
 │   ├── tauri-build.ps1
 │   ├── generate-icons.mjs
-│   └── sync-architecture-version.mjs ← Sync **Version:** line from tauri.conf.json
+│   └── sync-version.mjs ← Sync app version from tauri.conf.json → ARCHITECTURE.md + README.md
 │
 ├── docs/
 │   ├── policy.json.example
@@ -1873,13 +1873,14 @@ Chrome and Firefox use the same framing for `type: "stdio"`:
 |---|---|
 | **Local attacker model** | Same-user malware can read the session file and call `get_login` on `127.0.0.1` while the vault is unlocked — ACLs, token rotation, rate limiting, and audit raise cost and leave traces; they do **not** eliminate this class |
 | **Session file ACL** | `native_messaging_session.json` — owner-only (`os_protect::OwnerOnly`; `chmod 0600` / single-user DACL) on every write |
-| **Token lifecycle** | New random token on each unlock; file deleted on lock and app exit |
+| **Token lifecycle** | Random token published when the bridge starts and on each unlock; **not** revoked on lock (pre-lock token remains valid for `vault_status` / `request_unlock` until next unlock); session file deleted on app exit only |
+| **Locked dispatch** | While vault locked: only `vault_status` and `request_unlock`; `get_login` and other secret actions return `{ "status": "locked", … }` |
 | **Rate limit** | Token bucket — max 10 `get_login` requests/minute per TCP peer → `{ "status": "error", "error": "rate_limited" }` |
 | **Audit** | `SecretAutofilled` (entry UUID only) on successful autofill; `BridgeThrottled` on rate-limit trips |
 | **Planned Phase 6** | Named pipe with peer verification (replace localhost TCP + shared token file) |
 
 - NM host process has **no** own vault — access only via GUI process with unlocked `AppState`.
-- Session file `%APPDATA%/com.oxidvault.app/native_messaging_session.json` contains port + token (127.0.0.1 only) **only while unlocked**.
+- Session file `%APPDATA%/com.oxidvault.app/native_messaging_session.json` contains port + token for the **lifetime of the GUI process** (127.0.0.1 only); deleted on app exit.
 - Passwords in Rust via `Zeroizing<String>` until JSON serialization; extension fills fields, does not persist.
 - Autofill hostname is taken from `sender.tab.url` in the service worker; vault lookup uses eTLD+1 matching (`psl`), not substring.
 - Credentials are filled only after a trusted user `focusin` on a detected login field — never on page load.

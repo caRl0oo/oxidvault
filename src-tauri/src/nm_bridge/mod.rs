@@ -19,3 +19,6 @@ pub use client::{
 pub use framing::{read_message, write_message};
 pub use protocol::BridgeResponse;
 pub use server::{publish_bridge_session, revoke_bridge_session, spawn_server};
+
+#[cfg(test)]
+pub use session::test_env;

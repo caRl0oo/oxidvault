@@ -38,7 +38,6 @@ pub fn perform_lock(state: &AppState) -> Result<VaultInfo, String> {
         return Ok(vault.info());
     }
     vault.lock();
-    crate::nm_bridge::revoke_bridge_session();
     Ok(vault.info())
 }
 

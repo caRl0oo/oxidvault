@@ -39,6 +39,9 @@ async fn run_server(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("bridge bind failed: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     bridge_token::init(port);
+    if let Err(err) = bridge_token::publish() {
+        eprintln!("native messaging bridge: failed to publish initial session: {err}");
+    }
 
     loop {
         let (mut stream, peer) = listener

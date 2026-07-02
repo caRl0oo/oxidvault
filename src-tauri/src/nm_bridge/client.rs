@@ -86,9 +86,36 @@ pub fn request_open_new_secret(password: &str) -> BridgeResponse {
     forward_bridge_request("open_new_secret", None, Some(password))
 }
 
+/// Actions allowed while the vault is locked (no secret-bearing IPC).
+pub(crate) fn is_locked_permitted_action(action: &str) -> bool {
+    matches!(action, "vault_status" | "request_unlock")
+}
+
+fn enforce_locked_action_policy(app: &tauri::AppHandle, action: &str) -> Option<BridgeResponse> {
+    if is_locked_permitted_action(action) {
+        return None;
+    }
+
+    let state = app.try_state::<crate::state::AppState>()?;
+    let vault = state.vault.lock().ok()?;
+    if !vault.info().locked {
+        return None;
+    }
+
+    let mfa_required = locked_mfa_required(app, &vault);
+    Some(BridgeResponse::locked(
+        mfa_required,
+        main_window_minimized(app),
+    ))
+}
+
 pub fn handle_bridge_request(app: &tauri::AppHandle, request: BridgeRequest) -> BridgeResponse {
     if !crate::nm_bridge::bridge_token::validate(&request.token) {
         return BridgeResponse::error("unauthorized");
+    }
+
+    if let Some(response) = enforce_locked_action_policy(app, &request.action) {
+        return response;
     }
 
     match request.action.as_str() {
@@ -266,6 +293,14 @@ fn handle_get_login(app: &tauri::AppHandle, url: Option<&str>) -> BridgeResponse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nm_bridge::framing::write_message;
+    use crate::nm_bridge::protocol::{BridgeRequest, BridgeResponse};
+    use crate::nm_bridge::session;
+    use std::io::Read;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
 
     #[test]
     fn locked_response_includes_mfa_required_flag() {
@@ -282,5 +317,71 @@ mod tests {
         assert_eq!(response.status, "mfa_failed");
         assert_eq!(response.success, Some(false));
         assert_eq!(response.mfa_required, Some(true));
+    }
+
+    #[test]
+    fn locked_action_allowlist_permits_status_and_unlock_only() {
+        assert!(is_locked_permitted_action("vault_status"));
+        assert!(is_locked_permitted_action("request_unlock"));
+        assert!(!is_locked_permitted_action("get_login"));
+        assert!(!is_locked_permitted_action("open_new_secret"));
+    }
+
+    #[test]
+    fn bridge_reachable_while_locked_vault_status_returns_locked_not_unavailable() {
+        with_mock_bridge_server(
+            "vault_status",
+            BridgeResponse::locked(false, false),
+            |port| {
+                let response = forward_bridge_request("vault_status", None, None);
+                assert_ne!(response.status, "unavailable");
+                assert_eq!(response.status, "locked");
+                let _ = port;
+            },
+        );
+    }
+
+    #[test]
+    fn get_login_while_locked_returns_locked_not_unavailable() {
+        with_mock_bridge_server("get_login", BridgeResponse::locked(false, false), |_port| {
+            let response = forward_bridge_request("get_login", Some("example.com"), None);
+            assert_ne!(response.status, "unavailable");
+            assert_eq!(response.status, "locked");
+            assert_eq!(response.locked, Some(true));
+        });
+    }
+
+    fn with_mock_bridge_server<F>(expected_action: &str, response: BridgeResponse, verify: F)
+    where
+        F: FnOnce(u16),
+    {
+        let _env = session::test_env();
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.set_nonblocking(true).expect("set_nonblocking");
+        let port = listener.local_addr().expect("addr").port();
+        session::write_session(port, "test-token").expect("write session");
+        let expected_action = expected_action.to_string();
+        let served = Arc::new(AtomicBool::new(false));
+        let served_flag = Arc::clone(&served);
+
+        let handle = thread::spawn(move || {
+            let _ = listener.set_nonblocking(false);
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut len_buf = [0u8; 4];
+            stream.read_exact(&mut len_buf).expect("read len");
+            let len = u32::from_le_bytes(len_buf) as usize;
+            let mut payload = vec![0u8; len];
+            stream.read_exact(&mut payload).expect("read payload");
+            let request: BridgeRequest = serde_json::from_slice(&payload).expect("request json");
+            assert_eq!(request.action, expected_action);
+            let response_bytes = serde_json::to_vec(&response).expect("response json");
+            write_message(&mut stream, &response_bytes).expect("write response");
+            served_flag.store(true, Ordering::SeqCst);
+        });
+
+        verify(port);
+        handle.join().expect("server thread");
+        assert!(served.load(Ordering::SeqCst));
     }
 }
