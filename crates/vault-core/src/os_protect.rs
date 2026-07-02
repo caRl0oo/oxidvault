@@ -24,7 +24,13 @@ pub fn secure_file(path: &Path, profile: FileProtectionProfile) -> Result<(), Va
     set_windows_dacl(path, profile)?;
 
     #[cfg(unix)]
-    set_unix_mode(path)?;
+    {
+        // Both protection profiles map to owner-only 0600 on Unix —
+        // the user-only vs. user+admins distinction is Windows-specific
+        // (DACL). Consume the param so -D warnings passes on unix targets.
+        let _ = profile;
+        set_unix_mode(path)?;
+    }
 
     #[cfg(not(any(windows, unix)))]
     {

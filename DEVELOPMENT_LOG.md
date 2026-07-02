@@ -39,6 +39,12 @@ _(Backlog — Ideen hier sammeln, priorisieren, dann in Issues/ARCHITECTURE übe
 - Mehrere gleichzeitige SSH-Sessions pro Vault-Eintrag (Tabs)
 - SSH-Known-Hosts-Pinning mit Vault-gespeicherten Fingerprints
 - Jump-Host / ProxyCommand für interne Netzwerke
+- **CI: add a `windows-latest` job** to the GitHub Actions workflow (`cargo clippy
+  --all-targets -- -D warnings` + `cargo test -p vault-core`). All Windows-specific
+  security code (`os_protect` DACLs, `audit_secure`, clipboard history exclusion) is
+  currently neither compiled nor linted nor tested in CI — the Linux runner only builds
+  the unix branches. Discovered via unused-variable clippy failure in `os_protect.rs`
+  that was invisible locally on Windows.
 
 ---
 
