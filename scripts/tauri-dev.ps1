@@ -43,7 +43,7 @@ Installiere Visual Studio Build Tools mit C++:
 
 Set-Location $root
 
-node (Join-Path $root "scripts\sync-architecture-version.mjs")
+node (Join-Path $root "scripts\sync-version.mjs")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Starte OxidVault (tauri dev)..."

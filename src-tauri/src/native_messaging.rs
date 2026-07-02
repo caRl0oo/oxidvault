@@ -162,6 +162,7 @@ fn serialize_response(message: OutgoingMessage) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nm_bridge::test_env;
     use std::io::Cursor;
 
     fn parse_json(bytes: &[u8]) -> serde_json::Value {
@@ -184,6 +185,7 @@ mod tests {
 
     #[test]
     fn get_login_without_desktop_app_returns_unavailable() {
+        let _env = test_env();
         let response = process_message(br#"{"action":"get_login","url":"example.com"}"#);
         let value = parse_json(&response);
         assert_eq!(
@@ -194,6 +196,7 @@ mod tests {
 
     #[test]
     fn vault_status_without_desktop_app_returns_unavailable() {
+        let _env = test_env();
         let response = process_message(br#"{"action":"vault_status"}"#);
         let value = parse_json(&response);
         assert_eq!(
@@ -204,6 +207,7 @@ mod tests {
 
     #[test]
     fn request_unlock_without_desktop_app_returns_unavailable() {
+        let _env = test_env();
         let response = process_message(br#"{"action":"request_unlock"}"#);
         let value = parse_json(&response);
         assert_eq!(
