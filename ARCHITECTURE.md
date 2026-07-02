@@ -1677,7 +1677,7 @@ See also [Browser Extension — Native Messaging (Phase 1–3)](#10-browser-exte
 
 > **Status:** ✅ Phase 1 — headless host, stdio protocol, dummy handler (`ping` → `pong`)  
 > **Status:** ✅ Phase 2 — Manifest V3 extension, `background.js`, registry script, E2E guide  
-> **Status:** ✅ Phase 3 — `content.js` autofill chameleon, `get_login` least privilege, localhost IPC to GUI  
+> **Status:** ✅ Phase 3 — `content.js` gesture-gated autofill, `get_login` least privilege, eTLD+1 anti-phishing, localhost IPC to GUI  
 > **Style:** RoboForm-like — browser extension communicates with desktop app via native messaging, not Tauri IPC.
 
 > **Production:** The extension is available on the [Chrome Web Store](https://chromewebstore.google.com/detail/oxidvault/belagnpfebgljfamjihdoinbcehingjd) (unlisted). Native messaging is registered automatically by the MSI installer.
@@ -1717,7 +1717,7 @@ flowchart LR
     subgraph Browser["Browser (Chrome / Edge)"]
         CS[content.js]
         BG[background.js]
-        CS -->|"hostname"| BG
+        CS -->|"GET_LOGIN (gesture)"| BG
     end
 
     subgraph Host["oxidvault-nmh.exe"]
@@ -1744,11 +1744,11 @@ flowchart LR
 | **Public API** | `src-tauri/src/lib.rs` | `run_native_messaging()` |
 | **Protocol loop** | `src-tauri/src/native_messaging.rs` | Read/write, JSON dispatch (`ping`, `get_login`) |
 | **IPC bridge (GUI)** | `src-tauri/src/nm_bridge/` | localhost TCP, session token, vault access |
-| **URL matching** | `crates/vault-core/src/url_match.rs` | Host/substring score for web logins |
+| **URL matching** | `crates/vault-core/src/url_match.rs` | eTLD+1 host match via `psl` (exact > subdomain); no substring |
 | **Extension (MV3)** | `browser-extension/manifest.json` | `nativeMessaging`, service worker, `content_scripts` |
 | `background.js` | `connectNative`, `get_login` / `vault_status` / `request_unlock` |
 | **Popup** | `browser-extension/popup.html` | Vault status, MFA hint (no secret input) |
-| **Content script** | `browser-extension/content.js` | Login form detection, autofill, unlock polling (no in-page banner) |
+| **Content script** | `browser-extension/content.js` | Login form detection; autofill only after trusted `focusin` (no page-load fill) |
 | **Host manifest** | `browser-extension/host/com.oxidvault.app.json` | Browser registration (path + `allowed_origins`) |
 | **Registry script** | `scripts/register_native_host.ps1` | Writes host manifest + HKCU Chrome/Edge *(dev/debug only — MSI handles production)* |
 
@@ -1782,11 +1782,21 @@ Chrome and Firefox use the same framing for `type: "stdio"`:
 
 **Flow:**
 
-1. **`content.js`** (matches `<all_urls>`): detects `input[type=password]`, reads `window.location.hostname`, sends `{ type: "GET_LOGIN", hostname }` to service worker.
-2. **`background.js`**: forwards `{ "action": "get_login", "url": "<hostname>" }` via native messaging to `oxidvault-nmh.exe`.
+1. **`content.js`** (matches `<all_urls>`): detects `input[type=password]` / username fields; on **trusted** `focusin` on a detected field sends `{ type: "GET_LOGIN" }` to the service worker (no autofill on page load).
+2. **`background.js`**: reads the hostname from `sender.tab.url` (not from content script), forwards `{ "action": "get_login", "url": "<hostname>" }` via native messaging to `oxidvault-nmh.exe`.
 3. **`native_messaging.rs`**: forwards request via localhost IPC to running GUI (`nm_bridge/server.rs`) — **only** when OxidVault desktop is active.
-4. **`Vault::find_web_login_for_hostname`**: searches unlocked web logins (`url_match.rs`: exact host > subdomain > substring), extracts password via `extract_secret` (`Zeroizing`).
-5. Response back to extension; **`content.js`** fills user/password fields only on `{ "status": "ok" }`.
+4. **`Vault::find_web_login_for_hostname`**: searches unlocked web logins (`url_match.rs`: exact host > subdomain via eTLD+1), extracts password via `extract_secret` (`Zeroizing`).
+5. Response back to extension; **`content.js`** fills user/password fields only on `{ "status": "ok" }` (one fill per navigation; re-arms on SPA URL change).
+
+### Anti-Phishing (extension autofill)
+
+| Control | Implementation |
+|---|---|
+| **eTLD+1 matching** | `psl` crate — page host must equal entry host or be a subdomain of the entry's registrable domain (`login.github.com` → entry `github.com`; `evilgithub.com` / `github.com.evil.example` → no match) |
+| **No-eTLD strict fallback** | IPs, `localhost`, single-label intranet hosts (`nas`) — exact host equality only |
+| **Punycode normalization** | Entry host via `url::Url`; page hostname compared lowercase + punycode (`xn--…`) |
+| **User gesture** | `content.js` requests credentials only after `focusin` with `event.isTrusted === true` on detected login fields |
+| **Sender-tab hostname** | `background.js` derives hostname from `sender.tab.url`; content script cannot override lookup domain |
 
 **`get_login` responses:**
 
@@ -1834,11 +1844,13 @@ Chrome and Firefox use the same framing for `type: "stdio"`:
 .\scripts\build-wasm.ps1
 ```
 
-**Security (unchanged + MFA):**
+**Security (unchanged + MFA + anti-phishing):**
 
 - NM host process has **no** own vault — access only via GUI process with unlocked `AppState`.
 - Session file `%APPDATA%/com.oxidvault.app/native_messaging_session.json` contains port + token (127.0.0.1 only).
 - Passwords in Rust via `Zeroizing<String>` until JSON serialization; extension fills fields, does not persist.
+- Autofill hostname is taken from `sender.tab.url` in the service worker; vault lookup uses eTLD+1 matching (`psl`), not substring.
+- Credentials are filled only after a trusted user `focusin` on a detected login field — never on page load.
 
 ### Host Manifest
 
@@ -2335,6 +2347,7 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.0.0 | **Fix reload_from_disk v3:** DEK retained after Git sync pull; user list read from new header; lock guard before reload |
 | 2026-06-25 | 2.0.0 | **Ed25519 license signing:** HMAC-SHA256 → Ed25519 asymmetric; public key via build-time env var injection; private key never in repo; open source safe |
 | 2026-06-25 | 2.4.0 | **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints` |
+| 2026-06-25 | 2.4.0 | **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority; extension `0.5.0` |
 | 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
 | 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |

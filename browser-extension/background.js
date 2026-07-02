@@ -119,10 +119,29 @@ async function handleOpenNewSecret(password, sendResponse) {
   }
 }
 
-chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
-  if (message?.type === "GET_LOGIN" && message?.hostname) {
-    console.log(LOG_PREFIX + " get_login for", message.hostname);
-    void handleGetLogin(message.hostname, sendResponse);
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  if (message?.type === "GET_LOGIN") {
+    const tabUrl = sender?.tab?.url;
+    if (!tabUrl) {
+      sendResponse({ status: "error", error: "missing sender tab" });
+      return true;
+    }
+
+    let hostname;
+    try {
+      hostname = new URL(tabUrl).hostname;
+    } catch {
+      sendResponse({ status: "error", error: "invalid tab url" });
+      return true;
+    }
+
+    if (!hostname) {
+      sendResponse({ status: "error", error: "empty hostname" });
+      return true;
+    }
+
+    console.log(LOG_PREFIX + " get_login for", hostname);
+    void handleGetLogin(hostname, sendResponse);
     return true;
   }
 

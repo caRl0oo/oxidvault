@@ -1,6 +1,6 @@
 /**
  * OxidVault Browser Extension — Phase 3 + MFA bridge
- * Detects login forms and requests credentials for the current hostname only.
+ * Detects login forms and requests credentials only after a trusted user gesture.
  * Never requests or stores MFA codes — unlock happens in the desktop app.
  */
 
@@ -16,6 +16,8 @@ let cachedCredentials = null;
 let usernameFillAttempted = false;
 let passwordFillAttempted = false;
 let getLoginInFlight = false;
+let filledThisNavigation = false;
+let currentNavigationKey = navigationKey();
 let unlockPollTimer = null;
 
 const USERNAME_SELECTORS = [
@@ -28,6 +30,41 @@ const USERNAME_SELECTORS = [
   'input[id*="email" i]',
   'input[type="text"]',
 ];
+
+function navigationKey() {
+  return globalThis.location.href;
+}
+
+function resetAutofillSession() {
+  filledThisNavigation = false;
+  usernameFillAttempted = false;
+  passwordFillAttempted = false;
+  getLoginInFlight = false;
+  cachedCredentials = null;
+}
+
+function onNavigationChange() {
+  const key = navigationKey();
+  if (key === currentNavigationKey) {
+    return;
+  }
+  currentNavigationKey = key;
+  resetAutofillSession();
+}
+
+function installNavigationHooks() {
+  globalThis.addEventListener("popstate", onNavigationChange);
+
+  const wrapHistory = (original) =>
+    function (...args) {
+      const result = original.apply(this, args);
+      onNavigationChange();
+      return result;
+    };
+
+  history.pushState = wrapHistory(history.pushState);
+  history.replaceState = wrapHistory(history.replaceState);
+}
 
 function pendingStorageKey(hostname) {
   return `${PENDING_STORAGE_PREFIX}${hostname}`;
@@ -168,11 +205,6 @@ function detectLoginFields() {
   return { passwordInput, usernameInput };
 }
 
-function hasActionableLoginField() {
-  const { passwordInput, usernameInput } = detectLoginFields();
-  return Boolean(passwordInput || usernameInput);
-}
-
 function dispatchInputEvents(element) {
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -278,6 +310,7 @@ function fillCredentials(username, password) {
     });
   }
 
+  filledThisNavigation = true;
   console.log(`${LOG_PREFIX} AutoFill applied for ${hostname}`);
   return true;
 }
@@ -293,6 +326,10 @@ function credentialsForFill(response) {
 }
 
 function shouldRequestLogin() {
+  if (filledThisNavigation) {
+    return false;
+  }
+
   const { passwordInput, usernameInput } = detectLoginFields();
 
   if (passwordInput && !passwordFillAttempted) {
@@ -349,7 +386,7 @@ function handleLockedResponse(response) {
 }
 
 function requestAutofill() {
-  if (getLoginInFlight || !shouldRequestLogin()) {
+  if (filledThisNavigation || getLoginInFlight || !shouldRequestLogin()) {
     return;
   }
 
@@ -364,7 +401,7 @@ function requestAutofill() {
 
   getLoginInFlight = true;
 
-  chrome.runtime.sendMessage({ type: "GET_LOGIN", hostname }, (response) => {
+  chrome.runtime.sendMessage({ type: "GET_LOGIN" }, (response) => {
     getLoginInFlight = false;
 
     if (chrome.runtime.lastError) {
@@ -401,25 +438,27 @@ function requestAutofill() {
   });
 }
 
-function scanForLoginForm() {
-  if (hasActionableLoginField()) {
-    requestAutofill();
+function onLoginFieldFocusIn(event) {
+  if (!event.isTrusted) {
+    return;
   }
+
+  const { passwordInput, usernameInput } = detectLoginFields();
+  if (event.target !== passwordInput && event.target !== usernameInput) {
+    return;
+  }
+
+  requestAutofill();
 }
 
 function startLoginFieldWatcher() {
-  scanForLoginForm();
+  document.addEventListener("focusin", onLoginFieldFocusIn, true);
 
   const deadline = Date.now() + OBSERVER_TIMEOUT_MS;
 
   const observer = new MutationObserver(() => {
     if (Date.now() > deadline) {
       observer.disconnect();
-      return;
-    }
-
-    if (hasActionableLoginField()) {
-      requestAutofill();
     }
   });
 
@@ -433,4 +472,5 @@ function startLoginFieldWatcher() {
   globalThis.setTimeout(() => observer.disconnect(), OBSERVER_TIMEOUT_MS);
 }
 
+installNavigationHooks();
 startLoginFieldWatcher();
