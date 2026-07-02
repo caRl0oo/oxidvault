@@ -33,5 +33,9 @@ ignore = [
     "RUSTSEC-2026-0008",
     "RUSTSEC-2026-0183",
     "RUSTSEC-2026-0184",
-    # crypto-bigint yanked — transitive, resolved by dependency updates
+    # quick-xml DoS (RUSTSEC-2026-0194/0195) — transitive via
+    # tauri-utils 2.9.3 (plist/bundler config parsing). No untrusted
+    # XML parsed at runtime. Remove when Tauri ships quick-xml >=0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
