@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use crate::audit::{AuditAction, AuditLogger};
+use crate::audit::{derive_audit_hmac_key, AuditAction, AuditLogger, AUDIT_CHECKPOINT_INTERVAL};
 use crate::auth::{self, AuthError};
 use crate::crypto::{self, KdfParams, MasterKey};
 use crate::entry::{
@@ -22,8 +24,9 @@ use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
 use crate::vault_user::{
-    build_vault_user, derive_user_kek, rewrap_user_dek, to_public, unwrap_user_dek,
-    user_mfa_enabled, validate_username, UnlockedUser, UserRole, VaultUser, VaultUserPublic,
+    build_vault_user, build_vault_user_from_existing_credential, derive_user_kek, rewrap_user_dek,
+    to_public, unwrap_user_dek, user_mfa_enabled, validate_username, UnlockedUser, UserRole,
+    VaultUser, VaultUserPublic,
 };
 
 /// `(host, username, private_key, passphrase, known_host_fingerprint)`
@@ -61,6 +64,9 @@ pub struct Vault {
     current_user: Option<UnlockedUser>,
     /// v3 only: current user's KEK for MFA operations; zeroed on lock.
     session_kek: Option<Zeroizing<[u8; 32]>>,
+    /// v2+ only: HKDF-derived audit HMAC key; cleared on lock.
+    audit_hmac_key: Option<Zeroizing<[u8; 32]>>,
+    audit_events_since_checkpoint: Mutex<u32>,
 }
 
 enum UnlockAuditAction {
@@ -96,6 +102,8 @@ impl Vault {
             users: Vec::new(),
             current_user: None,
             session_kek: None,
+            audit_hmac_key: None,
+            audit_events_since_checkpoint: Mutex::new(0),
         }
     }
 
@@ -132,7 +140,39 @@ impl Vault {
     }
 
     fn audit(&self, action: AuditAction) -> Result<(), VaultError> {
-        self.audit_logger.log(action)
+        self.audit_logger.log(action)?;
+        if let Some(key) = self.audit_hmac_key.as_ref() {
+            let should_checkpoint = {
+                let mut count = self
+                    .audit_events_since_checkpoint
+                    .lock()
+                    .map_err(|_| VaultError::Other("audit counter lock poisoned".into()))?;
+                *count += 1;
+                *count >= AUDIT_CHECKPOINT_INTERVAL
+            };
+            if should_checkpoint {
+                self.audit_logger.log_checkpoint(&key[..])?;
+                if let Ok(mut count) = self.audit_events_since_checkpoint.lock() {
+                    *count = 0;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn establish_audit_session(&mut self) -> Result<(), VaultError> {
+        if self.format_version == format::FORMAT_VERSION_V1 {
+            self.audit_hmac_key = None;
+            return Ok(());
+        }
+        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
+        self.audit_hmac_key = Some(derive_audit_hmac_key(dek));
+        if let Ok(mut count) = self.audit_events_since_checkpoint.lock() {
+            *count = 0;
+        }
+        let key = self.audit_hmac_key.as_ref().expect("audit key");
+        self.audit_logger.log_checkpoint(&key[..])?;
+        Ok(())
     }
 
     /// Records a compliance audit event (metadata-only — no secret payloads).
@@ -211,6 +251,7 @@ impl Vault {
         self.locked = false;
         self.bind_audit_logger(&path)?;
         self.audit(AuditAction::VaultCreated)?;
+        self.establish_audit_session()?;
         Ok(())
     }
 
@@ -297,6 +338,9 @@ impl Vault {
     pub fn lock(&mut self) {
         if !self.locked {
             let _ = self.audit(AuditAction::VaultLocked);
+            if let Some(key) = self.audit_hmac_key.as_ref() {
+                let _ = self.audit_logger.log_checkpoint(&key[..]);
+            }
         }
         self.cached_entry_count = self.entries.len();
         for entry in &mut self.entries {
@@ -306,6 +350,10 @@ impl Vault {
         self.kek = None;
         self.current_user = None;
         self.session_kek = None;
+        self.audit_hmac_key = None;
+        if let Ok(mut count) = self.audit_events_since_checkpoint.lock() {
+            *count = 0;
+        }
         self.entries.clear();
         self.pending_mfa_secret = None;
         self.locked = true;
@@ -336,7 +384,7 @@ impl Vault {
         self.entries.clear();
         self.mfa = None;
         self.pending_mfa_secret = None;
-        if meta.format_version == format::FORMAT_VERSION_V3 {
+        if format::is_multi_user_format(meta.format_version) {
             self.users = meta.users.unwrap_or_default();
             self.salt = None;
         } else {
@@ -466,11 +514,11 @@ impl Vault {
 
     /// Finds the best-matching web-login for a page hostname (least-privilege: one entry).
     ///
-    /// Returns `(username, password)` only when the vault is unlocked and a match exists.
+    /// Returns `(entry_id, username, password)` only when the vault is unlocked and a match exists.
     pub fn find_web_login_for_hostname(
         &self,
         page_hostname: &str,
-    ) -> Result<Option<(String, Zeroizing<String>)>, VaultError> {
+    ) -> Result<Option<(Uuid, String, Zeroizing<String>)>, VaultError> {
         use crate::url_match::{score_web_login_url_match, UrlMatchScore};
 
         self.ensure_unlocked()?;
@@ -501,7 +549,8 @@ impl Vault {
         };
 
         let password = self.extract_secret(&entry.id, SecretField::Password)?;
-        Ok(Some((username.clone(), password)))
+        let entry_id = Uuid::parse_str(&entry.id).map_err(|_| VaultError::InvalidFormat)?;
+        Ok(Some((entry_id, username.clone(), password)))
     }
 
     pub fn probe_target_for_entry(&self, id: &str) -> Option<ProbeTarget> {
@@ -664,7 +713,20 @@ impl Vault {
 
     pub fn compliance_status(&self) -> Result<crate::compliance::ComplianceStatus, VaultError> {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
-        crate::compliance::compliance_status(path)
+        let checkpoints_applicable = !self.locked;
+        let audit_key = if self.locked {
+            None
+        } else {
+            self.audit_hmac_key
+                .as_ref()
+                .map(|key| key.as_ref() as &[u8])
+        };
+        crate::compliance::compliance_status(
+            path,
+            self.format_version,
+            audit_key,
+            checkpoints_applicable,
+        )
     }
 
     /// Re-reads the vault file from disk after an external change (e.g. Git pull).
@@ -674,13 +736,18 @@ impl Vault {
             return self.attach_locked(path);
         }
 
-        if self.format_version == format::FORMAT_VERSION_V3 {
+        if format::is_multi_user_format(self.format_version) {
             let current_user = self.current_user.as_ref().ok_or(VaultError::Locked)?;
             let dek = MasterKey::from_bytes(current_user.dek);
 
-            let (updated_users, payload_nonce, payload_ciphertext) =
-                format::read_v3_vault_file(&path)?;
-            let payload = format::decrypt_v3_payload(&dek, &payload_nonce, &payload_ciphertext)?;
+            let file = format::read_multi_user_vault_file(&path)?;
+            let payload = format::decrypt_multi_user_payload(
+                &dek,
+                &file.payload_nonce,
+                &file.payload_ciphertext,
+                file.format_version,
+                &file.header_aad,
+            )?;
 
             let meta = format::read_vault_meta(&path)?;
             let key_created_at = effective_key_created_at(&meta, &path);
@@ -689,7 +756,8 @@ impl Vault {
             self.name = meta.name;
             self.key_created_at = Some(key_created_at);
             self.key_rotated_at = key_rotated_at;
-            self.users = updated_users;
+            self.users = file.users;
+            self.format_version = meta.format_version;
             self.apply_payload(payload);
             self.cached_entry_count = self.entries.len();
             return Ok(());
@@ -816,6 +884,7 @@ impl Vault {
                 self.audit(AuditAction::VaultUnlocked { lock_id })?
             }
         }
+        self.establish_audit_session()?;
         Ok(())
     }
 
@@ -824,7 +893,7 @@ impl Vault {
     }
 
     pub fn is_multi_user_vault(&self) -> bool {
-        self.format_version == format::FORMAT_VERSION_V3
+        format::is_multi_user_format(self.format_version)
     }
 
     /// Returns true when the loaded vault uses format v3 (multi-user).
@@ -853,15 +922,13 @@ impl Vault {
         Ok(MasterKey::from_bytes(**bytes))
     }
 
-    fn persist_v3_header(&self) -> Result<(), VaultError> {
-        let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
-        format::update_v3_vault_header_only(
-            path,
-            &self.name,
-            &self.users,
-            self.key_created_at.unwrap_or(0),
-            self.key_rotated_at.unwrap_or(0),
-        )
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn audit_session_hmac_key(&self) -> Option<&[u8; 32]> {
+        self.audit_hmac_key.as_deref()
+    }
+
+    fn persist_v3_header(&mut self) -> Result<(), VaultError> {
+        self.persist()
     }
 
     pub fn get_current_user_public(&self) -> Option<VaultUserPublic> {
@@ -896,12 +963,12 @@ impl Vault {
         }
     }
 
-    fn persist(&self) -> Result<(), VaultError> {
+    fn persist(&mut self) -> Result<(), VaultError> {
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
 
-        if self.format_version == format::FORMAT_VERSION_V3 {
-            return format::update_v3_vault_file(
+        if format::is_multi_user_format(self.format_version) {
+            format::update_v3_vault_file(
                 path,
                 &self.name,
                 &self.users,
@@ -909,7 +976,9 @@ impl Vault {
                 &self.entries,
                 self.key_created_at.unwrap_or(0),
                 self.key_rotated_at.unwrap_or(0),
-            );
+            )?;
+            self.format_version = format::FORMAT_VERSION_V4;
+            return Ok(());
         }
 
         let salt = self.salt.ok_or(VaultError::NotInitialized)?;
@@ -959,7 +1028,7 @@ impl Vault {
         let mut vault = Self::new();
         vault.path = Some(path.clone());
         vault.name = vault_name.to_string();
-        vault.format_version = format::FORMAT_VERSION_V3;
+        vault.format_version = format::FORMAT_VERSION_V4;
         vault.key_created_at = Some(key_created_at);
         vault.key_rotated_at = None;
         vault.users = users;
@@ -973,17 +1042,16 @@ impl Vault {
         vault.locked = false;
         vault.bind_audit_logger(&path)?;
         vault.audit(AuditAction::VaultCreated)?;
+        vault.establish_audit_session()?;
         Ok(vault)
     }
-
-    /// Unlocks a v3 vault as a specific user.
     pub fn unlock_as_user(
         &mut self,
         username: &str,
         password: Zeroizing<String>,
         mfa_code: Option<&str>,
     ) -> Result<UnlockStep, VaultError> {
-        if self.format_version != format::FORMAT_VERSION_V3 {
+        if !format::is_multi_user_format(self.format_version) {
             return Err(VaultError::Other("vault is not multi-user format".into()));
         }
 
@@ -1022,8 +1090,14 @@ impl Vault {
             }
         }
 
-        let (_, payload_nonce, payload_ciphertext) = format::read_v3_vault_file(&path)?;
-        let payload = format::decrypt_v3_payload(&dek, &payload_nonce, &payload_ciphertext)?;
+        let file = format::read_multi_user_vault_file(&path)?;
+        let payload = format::decrypt_multi_user_payload(
+            &dek,
+            &file.payload_nonce,
+            &file.payload_ciphertext,
+            file.format_version,
+            &file.header_aad,
+        )?;
 
         self.master_key = Some(dek);
         self.store_session_kek(&kek);
@@ -1034,14 +1108,14 @@ impl Vault {
         });
         self.apply_payload(payload);
         self.cached_entry_count = self.entries.len();
+        self.format_version = file.format_version;
         self.locked = false;
         self.audit(AuditAction::VaultUnlocked {
             lock_id: lock_meta.lock_id(),
         })?;
+        self.establish_audit_session()?;
         Ok(UnlockStep::Complete)
     }
-
-    /// Adds a new user (requires current user to be Admin).
     pub fn add_user(
         &mut self,
         new_username: &str,
@@ -1112,7 +1186,7 @@ impl Vault {
         new_password: Zeroizing<String>,
     ) -> Result<(), VaultError> {
         self.ensure_unlocked()?;
-        if self.format_version != format::FORMAT_VERSION_V3 {
+        if !format::is_multi_user_format(self.format_version) {
             return Err(VaultError::Other("vault is not multi-user format".into()));
         }
 
@@ -1254,7 +1328,7 @@ impl Vault {
         current_password: Zeroizing<String>,
         admin_username: &str,
     ) -> Result<(), VaultError> {
-        if self.format_version == format::FORMAT_VERSION_V3 {
+        if format::is_multi_user_format(self.format_version) {
             return Err(VaultError::Other(
                 "vault is already multi-user format".into(),
             ));
@@ -1276,7 +1350,7 @@ impl Vault {
         crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
 
         let new_dek = MasterKey::generate_data_key();
-        let mut admin_user = build_vault_user(
+        let mut admin_user = build_vault_user_from_existing_credential(
             &admin_username,
             current_password.clone(),
             UserRole::Admin,
@@ -1319,7 +1393,7 @@ impl Vault {
             role: UserRole::Admin,
             dek: *self.master_key.as_ref().expect("dek").as_bytes(),
         });
-        self.format_version = format::FORMAT_VERSION_V3;
+        self.format_version = format::FORMAT_VERSION_V4;
         self.salt = None;
         self.kek = None;
         self.mfa = None;
@@ -1726,8 +1800,8 @@ mod tests {
             .find_web_login_for_hostname("example.com")
             .unwrap()
             .expect("match");
-        assert_eq!(found.0, "alice");
-        assert_eq!(found.1.as_str(), "s3cret");
+        assert_eq!(found.1, "alice");
+        assert_eq!(found.2.as_str(), "s3cret");
 
         assert!(vault
             .find_web_login_for_hostname("unknown.example.org")
@@ -2006,7 +2080,49 @@ mod tests {
             .unlock_as_user("admin", admin_password, None)
             .expect("unlock");
         assert_eq!(session.list_users().len(), 2);
-        assert_eq!(session.format_version, format::FORMAT_VERSION_V3);
+        assert_eq!(session.format_version, format::FORMAT_VERSION_V4);
+    }
+
+    #[test]
+    fn migrate_v2_to_v3_accepts_legacy_weak_password() {
+        use crate::crypto::{random_salt, KdfParams, MasterKey};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("weak-legacy.oxid");
+        let password = Zeroizing::new("aaaaaaaaaaaa".to_string());
+
+        let salt = random_salt();
+        let kdf = KdfParams::default();
+        let kek = MasterKey::derive_from_password(password.as_str(), &salt, kdf).unwrap();
+        let dek = MasterKey::generate_data_key();
+        format::write_vault_file(
+            &path,
+            "WeakLegacy",
+            kdf,
+            &salt,
+            &kek,
+            &dek,
+            crate::compliance::unix_timestamp_secs(),
+            0,
+            &[],
+        )
+        .unwrap();
+
+        let mut vault = Vault::new();
+        open_vault(&mut vault, &path, password.as_str(), None);
+        vault
+            .migrate_to_v3(password.clone(), "admin")
+            .expect("migrate weak legacy password");
+
+        vault.close().unwrap();
+
+        let mut reopened = Vault::new();
+        reopened.attach_locked(&path).unwrap();
+        reopened
+            .unlock_as_user("admin", password, None)
+            .expect("unlock after migrate");
+        assert_eq!(reopened.format_version, format::FORMAT_VERSION_V4);
     }
 
     #[test]
@@ -2038,7 +2154,7 @@ mod tests {
             .migrate_to_v3(password.clone(), "admin")
             .expect("migrate");
 
-        assert_eq!(vault.format_version, format::FORMAT_VERSION_V3);
+        assert_eq!(vault.format_version, format::FORMAT_VERSION_V4);
         assert_eq!(vault.list_users().len(), 1);
         assert_eq!(vault.list_entries().unwrap().len(), 1);
 
@@ -2214,9 +2330,16 @@ mod tests {
             .expect("admin");
         assert!(admin.mfa_ciphertext.is_some());
 
-        let (_, payload_nonce, payload_ciphertext) = format::read_v3_vault_file(&path).unwrap();
+        let file = format::read_multi_user_vault_file(&path).unwrap();
         let dek = vault.master_key.as_ref().expect("dek");
-        let payload = format::decrypt_v3_payload(dek, &payload_nonce, &payload_ciphertext).unwrap();
+        let payload = format::decrypt_multi_user_payload(
+            dek,
+            &file.payload_nonce,
+            &file.payload_ciphertext,
+            file.format_version,
+            &file.header_aad,
+        )
+        .unwrap();
         assert!(payload.mfa.is_none());
 
         let token = v3_totp_token_for(&vault, "admin");

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/vault-core", "crates/vault-generator", "crates/vault-wasm", "src-tauri", "tools/license-generator"]
 
 [workspace.package]
-version = "2.3.0"
+version = "2.4.0"
 authors = ["Pascal Kuhn <support@oxidvault.com>"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/caRl0oo/oxidvault"

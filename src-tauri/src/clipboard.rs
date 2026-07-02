@@ -28,9 +28,7 @@ impl SecureClipboard {
 
     pub fn copy(&self, app: &AppHandle, secret: Zeroizing<String>) -> Result<(), String> {
         let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-        clipboard
-            .set_text(secret.as_str())
-            .map_err(|e| e.to_string())?;
+        set_clipboard_text(&mut clipboard, secret.as_str())?;
 
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
         *self.active.lock().map_err(|e| e.to_string())? = Some((id, secret));
@@ -64,7 +62,7 @@ impl SecureClipboard {
 
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             if clipboard.get_text().ok().as_deref() == Some(stored.as_str()) {
-                let _ = clipboard.set_text("");
+                let _ = set_clipboard_text(&mut clipboard, "");
             }
         }
     }
@@ -81,4 +79,23 @@ impl Default for SecureClipboard {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(windows)]
+fn set_clipboard_text(clipboard: &mut arboard::Clipboard, text: &str) -> Result<(), String> {
+    use arboard::SetExtWindows;
+
+    clipboard
+        .set()
+        .exclude_from_history()
+        .exclude_from_cloud()
+        .text(text)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(windows))]
+fn set_clipboard_text(clipboard: &mut arboard::Clipboard, text: &str) -> Result<(), String> {
+    // Linux/macOS: no equivalent OS API for Windows clipboard history / cloud-sync exclusion.
+    // Secret copies still use 30s auto-clear; platform asymmetry is documented in ARCHITECTURE.md §3.
+    clipboard.set_text(text).map_err(|e| e.to_string())
 }

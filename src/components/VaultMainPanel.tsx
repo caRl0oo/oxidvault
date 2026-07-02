@@ -32,6 +32,7 @@ export interface VaultMainPanelProps {
   readonly reachability: Record<string, ReachabilityState>;
   readonly sshSessionStatus: SshSessionStatus | null;
   readonly activeSshEntryId: string | null;
+  readonly onOpenMigrateModal?: () => void;
 }
 
 export function VaultMainPanel({
@@ -52,9 +53,17 @@ export function VaultMainPanel({
   reachability,
   sshSessionStatus,
   activeSshEntryId,
+  onOpenMigrateModal,
 }: Readonly<VaultMainPanelProps>) {
   if (vaultMainView === "security") {
-    return <SecurityMainView onSelectEntry={onSelectEntry} onApplyDashboardFilter={onApplyDashboardFilter} dashboardFilterKind={dashboardFilterKind} />;
+    return (
+      <SecurityMainView
+        onSelectEntry={onSelectEntry}
+        onApplyDashboardFilter={onApplyDashboardFilter}
+        dashboardFilterKind={dashboardFilterKind}
+        onOpenMigrateModal={onOpenMigrateModal}
+      />
+    );
   }
 
   if (vaultMainView === "activity") {
@@ -92,16 +101,18 @@ interface SecurityMainViewProps {
   readonly onSelectEntry: (id: string) => void;
   readonly onApplyDashboardFilter: (filter: DashboardFilter) => void;
   readonly dashboardFilterKind: DashboardFilterKind | null;
+  readonly onOpenMigrateModal?: () => void;
 }
 
 function SecurityMainView({
   onSelectEntry,
   onApplyDashboardFilter,
   dashboardFilterKind,
+  onOpenMigrateModal,
 }: Readonly<SecurityMainViewProps>) {
   return (
     <div className="vault-main-panel">
-      <ComplianceDashboard />
+      <ComplianceDashboard onOpenMigrateModal={onOpenMigrateModal} />
       <div className="vault-main-scroll">
         <SecurityDashboard
           onSelectEntry={onSelectEntry}

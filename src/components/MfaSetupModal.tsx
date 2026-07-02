@@ -135,6 +135,9 @@ export function MfaSetupModal({ open, onClose, onVerified }: Readonly<MfaSetupMo
         <p className="font-mono text-xs leading-relaxed text-vault-muted">
           {t("settings.mfa.modalHint")}
         </p>
+        <p className="font-mono text-xs leading-relaxed text-vault-muted" role="note">
+          {t("settings.mfa.fileProtectionLimitation")}
+        </p>
 
         <div className="flex flex-col items-center gap-3">
           <div className="flex h-44 w-44 items-center justify-center rounded-lg border border-vault-border bg-vault-bg p-2">

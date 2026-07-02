@@ -28,14 +28,38 @@ function formatComplianceDate(iso: string | null, dash: string): string {
 }
 
 function isComplianceOk(status: ComplianceStatus): boolean {
-  return status.auditChainValid && !status.keyRotationRecommended;
+  const auditAuthenticated =
+    status.auditChainAuthenticated === null || status.auditChainAuthenticated;
+  return (
+    status.auditChainValid &&
+    auditAuthenticated &&
+    !status.keyRotationRecommended &&
+    !status.legacyFormatMigrationRecommended
+  );
+}
+
+function auditAuthenticationLabel(
+  status: ComplianceStatus,
+  translate: (key: string) => string,
+): string {
+  if (status.auditChainAuthenticated === null) {
+    return translate("compliance.audit_auth_locked");
+  }
+  if (status.auditAuthenticationStatus === "audit_no_checkpoints") {
+    return translate("diagnostics.statusCodes.audit_no_checkpoints");
+  }
+  return status.auditChainAuthenticated ? translate("common.yes") : translate("common.no");
 }
 
 function keyAgeClass(recommended: boolean): string {
   return recommended ? "text-vault-danger" : "text-vault-success";
 }
 
-export function ComplianceDashboard() {
+export function ComplianceDashboard({
+  onOpenMigrateModal,
+}: Readonly<{
+  onOpenMigrateModal?: () => void;
+}>) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,7 +129,7 @@ export function ComplianceDashboard() {
           {complianceOk ? t("compliance.compliance_ok") : t("compliance.action_required")}
         </div>
 
-        <div className="mb-6 grid grid-cols-3 gap-3">
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="vault-card flex flex-col gap-2">
             <span className="vault-field-label">{t("compliance.policy_status")}</span>
             <span className="text-sm text-vault-text">{t("compliance.gpo_managed")}</span>
@@ -121,6 +145,20 @@ export function ComplianceDashboard() {
             <span className="text-sm text-vault-text">{t("compliance.hash_chain_valid")}</span>
             <span className={`text-sm font-semibold ${statusClass(status.auditChainValid)}`}>
               {statusLabel(status.auditChainValid)}
+            </span>
+          </div>
+
+          <div className="vault-card flex flex-col gap-2">
+            <span className="vault-field-label">{t("compliance.audit_status")}</span>
+            <span className="text-sm text-vault-text">{t("compliance.audit_hmac_valid")}</span>
+            <span
+              className={`text-sm font-semibold ${
+                status.auditChainAuthenticated === null
+                  ? "text-vault-muted"
+                  : statusClass(status.auditChainAuthenticated)
+              }`}
+            >
+              {auditAuthenticationLabel(status, t)}
             </span>
           </div>
 
@@ -143,6 +181,25 @@ export function ComplianceDashboard() {
             </span>
           </div>
         </div>
+
+        {status.legacyFormatMigrationRecommended ? (
+          <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
+            <p className="text-sm text-vault-accent">
+              {t("compliance.legacy_format_hint", { version: status.vaultFormatVersion })}
+            </p>
+            <button
+              type="button"
+              onClick={onOpenMigrateModal}
+              disabled={!onOpenMigrateModal}
+              className="vault-btn-primary mt-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("compliance.migrate_to_v3")}
+            </button>
+            <p className="mt-2 text-xs leading-relaxed text-vault-muted">
+              {t("compliance.legacy_format_migration_note")}
+            </p>
+          </div>
+        ) : null}
 
         {status.keyRotationRecommended ? (
           <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">

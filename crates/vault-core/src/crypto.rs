@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, KeyInit, OsRng, Payload},
     Aes256Gcm, Nonce,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -94,18 +94,58 @@ pub fn random_nonce() -> [u8; NONCE_LEN] {
     nonce
 }
 
-pub fn encrypt(
+pub fn encrypt_with_aad(
     key: &MasterKey,
     plaintext: &[u8],
+    aad: &[u8],
 ) -> Result<([u8; NONCE_LEN], Vec<u8>), VaultError> {
     let cipher =
         Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|e| VaultError::Crypto(e.to_string()))?;
     let nonce_bytes = random_nonce();
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|_| VaultError::Crypto("encryption failed".into()))?;
     Ok((nonce_bytes, ciphertext))
+}
+
+/// Plaintext is wrapped in `Zeroizing` — heap is overwritten on drop.
+///
+/// On GCM authentication failure returns [`VaultError::InvalidPassword`] so callers
+/// cannot distinguish a wrong key from tampered ciphertext or AAD (including v4 header
+/// binding). Intentional — no decryption oracle.
+pub fn decrypt_with_aad(
+    key: &MasterKey,
+    nonce: &[u8; NONCE_LEN],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|e| VaultError::Crypto(e.to_string()))?;
+    let nonce = Nonce::from_slice(nonce);
+    let plaintext = cipher
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
+        .map_err(|_| VaultError::InvalidPassword)?;
+    Ok(Zeroizing::new(plaintext))
+}
+
+pub fn encrypt(
+    key: &MasterKey,
+    plaintext: &[u8],
+) -> Result<([u8; NONCE_LEN], Vec<u8>), VaultError> {
+    encrypt_with_aad(key, plaintext, &[])
 }
 
 /// Plaintext is wrapped in `Zeroizing` — heap is overwritten on drop.
@@ -114,13 +154,7 @@ pub fn decrypt(
     nonce: &[u8; NONCE_LEN],
     ciphertext: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, VaultError> {
-    let cipher =
-        Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|e| VaultError::Crypto(e.to_string()))?;
-    let nonce = Nonce::from_slice(nonce);
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| VaultError::InvalidPassword)?;
-    Ok(Zeroizing::new(plaintext))
+    decrypt_with_aad(key, nonce, ciphertext, &[])
 }
 
 /// Wraps a data-encryption key with a password-derived key (KEK).
@@ -189,6 +223,21 @@ mod tests {
         let (nonce, ciphertext) = encrypt(&correct_key, b"protected data").unwrap();
         let err = decrypt(&wrong_key, &nonce, &ciphertext).unwrap_err();
 
+        assert!(matches!(err, VaultError::InvalidPassword));
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_with_aad() {
+        let salt = [0x22u8; SALT_LEN];
+        let key = MasterKey::derive_from_password("aad-test", &salt, KdfParams::default()).unwrap();
+        let plaintext = b"payload bound to header bytes";
+        let aad = b"OXID\x04\x00fake-header-aad";
+
+        let (nonce, ciphertext) = encrypt_with_aad(&key, plaintext, aad).unwrap();
+        let decrypted = decrypt_with_aad(&key, &nonce, &ciphertext, aad).unwrap();
+        assert_eq!(&decrypted[..], plaintext);
+
+        let err = decrypt_with_aad(&key, &nonce, &ciphertext, b"tampered-aad").unwrap_err();
         assert!(matches!(err, VaultError::InvalidPassword));
     }
 

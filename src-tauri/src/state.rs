@@ -50,7 +50,7 @@ impl AppState {
     pub fn is_multi_user(&self) -> bool {
         self.vault_format_version
             .lock()
-            .map(|version| *version == vault_core::format::FORMAT_VERSION_V3 as u8)
+            .map(|version| vault_core::format::is_multi_user_format(u16::from(*version)))
             .unwrap_or(false)
     }
 

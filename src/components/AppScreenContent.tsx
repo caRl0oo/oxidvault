@@ -243,6 +243,7 @@ export function AppScreenContent(props: Readonly<AppScreenContentProps>) {
           onCloseSshTerminal={props.onCloseSshTerminal}
           onSshSessionActive={props.onSshSessionActive}
           onSshSessionEnded={props.onSshSessionEnded}
+          onOpenMigrateModal={props.onOpenMigrateModal}
         />
         </>
       );

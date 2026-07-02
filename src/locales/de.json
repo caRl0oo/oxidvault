@@ -253,6 +253,8 @@
       "SecretModified": "Secret wurde geändert",
       "SecretCopied": "Secret wurde in die Zwischenablage kopiert",
       "SecretRevealed": "Secret wurde angezeigt",
+      "SecretAutofilled": "Secret per Browser-Erweiterung automatisch ausgefüllt",
+      "BridgeThrottled": "Browser-Bridge-Ratenlimit überschritten",
       "VaultKeyRotated": "Master-Schlüssel wurde rotiert",
       "AuthFailed": "Entsperrversuch fehlgeschlagen",
       "SyncEvent": "Git-Synchronisation",
@@ -264,7 +266,8 @@
       "UserRoleChanged": "Benutzerrolle geändert",
       "UserMfaEnabled": "2FA für Benutzer aktiviert",
       "UserMfaDisabled": "2FA für Benutzer deaktiviert",
-      "VaultMigratedToV3": "Tresor auf Multi-User migriert"
+      "VaultMigratedToV3": "Tresor auf Multi-User migriert",
+      "Checkpoint": "Integritäts-Checkpoint (HMAC)"
     },
     "syncStatus": {
       "success": "Erfolgreich",
@@ -327,6 +330,9 @@
     "invalidMfaCode": "Der 2FA-Code ist ungültig.",
     "vaultLockedBy": "Vault wird bereits von einer anderen Instanz verwendet.",
     "weakMasterPassword": "Master-Passwort erfüllt nicht die Sicherheitsrichtlinie.",
+    "weakPasswordTooShort": "Mindestens 12 Zeichen erforderlich.",
+    "weakPasswordBlocklisted": "Dieses Passwort ist zu häufig — bitte ein einzigartiges wählen.",
+    "weakPasswordLowEntropy": "Passwort ist zu schwach — längere Passphrase mit abwechslungsreichen Zeichen verwenden.",
     "tooCommon": "Dieses Passwort ist zu häufig — bitte ein einzigartiges wählen.",
     "atLeast12Chars": "Mindestens 12 Zeichen erforderlich.",
     "vaultFileExists": "An diesem Speicherort existiert bereits eine Vault-Datei.",
@@ -552,6 +558,7 @@
       "vaultLockedHint": "Entsperre den Tresor, um 2FA zu verwalten.",
       "modalTitle": "2FA einrichten",
       "modalHint": "Scanne den QR-Code mit deiner Authenticator-App (z. B. Microsoft Authenticator) und gib den 6-stelligen Code ein.",
+      "fileProtectionLimitation": "TOTP schützt nur den App-Entsperr-Flow — nicht die Tresor-Datei. Wer die .oxid-Datei hat, kann das Passwort offline brute-forcen und TOTP umgehen. Ein starkes Master-Passwort ist Ihre eigentliche Datei-Verteidigung.",
       "qrPlaceholder": "QR-Code",
       "qrAlt": "QR-Code für Authenticator-App",
       "qrLoading": "Laden…",
@@ -579,6 +586,8 @@
     "gpo_managed": "GPO verwaltet?",
     "audit_status": "Audit-Status",
     "hash_chain_valid": "Hash-Kette valide?",
+    "audit_hmac_valid": "HMAC-Checkpoints valide?",
+    "audit_auth_locked": "Vault entsperren, um HMAC-Checkpoints zu prüfen",
     "key_age": "Schlüssel-Alter",
     "last_rotated": "Zuletzt rotiert: {{date}}",
     "created": "Erstellt: {{date}}",
@@ -586,7 +595,10 @@
     "rotation_recommended": "Ihre Sicherheitsrichtlinie empfiehlt eine Passwort-Rotation (Schwellwert: {{days}} Tage).",
     "rotate_password": "Passwort rotieren",
     "rotation_hint": "Die Rotation erfolgt per sicherer Key-Migration (v2-Format), ohne dass Daten entschlüsselt werden.",
-    "rotation_success_toast": "Schlüssel erfolgreich rotiert. Ihr Tresor ist nun mit dem neuen Master-Schlüssel geschützt."
+    "rotation_success_toast": "Schlüssel erfolgreich rotiert. Ihr Tresor ist nun mit dem neuen Master-Schlüssel geschützt.",
+    "legacy_format_hint": "Tresor-Format veraltet (v{{version}}) — Header nicht authentifiziert. Migration zum Multi-User-Format empfohlen.",
+    "migrate_to_v3": "Auf Multi-User-Format migrieren",
+    "legacy_format_migration_note": "Die Migration verpackt Ihr bestehendes Master-Passwort als ersten Admin-Benutzer neu. Es gilt keine neue Passwort-Policy-Prüfung."
   },
   "security": {
     "title": "Sicherheits-Dashboard",
@@ -655,7 +667,8 @@
       "audit_no_vault": "Kein Vault — Audit-Log nicht prüfbar",
       "audit_not_writable": "Audit-Log nicht beschreibbar",
       "audit_chain_invalid": "Audit-Hash-Kette beschädigt",
-      "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)"
+      "audit_not_present": "Noch kein Audit-Log (Verzeichnis beschreibbar)",
+      "audit_no_checkpoints": "Keine HMAC-Checkpoints (Legacy v1 oder Log vor Upgrade)"
     }
   },
   "users": {

@@ -15,6 +15,8 @@ const AUDIT_ACTION_KEYS = [
   "SecretModified",
   "SecretCopied",
   "SecretRevealed",
+  "SecretAutofilled",
+  "BridgeThrottled",
   "VaultKeyRotated",
   "AuthFailed",
   "SyncEvent",
@@ -27,6 +29,7 @@ const AUDIT_ACTION_KEYS = [
   "UserMfaEnabled",
   "UserMfaDisabled",
   "VaultMigratedToV3",
+  "Checkpoint",
 ] as const;
 
 const LEGACY_ACTION_ALIASES: Record<string, (typeof AUDIT_ACTION_KEYS)[number]> = {

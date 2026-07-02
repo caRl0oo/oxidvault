@@ -745,7 +745,7 @@ function SecuritySettingsPanel({
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium text-vault-text">{t("settings.mfa.title")}</span>
-            <span className="text-xs text-vault-muted">{t("settings.mfa.modalHint")}</span>
+            <span className="text-xs text-vault-muted">{t("settings.mfa.fileProtectionLimitation")}</span>
           </div>
           <span
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${

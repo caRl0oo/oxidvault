@@ -253,6 +253,8 @@
       "SecretModified": "Secret was modified",
       "SecretCopied": "Secret was copied to clipboard",
       "SecretRevealed": "Secret was revealed",
+      "SecretAutofilled": "Secret was autofilled via browser extension",
+      "BridgeThrottled": "Browser bridge rate limit exceeded",
       "VaultKeyRotated": "Master key was rotated",
       "AuthFailed": "Unlock attempt failed",
       "SyncEvent": "Git synchronization",
@@ -264,7 +266,8 @@
       "UserRoleChanged": "User role changed",
       "UserMfaEnabled": "2FA enabled for user",
       "UserMfaDisabled": "2FA disabled for user",
-      "VaultMigratedToV3": "Vault migrated to multi-user"
+      "VaultMigratedToV3": "Vault migrated to multi-user",
+      "Checkpoint": "Integrity checkpoint (HMAC)"
     },
     "syncStatus": {
       "success": "Successful",
@@ -327,6 +330,9 @@
     "invalidMfaCode": "The 2FA code is invalid.",
     "vaultLockedBy": "Vault is already in use by another instance.",
     "weakMasterPassword": "Master password does not meet the security policy.",
+    "weakPasswordTooShort": "At least 12 characters required.",
+    "weakPasswordBlocklisted": "This password is too common — please choose a unique one.",
+    "weakPasswordLowEntropy": "Password is too weak — use a longer passphrase with varied characters.",
     "tooCommon": "This password is too common — please choose a unique one.",
     "atLeast12Chars": "At least 12 characters required.",
     "vaultFileExists": "A vault file already exists at this location.",
@@ -552,6 +558,7 @@
       "vaultLockedHint": "Unlock the vault to manage 2FA.",
       "modalTitle": "Set up 2FA",
       "modalHint": "Scan the QR code with your authenticator app (e.g. Microsoft Authenticator) and enter the 6-digit code.",
+      "fileProtectionLimitation": "TOTP protects the app unlock flow only — not the vault file. Anyone with the .oxid file can brute-force the password offline and bypass TOTP. Use a strong master password as your real file-level defense.",
       "qrPlaceholder": "QR code",
       "qrAlt": "QR code for authenticator app",
       "qrLoading": "Loading…",
@@ -579,6 +586,8 @@
     "gpo_managed": "Managed by GPO?",
     "audit_status": "Audit status",
     "hash_chain_valid": "Hash chain valid?",
+    "audit_hmac_valid": "HMAC checkpoints valid?",
+    "audit_auth_locked": "Unlock vault to verify HMAC checkpoints",
     "key_age": "Key age",
     "last_rotated": "Last rotated: {{date}}",
     "created": "Created: {{date}}",
@@ -586,7 +595,10 @@
     "rotation_recommended": "Your security policy recommends a password rotation (threshold: {{days}} days).",
     "rotate_password": "Rotate password",
     "rotation_hint": "Rotation uses secure key migration (v2 format) without decrypting vault data.",
-    "rotation_success_toast": "Key rotated successfully. Your vault is now protected with the new master key."
+    "rotation_success_toast": "Key rotated successfully. Your vault is now protected with the new master key.",
+    "legacy_format_hint": "Vault format outdated (v{{version}}) — header not authenticated. Migration to multi-user format recommended.",
+    "migrate_to_v3": "Migrate to multi-user format",
+    "legacy_format_migration_note": "Migration re-wraps your existing master password as the first admin user. No new password policy check applies."
   },
   "security": {
     "title": "Security Dashboard",
@@ -655,7 +667,8 @@
       "audit_no_vault": "No vault — audit log cannot be checked",
       "audit_not_writable": "Audit log not writable",
       "audit_chain_invalid": "Audit hash chain corrupted",
-      "audit_not_present": "No audit log yet (directory writable)"
+      "audit_not_present": "No audit log yet (directory writable)",
+      "audit_no_checkpoints": "No HMAC checkpoints (legacy v1 or pre-upgrade log)"
     }
   },
   "users": {

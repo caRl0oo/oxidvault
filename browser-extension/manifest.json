@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OxidVault",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "default_locale": "en",
   "description": "Sicherer Passwort-Manager für dein Unternehmen.",
   "content_security_policy": {

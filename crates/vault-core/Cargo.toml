@@ -14,6 +14,8 @@ argon2 = "0.5"
 rand = "0.8"
 vault-generator = { path = "../vault-generator" }
 sha2 = "0.10"
+hkdf = "0.12"
+hmac = "0.12"
 ed25519-dalek = { version = "2", features = ["std"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -27,6 +29,8 @@ base64 = "0.22"
 url = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 sysinfo = "0.33"
+psl = "2.1.216"
+zxcvbn = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -8,9 +8,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audit::{audit_log_path, verify_audit_chain};
+use crate::audit::{
+    audit_log_has_checkpoints, audit_log_path, verify_audit_chain, verify_audit_chain_keyed,
+    AUDIT_NO_CHECKPOINTS,
+};
 use crate::error::VaultError;
-use crate::format::{self, VaultFileMeta, FORMAT_VERSION_V1};
+use crate::format::{self, VaultFileMeta, FORMAT_VERSION_V1, FORMAT_VERSION_V3};
 use crate::policy::admin_policy_active;
 
 pub const KEY_ROTATION_THRESHOLD_DAYS: u64 = 90;
@@ -20,14 +23,39 @@ pub const KEY_ROTATION_THRESHOLD_DAYS: u64 = 90;
 pub struct ComplianceStatus {
     pub policy_managed_by_gpo: bool,
     pub audit_chain_valid: bool,
+    pub audit_chain_authenticated: Option<bool>,
+    pub audit_authentication_status: Option<String>,
     pub key_created_at: Option<String>,
     pub key_rotated_at: Option<String>,
     pub key_age_days: u32,
     pub key_rotation_recommended: bool,
+    pub vault_format_version: u16,
+    pub legacy_format_migration_recommended: bool,
 }
 
-pub fn compliance_status(vault_path: &Path) -> Result<ComplianceStatus, VaultError> {
+pub fn compliance_status(
+    vault_path: &Path,
+    format_version: u16,
+    audit_hmac_key: Option<&[u8]>,
+    checkpoints_applicable: bool,
+) -> Result<ComplianceStatus, VaultError> {
     let meta = format::read_vault_meta(vault_path)?;
+    compliance_status_with_meta(
+        vault_path,
+        &meta,
+        format_version,
+        audit_hmac_key,
+        checkpoints_applicable,
+    )
+}
+
+pub fn compliance_status_with_meta(
+    vault_path: &Path,
+    meta: &VaultFileMeta,
+    format_version: u16,
+    audit_hmac_key: Option<&[u8]>,
+    checkpoints_applicable: bool,
+) -> Result<ComplianceStatus, VaultError> {
     let log_path = audit_log_path(vault_path);
     let audit_chain_valid = if log_path.is_file() {
         verify_audit_chain(&log_path).is_ok()
@@ -35,18 +63,53 @@ pub fn compliance_status(vault_path: &Path) -> Result<ComplianceStatus, VaultErr
         true
     };
 
-    let reference_ts = key_reference_timestamp(&meta, vault_path);
+    let (audit_chain_authenticated, audit_authentication_status) =
+        evaluate_audit_authentication(&log_path, checkpoints_applicable, audit_hmac_key);
+
+    let reference_ts = key_reference_timestamp(meta, vault_path);
     let key_age_days = age_days_from_unix(reference_ts);
     let key_rotation_recommended = u64::from(key_age_days) > KEY_ROTATION_THRESHOLD_DAYS;
+
+    let legacy_format_migration_recommended = format_version < FORMAT_VERSION_V3;
 
     Ok(ComplianceStatus {
         policy_managed_by_gpo: admin_policy_active(),
         audit_chain_valid,
+        audit_chain_authenticated,
+        audit_authentication_status,
         key_created_at: iso_from_unix(meta.key_created_at),
         key_rotated_at: iso_from_unix(meta.key_rotated_at),
         key_age_days,
         key_rotation_recommended,
+        vault_format_version: format_version,
+        legacy_format_migration_recommended,
     })
+}
+
+fn evaluate_audit_authentication(
+    log_path: &Path,
+    checkpoints_applicable: bool,
+    audit_hmac_key: Option<&[u8]>,
+) -> (Option<bool>, Option<String>) {
+    if !checkpoints_applicable {
+        return (None, None);
+    }
+
+    let Some(key) = audit_hmac_key else {
+        return (Some(false), Some(AUDIT_NO_CHECKPOINTS.into()));
+    };
+
+    if !log_path.is_file() || !audit_log_has_checkpoints(log_path) {
+        return (Some(false), Some(AUDIT_NO_CHECKPOINTS.into()));
+    }
+
+    match verify_audit_chain_keyed(log_path, key) {
+        Ok(()) => (Some(true), Some("ok".into())),
+        Err(VaultError::Other(ref message)) if message == AUDIT_NO_CHECKPOINTS => {
+            (Some(false), Some(AUDIT_NO_CHECKPOINTS.into()))
+        }
+        Err(_) => (Some(false), Some("audit_chain_invalid".into())),
+    }
 }
 
 fn key_reference_timestamp(meta: &VaultFileMeta, vault_path: &Path) -> u64 {
@@ -120,7 +183,15 @@ mod tests {
         let logger = AuditLogger::for_vault(&path).unwrap();
         logger.log(AuditAction::VaultCreated).expect("log");
 
-        let status = compliance_status(&path).expect("status");
+        let status =
+            compliance_status(&path, format::FORMAT_VERSION_V1, None, true).expect("status");
         assert!(status.audit_chain_valid);
+        assert_eq!(status.audit_chain_authenticated, Some(false));
+        assert_eq!(
+            status.audit_authentication_status.as_deref(),
+            Some(AUDIT_NO_CHECKPOINTS)
+        );
+        assert_eq!(status.vault_format_version, format::FORMAT_VERSION_V1);
+        assert!(status.legacy_format_migration_recommended);
     }
 }

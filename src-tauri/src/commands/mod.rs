@@ -31,6 +31,9 @@ pub(super) fn note_unlock_success(
     if let Ok(mut bridge) = state.bridge.lock() {
         bridge.clear_mfa_failed();
     }
+    if let Err(err) = crate::nm_bridge::publish_bridge_session() {
+        eprintln!("native messaging bridge: failed to publish session: {err}");
+    }
     state.touch_activity();
     let _ = settings::save_vault_mfa_configured(app, vault.mfa_status().mfa_enabled);
     crate::nm_bridge::emit_new_secret_prefill_if_pending(app);
@@ -67,7 +70,9 @@ pub(super) fn sync_vault_format_state(state: &AppState, vault: &vault_core::Vaul
 fn is_v3_vault_path(path: &str) -> Result<bool, String> {
     let meta = vault_core::format::read_vault_meta(std::path::Path::new(path))
         .map_err(|e| e.to_string())?;
-    Ok(meta.format_version == vault_core::format::FORMAT_VERSION_V3)
+    Ok(vault_core::format::is_multi_user_format(
+        meta.format_version,
+    ))
 }
 
 #[tauri::command]
@@ -190,6 +195,7 @@ pub fn lock_vault(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<V
 #[tauri::command]
 pub fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     perform_lock(&state)?;
+    crate::nm_bridge::revoke_bridge_session();
     app.exit(0);
     Ok(())
 }

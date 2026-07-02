@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `.oxid` on-disk format — v1 (direct key) and v2 (wrapped DEK header).
+//! `.oxid` on-disk format — v1/v2 (single-user), v3 (legacy multi-user), v4 (AAD-bound header).
 #![allow(clippy::too_many_arguments)]
 
 use std::fs;
@@ -21,6 +21,12 @@ pub const MAGIC: &[u8; 4] = b"OXID";
 pub const FORMAT_VERSION_V1: u16 = 1;
 pub const FORMAT_VERSION_V2: u16 = 2;
 pub const FORMAT_VERSION_V3: u16 = 3;
+pub const FORMAT_VERSION_V4: u16 = 4;
+
+/// Multi-user vault formats (shared DEK, `users_json` header block).
+pub fn is_multi_user_format(format_version: u16) -> bool {
+    format_version == FORMAT_VERSION_V3 || format_version == FORMAT_VERSION_V4
+}
 
 #[derive(Debug, Clone)]
 pub struct WrappedDek {
@@ -46,6 +52,9 @@ pub struct VaultPayload {
     pub entries: Vec<SecretEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mfa: Option<StoredMfaConfig>,
+    /// Present in v4+ encrypted payloads — downgrade guard vs. on-disk header version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<u16>,
 }
 
 #[derive(Serialize)]
@@ -86,6 +95,78 @@ fn serialize_payload_zeroizing(
         serde_json::to_vec(&VaultPayloadRef { entries, mfa })
             .map_err(|e| VaultError::Other(e.to_string()))?,
     ))
+}
+
+#[derive(Serialize)]
+struct VaultPayloadV4Ref<'a> {
+    entries: &'a [SecretEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mfa: Option<&'a StoredMfaConfig>,
+    format_version: u16,
+}
+
+fn serialize_payload_v4_zeroizing(
+    entries: &[SecretEntry],
+    mfa: Option<&StoredMfaConfig>,
+) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    Ok(Zeroizing::new(
+        serde_json::to_vec(&VaultPayloadV4Ref {
+            entries,
+            mfa,
+            format_version: FORMAT_VERSION_V4,
+        })
+        .map_err(|e| VaultError::Other(e.to_string()))?,
+    ))
+}
+
+/// Serialized header bytes (magic through end of `users_json`) used as AES-GCM AAD in v4.
+pub(crate) fn serialize_header_v4(
+    format_version: u16,
+    name: &str,
+    users: &[VaultUser],
+    key_created_at: u64,
+    key_rotated_at: u64,
+) -> Result<Vec<u8>, VaultError> {
+    if !is_multi_user_format(format_version) {
+        return Err(VaultError::InvalidFormat);
+    }
+
+    let name_bytes = name.as_bytes();
+    if name_bytes.len() > u16::MAX as usize {
+        return Err(VaultError::Other("vault name too long".into()));
+    }
+
+    let users_json = serde_json::to_vec(users).map_err(|e| VaultError::Other(e.to_string()))?;
+
+    let mut header = Vec::new();
+    header.extend_from_slice(MAGIC);
+    header.extend_from_slice(&format_version.to_le_bytes());
+    header.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+    header.extend_from_slice(name_bytes);
+    header.extend_from_slice(&key_created_at.to_le_bytes());
+    header.extend_from_slice(&key_rotated_at.to_le_bytes());
+    header.extend_from_slice(&(users_json.len() as u32).to_le_bytes());
+    header.extend_from_slice(&users_json);
+    Ok(header)
+}
+
+fn verify_payload_format_version(
+    header_version: u16,
+    payload: &VaultPayload,
+) -> Result<(), VaultError> {
+    match payload.format_version {
+        None if header_version >= FORMAT_VERSION_V4 => Err(VaultError::InvalidFormat),
+        None => Ok(()),
+        Some(payload_version) if payload_version > header_version => {
+            Err(VaultError::FormatDowngrade)
+        }
+        Some(payload_version)
+            if header_version >= FORMAT_VERSION_V4 && payload_version != header_version =>
+        {
+            Err(VaultError::InvalidFormat)
+        }
+        Some(_) => Ok(()),
+    }
 }
 
 pub fn write_vault_file(
@@ -479,19 +560,32 @@ pub fn resolve_payload_key(meta: &VaultFileMeta, kek: &MasterKey) -> Result<Mast
             let wrapped = meta.wrapped_dek.as_ref().ok_or(VaultError::InvalidFormat)?;
             crypto::unwrap_data_key(kek, &wrapped.nonce, &wrapped.ciphertext)
         }
-        FORMAT_VERSION_V3 => Err(VaultError::InvalidFormat),
+        FORMAT_VERSION_V3 | FORMAT_VERSION_V4 => Err(VaultError::InvalidFormat),
         _ => Err(VaultError::InvalidFormat),
     }
 }
 
-/// Reads a v3 vault header and returns the user list plus encrypted payload parts.
-/// (users, payload_nonce, payload_ciphertext)
-type V3VaultFileContents = (Vec<VaultUser>, Vec<u8>, Vec<u8>);
+/// Parsed v3/v4 vault file on disk: plaintext user table in the header plus the
+/// still-encrypted payload block (nonce + ciphertext) that follows the header bytes.
+#[derive(Debug, Clone)]
+pub struct MultiUserVaultFile {
+    /// User records from the vault header (KDF params, wrapped DEK, MFA blobs, …).
+    pub users: Vec<VaultUser>,
+    /// Serialized header bytes used as AES-GCM AAD when decrypting the payload (v4+).
+    pub header_aad: Vec<u8>,
+    /// On-disk format version (`FORMAT_VERSION_V3` or `FORMAT_VERSION_V4`).
+    pub format_version: u16,
+    /// AES-GCM nonce prepended to the encrypted payload blob.
+    pub payload_nonce: [u8; NONCE_LEN],
+    /// AES-GCM ciphertext of the serialized [`VaultPayload`].
+    pub payload_ciphertext: Vec<u8>,
+}
 
-pub fn read_v3_vault_file(path: &Path) -> Result<V3VaultFileContents, VaultError> {
+/// Reads a multi-user vault header and encrypted payload parts (v3 or v4).
+pub fn read_multi_user_vault_file(path: &Path) -> Result<MultiUserVaultFile, VaultError> {
     let bytes = fs::read(path)?;
     let (meta, header_len) = parse_header(&bytes)?;
-    if meta.format_version != FORMAT_VERSION_V3 {
+    if !is_multi_user_format(meta.format_version) {
         return Err(VaultError::InvalidFormat);
     }
     let users = meta.users.ok_or(VaultError::InvalidFormat)?;
@@ -500,7 +594,15 @@ pub fn read_v3_vault_file(path: &Path) -> Result<V3VaultFileContents, VaultError
         return Err(VaultError::InvalidFormat);
     }
     let (nonce_bytes, ciphertext) = payload_blob.split_at(NONCE_LEN);
-    Ok((users, nonce_bytes.to_vec(), ciphertext.to_vec()))
+    let mut payload_nonce = [0u8; NONCE_LEN];
+    payload_nonce.copy_from_slice(nonce_bytes);
+    Ok(MultiUserVaultFile {
+        users,
+        header_aad: bytes[..header_len].to_vec(),
+        format_version: meta.format_version,
+        payload_nonce,
+        payload_ciphertext: ciphertext.to_vec(),
+    })
 }
 
 /// Writes a new v3 vault file (fails if the path already exists).
@@ -550,7 +652,7 @@ fn atomic_write_v3_vault(
     key_rotated_at: u64,
 ) -> Result<(), VaultError> {
     let tmp_path = temp_vault_path(path)?;
-    if let Err(error) = write_v3_vault_bytes(
+    if let Err(error) = write_multi_user_vault_bytes(
         &tmp_path,
         name,
         users,
@@ -579,64 +681,7 @@ fn atomic_write_v3_vault(
     }
 }
 
-/// Atomically rewrites only the v3 header; payload bytes are copied unchanged.
-pub fn update_v3_vault_header_only(
-    path: &Path,
-    name: &str,
-    users: &[VaultUser],
-    key_created_at: u64,
-    key_rotated_at: u64,
-) -> Result<(), VaultError> {
-    let (meta, payload_blob) = read_raw_vault(path)?;
-    if meta.format_version != FORMAT_VERSION_V3 {
-        return Err(VaultError::InvalidFormat);
-    }
-
-    let tmp_path = temp_vault_path(path)?;
-    if let Err(error) = write_v3_header_and_payload(
-        &tmp_path,
-        name,
-        users,
-        key_created_at,
-        key_rotated_at,
-        &payload_blob,
-    ) {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(error);
-    }
-
-    if fs::rename(&tmp_path, path).is_ok() {
-        return Ok(());
-    }
-
-    match copy_temp_over_target(&tmp_path, path) {
-        Ok(()) => {
-            let _ = fs::remove_file(&tmp_path);
-            Ok(())
-        }
-        Err(copy_err) => {
-            let _ = fs::remove_file(&tmp_path);
-            Err(copy_err)
-        }
-    }
-}
-
-fn write_v3_header_and_payload(
-    path: &Path,
-    name: &str,
-    users: &[VaultUser],
-    key_created_at: u64,
-    key_rotated_at: u64,
-    payload_blob: &[u8],
-) -> Result<(), VaultError> {
-    let mut file = fs::File::create(path)?;
-    write_v3_header(&mut file, name, users, key_created_at, key_rotated_at)?;
-    file.write_all(payload_blob)?;
-    file.sync_all()?;
-    Ok(())
-}
-
-fn write_v3_vault_bytes(
+fn write_multi_user_vault_bytes(
     path: &Path,
     name: &str,
     users: &[VaultUser],
@@ -645,46 +690,30 @@ fn write_v3_vault_bytes(
     key_created_at: u64,
     key_rotated_at: u64,
 ) -> Result<(), VaultError> {
-    let plaintext = serialize_payload_zeroizing(entries, None)?;
-    let (nonce, ciphertext) = crypto::encrypt(dek, plaintext.as_ref())?;
+    let header_bytes = serialize_header_v4(
+        FORMAT_VERSION_V4,
+        name,
+        users,
+        key_created_at,
+        key_rotated_at,
+    )?;
+    let plaintext = serialize_payload_v4_zeroizing(entries, None)?;
+    let (nonce, ciphertext) = crypto::encrypt_with_aad(dek, plaintext.as_ref(), &header_bytes)?;
     let mut file = fs::File::create(path)?;
-    write_v3_header(&mut file, name, users, key_created_at, key_rotated_at)?;
+    file.write_all(&header_bytes)?;
     file.write_all(&nonce)?;
     file.write_all(&ciphertext)?;
     file.sync_all()?;
     Ok(())
 }
 
-fn write_v3_header(
-    writer: &mut impl Write,
-    name: &str,
-    users: &[VaultUser],
-    key_created_at: u64,
-    key_rotated_at: u64,
-) -> Result<(), VaultError> {
-    let name_bytes = name.as_bytes();
-    if name_bytes.len() > u16::MAX as usize {
-        return Err(VaultError::Other("vault name too long".into()));
-    }
-
-    let users_json = serde_json::to_vec(users).map_err(|e| VaultError::Other(e.to_string()))?;
-
-    writer.write_all(MAGIC)?;
-    writer.write_all(&FORMAT_VERSION_V3.to_le_bytes())?;
-    writer.write_all(&(name_bytes.len() as u16).to_le_bytes())?;
-    writer.write_all(name_bytes)?;
-    writer.write_all(&key_created_at.to_le_bytes())?;
-    writer.write_all(&key_rotated_at.to_le_bytes())?;
-    writer.write_all(&(users_json.len() as u32).to_le_bytes())?;
-    writer.write_all(&users_json)?;
-    Ok(())
-}
-
-/// Decrypts a v3 payload blob using the shared DEK.
-pub fn decrypt_v3_payload(
+/// Decrypts a multi-user vault payload (v3 without AAD, v4 with header AAD).
+pub fn decrypt_multi_user_payload(
     dek: &MasterKey,
     payload_nonce: &[u8],
     payload_ciphertext: &[u8],
+    header_format_version: u16,
+    header_aad: &[u8],
 ) -> Result<VaultPayload, VaultError> {
     if payload_nonce.len() != NONCE_LEN {
         return Err(VaultError::InvalidFormat);
@@ -694,8 +723,31 @@ pub fn decrypt_v3_payload(
     if payload_ciphertext.is_empty() {
         return Err(VaultError::InvalidFormat);
     }
-    let plaintext = crypto::decrypt(dek, &nonce, payload_ciphertext)?;
-    serde_json::from_slice(plaintext.as_ref()).map_err(|_| VaultError::InvalidFormat)
+
+    let plaintext = if header_format_version >= FORMAT_VERSION_V4 {
+        crypto::decrypt_with_aad(dek, &nonce, payload_ciphertext, header_aad)?
+    } else {
+        crypto::decrypt(dek, &nonce, payload_ciphertext)?
+    };
+    let payload: VaultPayload =
+        serde_json::from_slice(plaintext.as_ref()).map_err(|_| VaultError::InvalidFormat)?;
+    verify_payload_format_version(header_format_version, &payload)?;
+    Ok(payload)
+}
+
+/// Decrypts a v3/v4 payload blob using the shared DEK.
+pub fn decrypt_v3_payload(
+    dek: &MasterKey,
+    payload_nonce: &[u8],
+    payload_ciphertext: &[u8],
+) -> Result<VaultPayload, VaultError> {
+    decrypt_multi_user_payload(
+        dek,
+        payload_nonce,
+        payload_ciphertext,
+        FORMAT_VERSION_V3,
+        &[],
+    )
 }
 
 fn write_header(
@@ -750,8 +802,8 @@ fn read_header(reader: &mut impl Read) -> Result<VaultFileMeta, VaultError> {
     let mut version = [0u8; 2];
     reader.read_exact(&mut version)?;
     let format_version = u16::from_le_bytes(version);
-    if format_version == FORMAT_VERSION_V3 {
-        return read_header_v3(reader, format_version);
+    if is_multi_user_format(format_version) {
+        return read_header_v3_v4(reader, format_version);
     }
     if format_version != FORMAT_VERSION_V1 && format_version != FORMAT_VERSION_V2 {
         return Err(VaultError::InvalidFormat);
@@ -760,7 +812,7 @@ fn read_header(reader: &mut impl Read) -> Result<VaultFileMeta, VaultError> {
     read_header_v1_v2(reader, format_version)
 }
 
-fn read_header_v3(
+fn read_header_v3_v4(
     reader: &mut impl Read,
     format_version: u16,
 ) -> Result<VaultFileMeta, VaultError> {
@@ -883,6 +935,7 @@ mod tests {
         VaultPayload {
             entries: vec![entry],
             mfa: None,
+            format_version: None,
         }
     }
 
@@ -1027,13 +1080,64 @@ mod tests {
         assert_eq!(content, b"new-content");
     }
 
+    fn write_legacy_v3_vault_bytes(
+        path: &Path,
+        name: &str,
+        users: &[VaultUser],
+        dek: &MasterKey,
+        entries: &[SecretEntry],
+        key_created_at: u64,
+        key_rotated_at: u64,
+    ) -> Result<(), VaultError> {
+        let header_bytes = serialize_header_v4(
+            FORMAT_VERSION_V3,
+            name,
+            users,
+            key_created_at,
+            key_rotated_at,
+        )?;
+        let plaintext = serialize_payload_zeroizing(entries, None)?;
+        let (nonce, ciphertext) = crypto::encrypt(dek, plaintext.as_ref())?;
+        let mut file = fs::File::create(path)?;
+        file.write_all(&header_bytes)?;
+        file.write_all(&nonce)?;
+        file.write_all(&ciphertext)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn open_multi_user_fixture(
+        path: &Path,
+        user: &crate::vault_user::VaultUser,
+        password: &str,
+    ) -> Result<VaultPayload, VaultError> {
+        use crate::vault_user::unwrap_user_dek;
+
+        let file = read_multi_user_vault_file(path)?;
+        let kdf = KdfParams {
+            memory_kib: user.kdf_memory_kib,
+            iterations: user.kdf_iterations,
+            parallelism: user.kdf_parallelism,
+        };
+        let salt = crate::vault_user::decode_salt(&user.kdf_salt)?;
+        let kek = MasterKey::derive_from_password(password, &salt, kdf)?;
+        let dek = unwrap_user_dek(user, &kek)?;
+        decrypt_multi_user_payload(
+            &dek,
+            &file.payload_nonce,
+            &file.payload_ciphertext,
+            file.format_version,
+            &file.header_aad,
+        )
+    }
+
     #[test]
-    fn v3_vault_file_roundtrip() {
-        use crate::vault_user::{build_vault_user, unwrap_user_dek, UserRole};
+    fn v4_vault_file_roundtrip() {
+        use crate::vault_user::{build_vault_user, UserRole};
         use zeroize::Zeroizing;
 
         let dir = tempdir().unwrap();
-        let path = dir.path().join("v3.oxid");
+        let path = dir.path().join("v4.oxid");
         let password = Zeroizing::new("correct-horse-battery-staple".to_string());
         let dek = MasterKey::generate_data_key();
         let user =
@@ -1042,7 +1146,7 @@ mod tests {
 
         write_v3_vault_file(
             &path,
-            "V3Vault",
+            "V4Vault",
             std::slice::from_ref(&user),
             dek.as_bytes(),
             &payload.entries,
@@ -1050,19 +1154,254 @@ mod tests {
         .unwrap();
 
         let meta = read_vault_meta(&path).unwrap();
-        assert_eq!(meta.format_version, FORMAT_VERSION_V3);
-        assert_eq!(meta.users.as_ref().unwrap().len(), 1);
+        assert_eq!(meta.format_version, FORMAT_VERSION_V4);
 
-        let (users, nonce, ciphertext) = read_v3_vault_file(&path).unwrap();
-        assert_eq!(users[0].username, "admin");
-        let kek = MasterKey::derive_from_password(
-            password.as_str(),
-            &crate::vault_user::decode_salt(&users[0].kdf_salt).unwrap(),
-            meta.kdf,
+        let loaded = open_multi_user_fixture(&path, &user, password.as_str()).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.format_version, Some(FORMAT_VERSION_V4));
+    }
+
+    #[test]
+    fn v4_tampered_users_json_fails_open() {
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("tamper.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user =
+            build_vault_user("admin", password.clone(), UserRole::Admin, &dek, None).unwrap();
+
+        write_v3_vault_file(
+            &path,
+            "TamperVault",
+            std::slice::from_ref(&user),
+            dek.as_bytes(),
+            &sample_payload().entries,
         )
         .unwrap();
-        let opened_dek = unwrap_user_dek(&users[0], &kek).unwrap();
-        let loaded = decrypt_v3_payload(&opened_dek, &nonce, &ciphertext).unwrap();
+
+        let (meta, _header_len) = parse_header(&fs::read(&path).unwrap()).unwrap();
+        let mut bytes = fs::read(&path).unwrap();
+        let tamper_index = 4 + 2 + 2 + meta.name.len() + 4;
+        bytes[tamper_index] ^= 0x01;
+        fs::write(&path, &bytes).unwrap();
+
+        let err = open_multi_user_fixture(&path, &user, password.as_str()).unwrap_err();
+        assert!(matches!(err, VaultError::InvalidPassword));
+    }
+
+    #[test]
+    fn v4_tampered_user_role_fails_open() {
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("role.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user =
+            build_vault_user("admin", password.clone(), UserRole::Admin, &dek, None).unwrap();
+
+        write_v3_vault_file(
+            &path,
+            "RoleVault",
+            std::slice::from_ref(&user),
+            dek.as_bytes(),
+            &sample_payload().entries,
+        )
+        .unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        let (meta, header_len) = parse_header(&bytes).unwrap();
+        let mut users = meta.users.unwrap();
+        users[0].role = UserRole::Member;
+        let tampered_header = serialize_header_v4(
+            FORMAT_VERSION_V4,
+            &meta.name,
+            &users,
+            meta.key_created_at,
+            meta.key_rotated_at,
+        )
+        .unwrap();
+        let mut tampered = tampered_header;
+        tampered.extend_from_slice(&bytes[header_len..]);
+        fs::write(&path, tampered).unwrap();
+
+        let meta = read_vault_meta(&path).unwrap();
+        let err =
+            open_multi_user_fixture(&path, &meta.users.unwrap()[0], password.as_str()).unwrap_err();
+        assert!(matches!(err, VaultError::InvalidPassword));
+    }
+
+    #[test]
+    fn v4_header_downgrade_detected() {
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("downgrade.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user =
+            build_vault_user("admin", password.clone(), UserRole::Admin, &dek, None).unwrap();
+        let payload = sample_payload();
+        let created = 1_700_000_000_u64;
+
+        let plaintext_v4 = serialize_payload_v4_zeroizing(&payload.entries, None).unwrap();
+        let (nonce, ciphertext) = crypto::encrypt(&dek, plaintext_v4.as_ref()).unwrap();
+        let header_bytes = serialize_header_v4(
+            FORMAT_VERSION_V3,
+            "DowngradeVault",
+            std::slice::from_ref(&user),
+            created,
+            0,
+        )
+        .unwrap();
+        let mut file = fs::File::create(&path).unwrap();
+        file.write_all(&header_bytes).unwrap();
+        file.write_all(&nonce).unwrap();
+        file.write_all(&ciphertext).unwrap();
+        file.sync_all().unwrap();
+
+        let err = open_multi_user_fixture(&path, &user, password.as_str()).unwrap_err();
+        assert!(matches!(err, VaultError::FormatDowngrade));
+    }
+
+    #[test]
+    fn legacy_v3_open_persist_becomes_v4() {
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy-v3.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user =
+            build_vault_user("admin", password.clone(), UserRole::Admin, &dek, None).unwrap();
+        let payload = sample_payload();
+        let created = 1_700_000_000_u64;
+
+        write_legacy_v3_vault_bytes(
+            &path,
+            "LegacyV3",
+            std::slice::from_ref(&user),
+            &dek,
+            &payload.entries,
+            created,
+            0,
+        )
+        .unwrap();
+
+        open_multi_user_fixture(&path, &user, password.as_str()).unwrap();
+
+        update_v3_vault_file(
+            &path,
+            "LegacyV3",
+            std::slice::from_ref(&user),
+            &dek,
+            &payload.entries,
+            created,
+            0,
+        )
+        .unwrap();
+
+        let meta = read_vault_meta(&path).unwrap();
+        assert_eq!(meta.format_version, FORMAT_VERSION_V4);
+        let loaded = open_multi_user_fixture(&path, &user, password.as_str()).unwrap();
         assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.format_version, Some(FORMAT_VERSION_V4));
+    }
+
+    #[test]
+    fn legacy_v2_open_succeeds_and_persist_becomes_v4() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy-v2.oxid");
+        let salt = random_salt();
+        let kdf = KdfParams::default();
+        let kek = MasterKey::derive_from_password("legacy-v2-password", &salt, kdf).unwrap();
+        let dek = MasterKey::generate_data_key();
+        let payload = sample_payload();
+        let created = 1_700_000_000_u64;
+
+        write_vault_file(
+            &path,
+            "LegacyV2",
+            kdf,
+            &salt,
+            &kek,
+            &dek,
+            created,
+            0,
+            &payload.entries,
+        )
+        .unwrap();
+
+        let (_, loaded) = read_vault_file(&path, &kek).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
+
+        update_vault_file(
+            &path,
+            "LegacyV2",
+            kdf,
+            &salt,
+            &dek,
+            Some(&kek),
+            FORMAT_VERSION_V2,
+            created,
+            0,
+            &payload.entries,
+        )
+        .unwrap();
+
+        let meta = read_vault_meta(&path).unwrap();
+        assert_eq!(meta.format_version, FORMAT_VERSION_V2);
+        let (_, reopened) = read_vault_file(&path, &kek).unwrap();
+        assert_eq!(reopened.entries.len(), 1);
+    }
+
+    #[test]
+    fn v4_password_rotation_reopens_with_new_password() {
+        use crate::vault_user::{build_vault_user, rewrap_user_dek, UserRole};
+        use zeroize::Zeroizing;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("rotate-v4.oxid");
+        let old_password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let new_password = Zeroizing::new("brand-new-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let mut user =
+            build_vault_user("admin", old_password.clone(), UserRole::Admin, &dek, None).unwrap();
+        let payload = sample_payload();
+        let created = 1_700_000_000_u64;
+
+        write_v3_vault_file(
+            &path,
+            "RotateV4",
+            std::slice::from_ref(&user),
+            dek.as_bytes(),
+            &payload.entries,
+        )
+        .unwrap();
+
+        rewrap_user_dek(&mut user, old_password.clone(), new_password.clone(), &dek).unwrap();
+        update_v3_vault_file(
+            &path,
+            "RotateV4",
+            std::slice::from_ref(&user),
+            &dek,
+            &payload.entries,
+            created,
+            0,
+        )
+        .unwrap();
+
+        open_multi_user_fixture(&path, &user, new_password.as_str()).unwrap();
+        let err = open_multi_user_fixture(&path, &user, old_password.as_str()).unwrap_err();
+        assert!(matches!(
+            err,
+            VaultError::InvalidUserPassword | VaultError::InvalidPassword
+        ));
     }
 }

@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::audit::{audit_log_path, verify_audit_chain};
+use crate::audit::{audit_log_has_checkpoints, audit_log_path, verify_audit_chain};
 use crate::audit_secure::secure_audit_log_file;
 use crate::error::VaultError;
+use crate::format::{self, FORMAT_VERSION_V1};
 use crate::policy::{admin_policy_path, load_admin_policy};
 
 /// Stable status code — mapped to i18n keys in the frontend (`diagnostics.statusCodes.*`).
@@ -234,6 +235,20 @@ fn diagnose_audit_log(vault_path: Option<&str>) -> AuditLogDiagnostics {
             status: "audit_chain_invalid".into(),
             chain_valid,
         };
+    }
+
+    if let Ok(meta) = format::read_vault_meta(Path::new(vault_path)) {
+        if meta.format_version != FORMAT_VERSION_V1
+            && log_path.is_file()
+            && !audit_log_has_checkpoints(&log_path)
+        {
+            return AuditLogDiagnostics {
+                path: Some(path_display),
+                ok: true,
+                status: "audit_no_checkpoints".into(),
+                chain_valid,
+            };
+        }
     }
 
     AuditLogDiagnostics {
