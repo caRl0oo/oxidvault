@@ -25,8 +25,8 @@ use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
 use crate::vault_user::{
     build_vault_user, build_vault_user_from_existing_credential, derive_user_kek, rewrap_user_dek,
-    to_public, unwrap_user_dek,
-    user_mfa_enabled, validate_username, UnlockedUser, UserRole, VaultUser, VaultUserPublic,
+    to_public, unwrap_user_dek, user_mfa_enabled, validate_username, UnlockedUser, UserRole,
+    VaultUser, VaultUserPublic,
 };
 
 /// `(host, username, private_key, passphrase, known_host_fingerprint)`
