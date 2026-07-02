@@ -169,7 +169,7 @@ Detailansicht / Sidebar
 - Garbage collection in V8 does not guarantee memory pages are freed — plaintext fragments can remain for a long time.
 - DevTools, browser extensions, and crash dumps in the WebView context increase the attack surface.
 
-**Limitation (documented honestly):** `reveal_secret` and the edit form flow inevitably create short-lived plaintext copies over IPC or in React state. The threat model minimizes duration and frequency — clipboard and bulk export run exclusively through Rust.
+**Limitation (documented honestly):** `reveal_secret` and the edit form flow inevitably create short-lived plaintext copies over IPC or in React state. The threat model minimizes duration and frequency — clipboard and bulk export run exclusively through Rust. Third-party clipboard managers that read `CF_TEXT` directly are not blocked by OS exclusion hints.
 
 ### Key Derivation (KDF): Argon2id
 
@@ -435,8 +435,9 @@ OxidVault treats the system clipboard as an **ephemeral channel**. Secrets are *
 |---|---|
 | **Auto-clear delay** | 30 seconds (exact) |
 | **Write** | Rust crate **`arboard`** (native OS clipboard) |
+| **Windows history / cloud exclusion** | `SetExtWindows`: `exclude_from_history()` + `exclude_from_cloud()` on secret copy and clear (Win+V / cloud clipboard) |
 | **Timer** | `std::thread::spawn` + `sleep(30s)` — independent of JS event loop |
-| **Clear strategy** | `get_text()` === stored secret → `set_text("")` |
+| **Clear strategy** | `get_text()` === stored secret → empty string with same Windows exclusion flags |
 | **Generation counter** | New copy invalidates older clear timers |
 | **Cancel on lock** | `SecureClipboard::cancel_pending()` in `perform_lock()` |
 
@@ -456,7 +457,7 @@ Frontend: copy_to_clipboard(entry_id, field?)
 Rust: Vault::extract_secret → Zeroizing<String>
         │
         ▼
-arboard::Clipboard::set_text(secret)
+arboard::Clipboard::set() [+ SetExtWindows on Windows]
         │
         ▼
 Background-Thread: sleep(30s) → Clear wenn unverändert
@@ -2358,6 +2359,7 @@ For the following changes, this document **must** be updated in the same commit 
 | 2026-06-25 | 2.4.0 | **Audit HMAC checkpoints:** `derive_audit_hmac_key` (HKDF from DEK); `Checkpoint` log lines; `verify_audit_chain_keyed`; `auditChainAuthenticated` in compliance UI; v1 / pre-upgrade `audit_no_checkpoints` |
 | 2026-06-25 | 2.4.0 | **Extension anti-phishing:** `url_match` eTLD+1 via `psl` (no substring); gesture-gated autofill; `sender.tab.url` hostname authority; extension `0.5.0` |
 | 2026-06-25 | 2.4.0 | **NM bridge hardening:** `os_protect` session file ACL; token rotation on unlock; `get_login` rate limit + `SecretAutofilled` / `BridgeThrottled` audit |
+| 2026-06-25 | 2.4.0 | **Windows clipboard exclusion:** `SetExtWindows` history/cloud hints on secret copy + clear (`clipboard.rs`) |
 | 2026-06-25 | 2.4.0 | **Format v4:** AES-GCM AAD binds multi-user header to payload; `encrypt_with_aad` / `decrypt_with_aad`; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management) |
 | 2026-07-01 | 2.3.0 | **Password import:** client-side parsers (Bitwarden JSON, 1Password/KeePass/Chrome/RoboForm CSV); `ImportModal` + `ImportWelcomeModal`; Settings entry; `importOfferedPaths` + `mark_import_offered`; RoboForm `secure_note` detection; `scripts/verify-roboform-import.ts` |
 | 2026-06-29 | 2.2.0 | **PDF via jsPDF:** printpdf + `patches/` fully removed; jsPDF + jspdf-autotable in frontend; offline, UTF-8, logo, colored actions, automatic page breaks |
