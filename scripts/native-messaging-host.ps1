@@ -1,4 +1,6 @@
 # Shared helpers for native-messaging host manifest (store ID + allowed_origins).
+# Render entry point: pwsh ./scripts/native-messaging-host.ps1
+# (writes src-tauri/wix/native_messaging.wxs and install-native-messaging-host.ps1 only)
 $ErrorActionPreference = "Stop"
 
 function Get-OxidVaultRepoRoot {
@@ -12,8 +14,8 @@ function Test-OxidVaultExtensionId {
 
 function Get-OxidVaultChromeStoreExtensionId {
     $root = Get-OxidVaultRepoRoot
-    $idPath = Join-Path $root "browser-extension\chrome-store-extension.id"
-    if (-not (Test-Path $idPath)) {
+    $idPath = Join-Path $root "browser-extension" "chrome-store-extension.id"
+    if (-not (Test-Path -LiteralPath $idPath)) {
         throw "Chrome Web Store extension ID file not found: $idPath"
     }
     $id = ([System.IO.File]::ReadAllText($idPath)).Trim()
@@ -43,24 +45,24 @@ function Get-OxidVaultNativeMessagingAllowedOrigins {
     return @($origins.Keys)
 }
 
-function Render-OxidVaultNativeMessagingWix {
+function Render-OxidVaultNativeMessagingArtifacts {
     $root = Get-OxidVaultRepoRoot
     $storeId = Get-OxidVaultChromeStoreExtensionId
     $placeholder = "__CHROME_STORE_EXTENSION_ID__"
-    $templatePath = Join-Path $root "src-tauri\wix\native_messaging.wxs.in"
-    $wxsPath = Join-Path $root "src-tauri\wix\native_messaging.wxs"
-    $installScriptTemplatePath = Join-Path $root "src-tauri\wix\install-native-messaging-host.ps1.in"
-    $installScriptPath = Join-Path $root "src-tauri\wix\install-native-messaging-host.ps1"
+    $wixDir = Join-Path $root "src-tauri" "wix"
+    $templatePath = Join-Path $wixDir "native_messaging.wxs.in"
+    $wxsPath = Join-Path $wixDir "native_messaging.wxs"
+    $installScriptTemplatePath = Join-Path $wixDir "install-native-messaging-host.ps1.in"
+    $installScriptPath = Join-Path $wixDir "install-native-messaging-host.ps1"
 
-    if (-not (Test-Path $templatePath)) {
+    if (-not (Test-Path -LiteralPath $templatePath)) {
         throw "WiX template not found: $templatePath"
     }
-    if (-not (Test-Path $installScriptTemplatePath)) {
+    if (-not (Test-Path -LiteralPath $installScriptTemplatePath)) {
         throw "Install script template not found: $installScriptTemplatePath"
     }
 
     $wixTemplate = [System.IO.File]::ReadAllText($templatePath)
-
     $scriptTemplate = [System.IO.File]::ReadAllText($installScriptTemplatePath)
     if (-not $scriptTemplate.Contains($placeholder)) {
         throw "Install script template missing placeholder $placeholder"
@@ -68,16 +70,26 @@ function Render-OxidVaultNativeMessagingWix {
 
     $renderedWix = $wixTemplate
     $renderedScript = $scriptTemplate.Replace($placeholder, $storeId)
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
-    $existingWix = if (Test-Path $wxsPath) { [System.IO.File]::ReadAllText($wxsPath) } else { "" }
+    $existingWix = if (Test-Path -LiteralPath $wxsPath) { [System.IO.File]::ReadAllText($wxsPath) } else { "" }
     if ($existingWix -ne $renderedWix) {
-        [System.IO.File]::WriteAllText($wxsPath, $renderedWix, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::WriteAllText($wxsPath, $renderedWix, $utf8NoBom)
         Write-Host "Rendered $wxsPath from chrome-store-extension.id"
     }
 
-    $existingScript = if (Test-Path $installScriptPath) { [System.IO.File]::ReadAllText($installScriptPath) } else { "" }
+    $existingScript = if (Test-Path -LiteralPath $installScriptPath) { [System.IO.File]::ReadAllText($installScriptPath) } else { "" }
     if ($existingScript -ne $renderedScript) {
-        [System.IO.File]::WriteAllText($installScriptPath, $renderedScript, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::WriteAllText($installScriptPath, $renderedScript, $utf8NoBom)
         Write-Host "Rendered $installScriptPath from chrome-store-extension.id"
     }
+}
+
+function Render-OxidVaultNativeMessagingWix {
+    Render-OxidVaultNativeMessagingArtifacts
+}
+
+# Standalone invocation (CI / manual); dot-sourced callers invoke Render-* explicitly.
+if ($PSCommandPath -and (Split-Path -Leaf $PSCommandPath) -eq (Split-Path -Leaf $MyInvocation.InvocationName)) {
+    Render-OxidVaultNativeMessagingArtifacts
 }
