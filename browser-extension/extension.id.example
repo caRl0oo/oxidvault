@@ -1,5 +1,7 @@
-# Copy to extension.id (gitignored) after Chrome Web Store publish.
+# Copy to extension.id (gitignored) for local unpacked-extension development.
+# The published Chrome Web Store ID is in chrome-store-extension.id (committed).
+#
 # 32 lowercase letters a-p — shown on chrome://extensions in developer mode.
 #
-# Example:
-# belagnpfebgljfamjihdoinbcehingjd
+# Example dev ID (yours will differ):
+# mimpbeonbnfjaigjmgjplhlalnahlofk

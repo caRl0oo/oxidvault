@@ -46,6 +46,9 @@ Set-Location $root
 node (Join-Path $root "scripts\sync-version.mjs")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+. (Join-Path $root "scripts\native-messaging-host.ps1")
+Render-OxidVaultNativeMessagingWix
+
 Write-Host "Building Native-Messaging host (oxidvault-nmh.exe)..."
 cargo build --release --manifest-path (Join-Path $root "src-tauri\Cargo.toml") --bin oxidvault-nmh
 

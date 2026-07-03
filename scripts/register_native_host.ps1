@@ -1,6 +1,6 @@
 # OxidVault — Native-Messaging-Host in der Windows-Registry registrieren (Chrome / Edge)
 param(
-    [Parameter(Mandatory = $false, HelpMessage = "32-stellige Extension-ID von chrome://extensions")]
+    [Parameter(Mandatory = $false, HelpMessage = "32-stellige Extension-ID von chrome://extensions (unpacked dev build)")]
     [string]$ExtensionId = "",
 
     [ValidateSet("release", "debug", "installed")]
@@ -11,11 +11,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "native-messaging-host.ps1")
+
+$root = Get-OxidVaultRepoRoot
 $hostDir = Join-Path $root "browser-extension\host"
 $hostManifestPath = Join-Path $hostDir "com.oxidvault.app.json"
 
-function Resolve-ExtensionId {
+function Resolve-DevExtensionId {
     param([string]$ExplicitId)
 
     if ($ExplicitId) {
@@ -51,26 +53,12 @@ Dev-Build:
   cargo build --release
 
 MSI-Installation:
-  .\scripts\register_native_host.ps1 -BuildProfile installed -ExtensionId <STORE_ID>
+  .\scripts\register_native_host.ps1 -BuildProfile installed
 "@
 }
 
-$resolvedId = Resolve-ExtensionId -ExplicitId $ExtensionId
-if ($resolvedId -and $resolvedId -notmatch '^[a-p]{32}$') {
-    Write-Error "ExtensionId muss 32 Kleinbuchstaben (a-p) sein — kopiere sie von chrome://extensions."
-}
-
-$allowedOrigin = if ($resolvedId) {
-    "chrome-extension://$resolvedId/"
-} else {
-    Write-Warning @"
-Keine Extension-ID gefunden.
-Setze browser-extension/extension.id (siehe extension.id.example),
-OXIDVAULT_EXTENSION_ID oder -ExtensionId.
-allowed_origins bleibt ein Platzhalter bis die Store-ID hinterlegt ist.
-"@
-    "chrome-extension://YOUR_EXTENSION_ID_HERE/"
-}
+$devId = Resolve-DevExtensionId -ExplicitId $ExtensionId
+$allowedOrigins = Get-OxidVaultNativeMessagingAllowedOrigins -DevExtensionId $devId
 
 if (-not (Test-Path $hostDir)) {
     New-Item -ItemType Directory -Path $hostDir -Force | Out-Null
@@ -81,7 +69,7 @@ $hostManifest = [ordered]@{
     description     = "OxidVault Native Messaging Host"
     path            = $exePath
     type            = "stdio"
-    allowed_origins = @($allowedOrigin)
+    allowed_origins = $allowedOrigins
 }
 
 $json = ($hostManifest | ConvertTo-Json -Depth 5)
@@ -104,13 +92,15 @@ Write-Host ""
 Write-Host "Native Host registriert."
 Write-Host "  Host-Manifest : $hostManifestFull"
 Write-Host "  Binary        : $exePath"
-Write-Host "  allowed_origins: $allowedOrigin"
+Write-Host "  allowed_origins:"
+foreach ($origin in $allowedOrigins) {
+    Write-Host "    $origin"
+}
 Write-Host ""
-Write-Host "Naechster Schritt: Extension aus Chrome Web Store installieren, neu laden, Ping/Pong pruefen."
-
-if (-not $resolvedId) {
-    Write-Host ""
-    Write-Host "Extension-ID nach Web-Store-Veroeffentlichung:"
-    Write-Host "  1. ID in browser-extension/extension.id speichern"
-    Write-Host "  2. .\scripts\register_native_host.ps1 erneut ausfuehren"
+Write-Host "Store-Extension: immer enthalten (chrome-store-extension.id)."
+if ($devId) {
+    Write-Host "Dev-Extension : $devId (zusaetzlich, falls abweichend von Store-ID)."
+} else {
+    Write-Host "Dev-Extension : nicht gesetzt — nur Store-ID aktiv."
+    Write-Host "  Optional: browser-extension/extension.id oder -ExtensionId fuer unpacked builds."
 }

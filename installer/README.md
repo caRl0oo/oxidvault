@@ -14,24 +14,29 @@ Upload at [Chrome Web Store Developer Dashboard](https://chrome.google.com/webst
 
 ## After first publish
 
-1. Copy the extension ID from `chrome://extensions` (developer mode).
-2. Save it locally (gitignored):
+1. Save the **Chrome Web Store** extension ID in the repo (already set for releases):
+
+   `browser-extension/chrome-store-extension.id`
+
+   Update this file only when Google assigns a new ID (re-publish edge case).
+
+2. For **local unpacked** development, save your dev ID (gitignored):
 
    ```powershell
    Copy-Item browser-extension\extension.id.example browser-extension\extension.id
-   # Edit extension.id — paste your 32-character store ID
+   # Edit extension.id — paste your 32-character unpacked extension ID
    ```
 
-3. Register Native Messaging for dev builds only:
+3. Register Native Messaging for dev builds:
 
    ```powershell
-   # Dev build
    .\scripts\register_native_host.ps1
-
    ```
 
-   The script resolves the ID from `-ExtensionId`, `browser-extension/extension.id`, or `$env:OXIDVAULT_EXTENSION_ID`.
-   MSI installations register Native Messaging automatically during setup.
+   The script always includes the store ID from `chrome-store-extension.id` and
+   adds your dev ID from `extension.id`, `-ExtensionId`, or `$env:OXIDVAULT_EXTENSION_ID`
+   when it differs — no re-registration when switching store vs unpacked.
+   The MSI registers Native Messaging automatically during setup (WiX fragment + `bundle.windows.wix.componentRefs` in `tauri.conf.json`).
 
 ## Optional enterprise force-install (GPO)
 

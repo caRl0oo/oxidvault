@@ -1,0 +1,55 @@
+# Installed by MSI; registers native messaging for Chrome and Edge (HKCU).
+param(
+    [switch]$Uninstall
+)
+
+$ErrorActionPreference = "Stop"
+
+$InstallDir = $PSScriptRoot
+
+$manifestDir = Join-Path $env:LOCALAPPDATA "OxidVault\NativeMessaging"
+$manifestPath = Join-Path $manifestDir "com.oxidvault.app.json"
+$registryKeys = @(
+    "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.oxidvault.app",
+    "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.oxidvault.app"
+)
+$storeExtensionId = "__CHROME_STORE_EXTENSION_ID__"
+
+function Remove-NativeMessagingRegistration {
+    foreach ($key in $registryKeys) {
+        if (Test-Path -LiteralPath $key) {
+            Remove-Item -LiteralPath $key -Recurse -Force
+        }
+    }
+    if (Test-Path -LiteralPath $manifestPath) {
+        Remove-Item -LiteralPath $manifestPath -Force
+    }
+}
+
+function Set-NativeMessagingRegistration {
+    param([string]$HostExePath)
+
+    if (-not (Test-Path -LiteralPath $HostExePath)) {
+        throw "Native messaging host binary not found: $HostExePath"
+    }
+
+    New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+
+    $hostPathJson = $HostExePath.Replace("\", "\\")
+    $json = '{"name":"com.oxidvault.app","description":"OxidVault Native Messaging Host","path":"' + $hostPathJson + '","type":"stdio","allowed_origins":["chrome-extension://' + $storeExtensionId + '/"]}'
+    [System.IO.File]::WriteAllText($manifestPath, $json, [System.Text.UTF8Encoding]::new($false))
+
+    foreach ($key in $registryKeys) {
+        New-Item -Path $key -Force | Out-Null
+        Set-ItemProperty -LiteralPath $key -Name "(default)" -Value $manifestPath
+    }
+}
+
+if ($Uninstall) {
+    Remove-NativeMessagingRegistration
+    exit 0
+}
+
+$hostExe = Join-Path $InstallDir "oxidvault-nmh.exe"
+Set-NativeMessagingRegistration -HostExePath $hostExe
+exit 0
