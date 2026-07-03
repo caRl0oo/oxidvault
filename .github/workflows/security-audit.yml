@@ -43,6 +43,10 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Render native messaging templates
+        shell: pwsh
+        run: ./scripts/native-messaging-host.ps1
+
       # 4. PRÜFUNG 1: Bekannte Sicherheitslücken in externen Crates (Abhängigkeiten) finden
       - name: Cache cargo-audit
         uses: actions/cache@v4
@@ -159,6 +163,10 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Render native messaging templates
+        shell: pwsh
+        run: ./scripts/native-messaging-host.ps1
 
       # Lint/test the #[cfg(windows)] branches the Linux runner never
       # compiles: os_protect DACLs, audit_secure, SetExtWindows

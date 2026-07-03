@@ -1,6 +1,6 @@
 # OxidVault
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.4.0-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.4.1-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
 If you find OxidVault useful, consider giving it a ⭐ — it helps others discover the project.
 
@@ -328,7 +328,7 @@ This architecture strictly separates **business logic (Rust)** from the **UI (Re
 
 | Platform | File |
 |---|---|
-| **Windows** | `OxidVault_2.4.0_x64_en-US.msi` |
+| **Windows** | `OxidVault_2.4.1_x64_en-US.msi` |
 
 > **Note:** After installation, place the license file for Enterprise at `C:\ProgramData\OxidVault\oxidvault.license` — details: [oxidvault.com](https://oxidvault.com)
 

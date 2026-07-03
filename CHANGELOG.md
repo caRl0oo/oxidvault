@@ -2,6 +2,21 @@
 
 Release history for OxidVault. Architecture sync requirements remain in [ARCHITECTURE.md](ARCHITECTURE.md#14-documentation-requirements).
 
+## 2.4.1 (2026-07-03)
+
+### Fixed
+
+- MSI native messaging registration was broken end-to-end; the Chrome Web Store extension could not connect on fresh installations. Four distinct bugs fixed:
+  - `allowed_origins` contained a hardcoded stale extension ID — now rendered from a single source of truth (`browser-extension/chrome-store-extension.id`)
+  - fragile inline PowerShell custom action replaced by a bundled `install-native-messaging-host.ps1` (writes manifest + HKCU keys for Chrome and Edge; uninstall removes both)
+  - the WiX fragment was orphaned (Tauri links fragments only via `componentRefs`) — marker component added; actions now scheduled after `InstallFinalize` instead of mid-`InstallFiles`
+  - a trailing backslash in the `[INSTALLDIR]` argument broke PowerShell argument parsing (MSI error 1722); the script now derives its path from `$PSScriptRoot`
+
+### Developer
+
+- `register_native_host.ps1` now writes both store and dev extension IDs — no re-registration needed when switching
+- rendered WiX outputs are build artifacts (gitignored), generated from `.in` templates by `tauri-build.ps1`
+
 ## 2.4.0 (2026-06-25)
 
 **BREAKING — File format v4:** AES-GCM AAD binds the multi-user plaintext header to the payload; downgrade guard (`format_version` in payload); v3→v4 on persist; `migrate_to_v3` writes v4; header mutations re-encrypt payload (MFA, user management).
@@ -30,7 +45,7 @@ Release history for OxidVault. Architecture sync requirements remain in [ARCHITE
 | 2025-06-19 | 0.1.0 | Edit secret (`update_entry`), generator field apply in forms |
 | 2025-06-19 | 0.1.0 | Theme system: Oxid, Dracula, Nord, Matrix — CSS variables + localStorage |
 | 2025-06-19 | 0.1.0 | SSH quick connect: russh, xterm.js terminal, event streaming, key in RAM only |
-| 2025-06-19 | 0.1.0 | Enterprise hardening: atomic writes (.oxid.tmp), lock-on-minimize |
+| 2025-06-19 | 0.1.0 | Enterprise hardening: atomic writes (`.oxid.tmp`), lock-on-minimize |
 | 2025-06-19 | 0.1.0 | Smart start: last vault path in `settings.json`, `bootstrap_vault`, `attach_locked`, "Open another vault" |
 | 2025-06-19 | 0.1.0 | Web login quick open: `open_website_url`, http(s) validation, button in EntryDetail |
 | 2025-06-19 | 0.1.0 | Web login: auto-`https://` for bare domains (google.de), scheme injection protection retained |
@@ -112,4 +127,3 @@ Release history for OxidVault. Architecture sync requirements remain in [ARCHITE
 | 2026-06-20 | 1.0.0 | **SSH key loader:** `key_loader.rs`, vault-only keys, PEM validation, format-specific russh parsing, backend logging; test keys removed |
 | 2026-06-20 | 1.0.0 | **SSH terminal streaming:** output backlog + `ssh_begin_streaming`, `ssh_resize_pty`, listener race fixed |
 | 2026-06-20 | 1.0.0 | **SSH terminal layout:** pixel split + ResizeObserver init, focus mode, `ssh_connect(cols, rows)` for initial PTY size |
-

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!-- Marker Component required: Tauri only links fragments referenced via componentRefs (see tauri.conf.json). -->
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="OxidVaultNativeMessagingRegistration"
+                 Guid="A7B3C8D1-4E2F-5A6B-9C0D-1E2F3A4B5C6D"
+                 Win64="yes">
+        <CreateFolder />
+      </Component>
+    </DirectoryRef>
+
+    <CustomAction
+      Id="InstallNativeMessagingHost"
+      Directory="INSTALLDIR"
+      Execute="immediate"
+      Return="check"
+      Impersonate="yes"
+      ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]install-native-messaging-host.ps1&quot;" />
+
+    <CustomAction
+      Id="UninstallNativeMessagingHost"
+      Directory="INSTALLDIR"
+      Execute="immediate"
+      Return="ignore"
+      Impersonate="yes"
+      ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]install-native-messaging-host.ps1&quot; -Uninstall" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallNativeMessagingHost" After="InstallFinalize">NOT REMOVE</Custom>
+      <Custom Action="UninstallNativeMessagingHost" Before="RemoveFiles">REMOVE=&quot;ALL&quot;</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OxidVault",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "identifier": "com.oxidvault.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -33,9 +33,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "wix/install-native-messaging-host.ps1": "install-native-messaging-host.ps1"
+    },
     "windows": {
       "wix": {
-        "fragmentPaths": ["./wix/native_messaging.wxs"]
+        "fragmentPaths": ["./wix/native_messaging.wxs"],
+        "componentRefs": ["OxidVaultNativeMessagingRegistration"]
       }
     },
     "icon": [
