@@ -139,3 +139,32 @@ jobs:
               npm audit --audit-level=high
               ;;
           esac
+
+  windows-verify:
+    name: Windows Code Verification
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_HTTP_MULTIPLEXING: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      # Lint/test the #[cfg(windows)] branches the Linux runner never
+      # compiles: os_protect DACLs, audit_secure, SetExtWindows
+      # clipboard exclusion, NM bridge session handling
+      - name: Run Cargo Clippy (Windows targets)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run Cargo Tests (Windows)
+        run: cargo test
