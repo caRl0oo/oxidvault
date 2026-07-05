@@ -52,10 +52,6 @@ function auditAuthenticationLabel(
   return status.auditChainAuthenticated ? translate("common.yes") : translate("common.no");
 }
 
-function keyAgeClass(recommended: boolean): string {
-  return recommended ? "text-vault-danger" : "text-vault-success";
-}
-
 export function ComplianceDashboard({
   onOpenMigrateModal,
 }: Readonly<{
@@ -99,7 +95,6 @@ export function ComplianceDashboard({
   }, [refresh]);
 
   const statusLabel = (ok: boolean) => (ok ? t("common.yes") : t("common.no"));
-  const statusClass = (ok: boolean) => (ok ? "text-vault-success" : "text-vault-danger");
   const dash = t("common.dash");
 
   const renderBody = () => {

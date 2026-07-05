@@ -14,7 +14,7 @@ function Test-OxidVaultExtensionId {
 
 function Get-OxidVaultChromeStoreExtensionId {
     $root = Get-OxidVaultRepoRoot
-    $idPath = Join-Path $root "browser-extension" "chrome-store-extension.id"
+    $idPath = Join-Path (Join-Path $root "browser-extension") "chrome-store-extension.id"
     if (-not (Test-Path -LiteralPath $idPath)) {
         throw "Chrome Web Store extension ID file not found: $idPath"
     }
@@ -49,7 +49,7 @@ function Render-OxidVaultNativeMessagingArtifacts {
     $root = Get-OxidVaultRepoRoot
     $storeId = Get-OxidVaultChromeStoreExtensionId
     $placeholder = "__CHROME_STORE_EXTENSION_ID__"
-    $wixDir = Join-Path $root "src-tauri" "wix"
+    $wixDir = Join-Path (Join-Path $root "src-tauri") "wix"
     $templatePath = Join-Path $wixDir "native_messaging.wxs.in"
     $wxsPath = Join-Path $wixDir "native_messaging.wxs"
     $installScriptTemplatePath = Join-Path $wixDir "install-native-messaging-host.ps1.in"
