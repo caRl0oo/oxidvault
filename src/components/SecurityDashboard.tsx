@@ -24,12 +24,12 @@ function scoreTextClass(percent: number): string {
 
 function scoreBarClass(percent: number): string {
   if (percent >= 80) {
-    return "bg-vault-success";
+    return "bg-vault-success text-vault-success";
   }
   if (percent >= 50) {
-    return "bg-vault-accent";
+    return "bg-vault-accent text-vault-accent";
   }
-  return "bg-vault-danger";
+  return "bg-vault-danger text-vault-danger";
 }
 
 function formatExpirySuffix(
@@ -204,7 +204,7 @@ function SecurityAuditReportView({
       <div className="w-full space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="font-mono text-lg font-semibold">{translate("security.title")}</h2>
+            <h2 className={`${UI.title} text-base`}>{translate("security.title")}</h2>
             <p className="mt-1 font-mono text-xs text-vault-muted">{translate("security.subtitle")}</p>
           </div>
           <button
@@ -228,8 +228,11 @@ function SecurityAuditReportView({
           </p>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-vault-border">
             <div
-              className={`h-full rounded-full transition-all ${scoreBarClass(report.scorePercent)}`}
-              style={{ width: `${report.scorePercent}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${scoreBarClass(report.scorePercent)}`}
+              style={{
+                width: `${report.scorePercent}%`,
+                boxShadow: "0 0 8px 0 currentColor",
+              }}
             />
           </div>
           <p className="mt-2 font-mono text-[11px] text-vault-muted">
@@ -301,7 +304,7 @@ function SecurityAuditReportView({
               {report.weakEntries.map((entry) => (
                 <div
                   key={entry.entryId}
-                  className="flex items-start justify-between gap-3 px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover"
+                  className="flex items-start justify-between gap-3 border-l-2 border-vault-danger bg-vault-danger/[0.06] px-4 py-3 transition-colors duration-150 hover:bg-vault-danger/10"
                 >
                   <button
                     type="button"
@@ -335,8 +338,10 @@ function SecurityAuditReportView({
                 return (
                   <div
                     key={entry.entryId}
-                    className={`flex items-start justify-between gap-3 px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover ${
-                      isExpired ? "bg-vault-danger-subtle/50" : "bg-vault-warning-subtle/50"
+                    className={`flex items-start justify-between gap-3 border-l-2 px-4 py-3 transition-colors duration-150 ${
+                      isExpired
+                        ? "border-vault-danger bg-vault-danger/[0.06] hover:bg-vault-danger/10"
+                        : "border-vault-warning bg-vault-warning/[0.06] hover:bg-vault-warning/10"
                     }`}
                   >
                     <button

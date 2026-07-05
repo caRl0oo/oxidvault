@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { Activity, FolderLock, Shield } from "lucide-react";
+import { Pulse, FolderLock, ShieldChevron } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { DashboardFilterBar } from "@/components/DashboardFilterBar";
 import { SidebarEntryList } from "@/components/SidebarEntryList";
@@ -67,7 +67,14 @@ export function VaultWorkspaceSidebar({
   const { t } = useTranslation();
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-vault-border bg-vault-sidebar-bg">
+    <aside
+      className="flex w-80 shrink-0 flex-col border-r bg-vault-sidebar-bg"
+      style={{
+        borderRightColor: "var(--color-vault-border)",
+        borderRightWidth: "1px",
+        boxShadow: "1px 0 0 color-mix(in srgb, var(--color-vault-accent) 8%, transparent)",
+      }}
+    >
       <VaultSidebarNav vaultMainView={vaultMainView} onVaultMainViewChange={onVaultMainViewChange} />
       <div className="border-b border-vault-border p-3">
         <input
@@ -135,13 +142,13 @@ function VaultSidebarNav({
         onClick={() => onVaultMainViewChange("secrets")}
       />
       <SidebarNavTab
-        icon={Shield}
+        icon={ShieldChevron}
         label={t("nav.security")}
         active={vaultMainView === "security"}
         onClick={() => onVaultMainViewChange("security")}
       />
       <SidebarNavTab
-        icon={Activity}
+        icon={Pulse}
         label={t("nav.activity")}
         active={vaultMainView === "activity"}
         onClick={() => onVaultMainViewChange("activity")}

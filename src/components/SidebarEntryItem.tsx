@@ -33,12 +33,14 @@ function entrySubtitle(entry: SecretEntrySummary): string | null {
 
 function itemButtonClass(selected: boolean): string {
   return selected
-    ? "bg-vault-accent-subtle text-vault-accent"
-    : "text-vault-text hover:bg-vault-sidebar-item-hover";
+    ? "border-l-2 border-vault-accent bg-vault-accent-subtle pl-[10px] text-vault-accent"
+    : "border-l-2 border-transparent pl-[10px] text-vault-text hover:border-vault-border hover:bg-vault-sidebar-item-hover";
 }
 
 function iconContainerClass(selected: boolean): string {
-  return selected ? "bg-vault-accent text-vault-on-accent" : "bg-vault-bg text-vault-muted";
+  return selected
+    ? "bg-vault-accent text-vault-on-accent"
+    : "bg-vault-surface text-vault-muted group-hover:bg-vault-sidebar-item-active group-hover:text-vault-text";
 }
 
 function actionsContainerClass(selected: boolean): string {
@@ -130,10 +132,10 @@ export function SidebarEntryItem({
     <button
       type="button"
       onClick={onSelect}
-      className={`group mx-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-100 ${itemButtonClass(selected)}`}
+      className={`group mr-1 flex w-full cursor-pointer items-center gap-3 rounded-md pr-3 py-2.5 text-left transition-all duration-150 ${itemButtonClass(selected)}`}
     >
       <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconContainerClass(selected)}`}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${iconContainerClass(selected)}`}
       >
         <SecretTypeIcon kind={entry.entry_type} className="h-3.5 w-3.5" />
       </div>

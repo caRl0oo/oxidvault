@@ -140,7 +140,7 @@ export function RotationDialog({ open, onClose, onSuccess }: Readonly<RotationDi
         disabled={loading}
         tabIndex={-1}
       />
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-lg border border-vault-border bg-vault-surface shadow-xl">
+      <div className="vault-modal-enter relative z-10 w-full max-w-md overflow-hidden rounded-lg border border-vault-border bg-vault-surface shadow-xl">
         <header className="border-b border-vault-border px-5 py-4">
           <h2 id="rotation-dialog-title" className="font-mono text-sm font-semibold">
             {t("rotation.title")}

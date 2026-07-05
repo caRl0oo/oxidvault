@@ -1,59 +1,59 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@phosphor-icons/react";
 import {
-  AlertTriangle,
-  ClipboardCopy,
+  Warning,
+  Copy,
   Eye,
   FolderLock,
   GitBranch,
-  KeyRound,
+  Key,
   Lock,
-  Pencil,
-  Settings,
-  ShieldAlert,
-  Trash2,
-  Unlock,
-} from "lucide-react";
+  LockOpen,
+  PencilSimple,
+  Gear,
+  ShieldWarning,
+  Trash,
+} from "@phosphor-icons/react";
 
 export type AuditActionTone = "danger" | "accent" | "success" | "config" | "neutral";
 
 export interface AuditActionVisual {
-  readonly icon: LucideIcon;
+  readonly icon: Icon;
   readonly tone: AuditActionTone;
 }
 
 const ACTION_VISUALS: Record<string, AuditActionVisual> = {
   VaultCreated: { icon: FolderLock, tone: "neutral" },
-  VaultOpened: { icon: Unlock, tone: "neutral" },
-  VaultUnlocked: { icon: Unlock, tone: "success" },
+  VaultOpened: { icon: LockOpen, tone: "neutral" },
+  VaultUnlocked: { icon: LockOpen, tone: "success" },
   VaultLocked: { icon: Lock, tone: "neutral" },
   EntryCreated: { icon: FolderLock, tone: "success" },
-  EntryUpdated: { icon: Pencil, tone: "neutral" },
+  EntryUpdated: { icon: PencilSimple, tone: "neutral" },
   SecretCreated: { icon: FolderLock, tone: "success" },
-  SecretModified: { icon: Pencil, tone: "neutral" },
-  EntryDeleted: { icon: Trash2, tone: "danger" },
-  SecretCopied: { icon: ClipboardCopy, tone: "neutral" },
+  SecretModified: { icon: PencilSimple, tone: "neutral" },
+  EntryDeleted: { icon: Trash, tone: "danger" },
+  SecretCopied: { icon: Copy, tone: "neutral" },
   SecretRevealed: { icon: Eye, tone: "neutral" },
-  SecretAutofilled: { icon: ClipboardCopy, tone: "accent" },
-  BridgeThrottled: { icon: ShieldAlert, tone: "danger" },
-  VaultKeyRotated: { icon: KeyRound, tone: "config" },
-  AuthFailed: { icon: ShieldAlert, tone: "danger" },
+  SecretAutofilled: { icon: Copy, tone: "accent" },
+  BridgeThrottled: { icon: ShieldWarning, tone: "danger" },
+  VaultKeyRotated: { icon: Key, tone: "config" },
+  AuthFailed: { icon: ShieldWarning, tone: "danger" },
   SyncEvent: { icon: GitBranch, tone: "accent" },
-  ConfigChanged: { icon: Settings, tone: "config" },
-  SshHostTrusted: { icon: ShieldAlert, tone: "success" },
+  ConfigChanged: { icon: Gear, tone: "config" },
+  SshHostTrusted: { icon: ShieldWarning, tone: "success" },
   UserAdded: { icon: FolderLock, tone: "success" },
-  UserRemoved: { icon: Trash2, tone: "danger" },
-  UserPasswordChanged: { icon: KeyRound, tone: "config" },
-  UserRoleChanged: { icon: Settings, tone: "config" },
-  UserMfaEnabled: { icon: ShieldAlert, tone: "success" },
-  UserMfaDisabled: { icon: ShieldAlert, tone: "neutral" },
+  UserRemoved: { icon: Trash, tone: "danger" },
+  UserPasswordChanged: { icon: Key, tone: "config" },
+  UserRoleChanged: { icon: Gear, tone: "config" },
+  UserMfaEnabled: { icon: ShieldWarning, tone: "success" },
+  UserMfaDisabled: { icon: ShieldWarning, tone: "neutral" },
   VaultMigratedToV3: { icon: FolderLock, tone: "accent" },
 };
 
 const DEFAULT_VISUAL: AuditActionVisual = {
-  icon: AlertTriangle,
+  icon: Warning,
   tone: "neutral",
 };
 

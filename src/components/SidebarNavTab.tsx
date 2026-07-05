@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@phosphor-icons/react";
 
 interface SidebarNavTabProps {
   readonly label: string;
-  readonly icon: LucideIcon;
+  readonly icon: Icon;
   readonly active: boolean;
   readonly onClick: () => void;
 }
@@ -16,13 +16,14 @@ export function SidebarNavTab({ label, icon: Icon, active, onClick }: Readonly<S
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-all duration-150 ${
+      className={`relative flex items-center gap-1.5 px-3 py-2.5 text-sm transition-all duration-150 ${
         active
-          ? "border-vault-accent font-medium text-vault-accent"
-          : "border-transparent text-vault-muted hover:text-vault-text"
+          ? "font-medium text-vault-accent after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-t-sm after:bg-vault-accent"
+          : "text-vault-muted hover:text-vault-text"
       }`}
+      style={active ? { background: "color-mix(in srgb, var(--color-vault-accent) 6%, transparent)" } : undefined}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+      <Icon size={15} weight="light" aria-hidden />
       <span>{label}</span>
     </button>
   );

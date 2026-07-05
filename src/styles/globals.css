@@ -1,50 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  --color-vault-bg: #0a0b0d;
-  --color-vault-surface: #12141a;
-  --color-vault-elevated: #12141a;
-  --color-vault-border: #1e222b;
-  --color-vault-border-focus: #3b82f6;
-  --color-vault-muted: #6b7280;
-  --color-vault-placeholder: #6b7280;
-  --color-vault-text: #e5e7eb;
-  --color-vault-accent: #3b82f6;
-  --color-vault-accent-hover: #2563eb;
-  --color-vault-accent-subtle: #1e3a5f;
+  /* Oxid Default — tiefes Navy, Mint-Accent */
+  --color-vault-bg: #05070d;
+  --color-vault-surface: #090d17;
+  --color-vault-elevated: #0e1422;
+  --color-vault-border: #1a2236;
+  --color-vault-border-focus: #00b8a0;
+  --color-vault-muted: #5a6478;
+  --color-vault-placeholder: #4a5568;
+  --color-vault-text: #dde3ed;
+  --color-vault-accent: #00b8a0;
+  --color-vault-accent-hover: #009e8a;
+  --color-vault-accent-subtle: #002520;
   --color-vault-success: #22c55e;
-  --color-vault-success-subtle: #14532d;
-  --color-vault-danger: #ef4444;
-  --color-vault-danger-subtle: #450a0a;
-  --color-vault-warning: #d97706;
-  --color-vault-warning-subtle: #451a03;
-  --color-vault-tag: #a78bfa;
-  --color-vault-on-accent: #ffffff;
-  --color-vault-overlay: rgb(0 0 0 / 60%);
-  --color-vault-hover-overlay: rgb(0 0 0 / 10%);
-  --color-vault-sidebar-bg: #12141a;
-  --color-vault-sidebar-item-hover: #1e222b;
-  --color-vault-sidebar-item-active: #252a35;
-  --color-vault-sidebar-text: #e5e7eb;
+  --color-vault-success-subtle: #052e16;
+  --color-vault-danger: #f87171;
+  --color-vault-danger-subtle: #3b0a0a;
+  --color-vault-warning: #fbbf24;
+  --color-vault-warning-subtle: #3b1f00;
+  --color-vault-tag: #67e8f9;
+  --color-vault-on-accent: #041714;
+  --color-vault-overlay: rgb(0 0 0 / 65%);
+  --color-vault-hover-overlay: rgb(0 184 160 / 5%);
+  --color-vault-sidebar-bg: #070912;
+  --color-vault-sidebar-item-hover: #111830;
+  --color-vault-sidebar-item-active: #172040;
+  --color-vault-sidebar-text: #dde3ed;
   --color-vault-elevated-shadow: none;
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
-  --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "Geist Variable", "Geist", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
 }
 
 /* Oxid Default — values match @theme defaults */
 [data-theme="oxid"] {
-  --color-vault-bg: #0a0b0d;
-  --color-vault-surface: #12141a;
-  --color-vault-elevated: #12141a;
-  --color-vault-border: #1e222b;
-  --color-vault-muted: #6b7280;
-  --color-vault-text: #e5e7eb;
-  --color-vault-accent: #3b82f6;
-  --color-vault-accent-hover: #2563eb;
+  --color-vault-bg: #05070d;
+  --color-vault-surface: #090d17;
+  --color-vault-elevated: #0e1422;
+  --color-vault-border: #1a2236;
+  --color-vault-border-focus: #00b8a0;
+  --color-vault-muted: #5a6478;
+  --color-vault-text: #dde3ed;
+  --color-vault-accent: #00b8a0;
+  --color-vault-accent-hover: #009e8a;
+  --color-vault-accent-subtle: #002520;
+  --color-vault-on-accent: #041714;
+  --color-vault-tag: #67e8f9;
   --color-vault-success: #22c55e;
-  --color-vault-danger: #ef4444;
+  --color-vault-danger: #f87171;
+  --color-vault-sidebar-bg: #070912;
+  --color-vault-sidebar-item-hover: #111830;
+  --color-vault-sidebar-item-active: #172040;
 }
 
 [data-theme="oxid-light"] {
@@ -64,10 +73,10 @@
   --color-vault-muted: #71717a;
   --color-vault-placeholder: #a1a1aa;
 
-  /* Accent — gedämpftes Indigo */
-  --color-vault-accent: #4f46e5;
-  --color-vault-accent-hover: #4338ca;
-  --color-vault-accent-subtle: #eef2ff;
+  /* Accent — gedämpftes Mint/Teal */
+  --color-vault-accent: #00a896;
+  --color-vault-accent-hover: #008f7e;
+  --color-vault-accent-subtle: #e6faf8;
   --color-vault-on-accent: #ffffff;
 
   /* Semantic */
@@ -77,7 +86,8 @@
   --color-vault-success-subtle: #f0fdf4;
   --color-vault-warning: #d97706;
   --color-vault-warning-subtle: #fffbeb;
-  --color-vault-tag: #7c3aed;
+  --color-vault-tag: #0d9488;
+  --color-vault-border-focus: #00a896;
 
   /* Shadows — Raycast-style subtle depth */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -127,7 +137,20 @@
   }
 
   body {
-    @apply bg-vault-bg text-vault-text font-sans;
+    @apply bg-vault-bg text-vault-text;
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "ss02", "cv01", "cv03";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  code, kbd, samp, pre,
+  .font-mono,
+  [class*="vault-mono"],
+  input[type="password"],
+  input[type="text"].mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "calt", "liga";
   }
 
   ::selection {
@@ -192,12 +215,12 @@
   }
 
   .vault-input {
-    @apply w-full rounded-lg border border-vault-border bg-vault-elevated px-3 py-2 font-mono text-sm text-vault-text outline-none transition-all duration-150 placeholder:text-vault-placeholder;
+    @apply w-full rounded border border-vault-border bg-vault-elevated px-3 py-2 font-mono text-sm text-vault-text outline-none transition-all duration-150 placeholder:text-vault-placeholder;
   }
 
   .vault-input:focus {
     @apply border-vault-border-focus;
-    box-shadow: 0 0 0 3px rgb(79 70 229 / 0.1);
+    box-shadow: 0 0 0 3px rgb(0 184 160 / 0.12);
   }
 
   .vault-input:disabled {
@@ -205,7 +228,7 @@
   }
 
   .vault-btn-primary {
-    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-lg bg-vault-accent px-4 py-2 text-sm font-medium text-vault-on-accent outline-none transition-all duration-150;
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded bg-vault-accent px-4 py-2 text-sm font-medium text-vault-on-accent outline-none transition-all duration-150;
   }
 
   .vault-btn-primary:hover {
@@ -213,7 +236,11 @@
   }
 
   .vault-btn-primary:focus-visible {
-    box-shadow: 0 0 0 3px rgb(79 70 229 / 0.3);
+    box-shadow: 0 0 0 3px rgb(0 184 160 / 0.35);
+  }
+
+  .vault-btn-primary:active {
+    transform: scale(0.97);
   }
 
   .vault-btn-primary:disabled {
@@ -221,19 +248,23 @@
   }
 
   .vault-btn-secondary {
-    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-lg border border-vault-border bg-transparent px-4 py-2 text-sm font-medium text-vault-text outline-none transition-all duration-150;
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded border border-vault-border bg-transparent px-4 py-2 text-sm font-medium text-vault-text outline-none transition-all duration-150;
   }
 
   .vault-btn-secondary:hover {
     @apply bg-vault-sidebar-item-hover;
   }
 
+  .vault-btn-secondary:active {
+    transform: scale(0.97);
+  }
+
   .vault-btn-secondary:focus-visible {
-    box-shadow: 0 0 0 3px rgb(0 0 0 / 0.1);
+    box-shadow: 0 0 0 3px rgb(0 184 160 / 0.15);
   }
 
   .vault-btn-danger {
-    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-lg border border-vault-danger bg-transparent px-4 py-2 text-sm font-medium text-vault-danger outline-none transition-all duration-150;
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded border border-vault-danger bg-transparent px-4 py-2 text-sm font-medium text-vault-danger outline-none transition-all duration-150;
   }
 
   .vault-btn-danger:hover {
@@ -241,7 +272,7 @@
   }
 
   .vault-btn-ghost {
-    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded-md bg-transparent px-3 py-1.5 text-sm text-vault-muted outline-none transition-all duration-150;
+    @apply inline-flex cursor-pointer select-none items-center justify-center gap-2 rounded bg-transparent px-3 py-1.5 text-sm text-vault-muted outline-none transition-all duration-150;
   }
 
   .vault-btn-ghost:hover {
@@ -249,17 +280,22 @@
   }
 
   .vault-card {
-    @apply rounded-xl border border-vault-border bg-vault-elevated p-4;
-    box-shadow: var(--shadow-sm);
+    @apply rounded-md border p-4;
+    background-color: var(--color-vault-elevated);
+    border-color: var(--color-vault-border);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .vault-card-hover {
-    @apply rounded-xl border border-vault-border bg-vault-elevated p-4 transition-shadow duration-150;
-    box-shadow: var(--shadow-sm);
+    @apply rounded-md border p-4 transition-shadow duration-150;
+    background-color: var(--color-vault-elevated);
+    border-color: var(--color-vault-border);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .vault-card-hover:hover {
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    border-color: color-mix(in srgb, var(--color-vault-border) 70%, var(--color-vault-accent));
   }
 
   .vault-section-label {
@@ -268,7 +304,9 @@
   }
 
   .vault-title {
-    @apply text-xl font-semibold tracking-tight text-vault-text;
+    font-family: var(--font-sans);
+    @apply text-xl font-semibold text-vault-text;
+    letter-spacing: -0.025em;
   }
 
   .vault-field-label {
@@ -277,10 +315,83 @@
   }
 
   .vault-mono {
-    @apply font-mono text-sm text-vault-text;
+    font-family: var(--font-mono);
+    @apply text-sm text-vault-text;
+    font-feature-settings: "calt", "liga";
   }
 
   .vault-subtitle {
     @apply text-sm text-vault-muted;
+  }
+
+  /** Modal-Panel: Scale-in + Fade beim Öffnen (Linear/Raycast-Pattern). */
+  .vault-modal-enter {
+    animation: vault-modal-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /** Backdrop: reiner Fade, etwas schneller als das Panel. */
+  .vault-backdrop-enter {
+    animation: vault-backdrop-in 140ms ease-out;
+  }
+
+  /** Content-Wechsel (EntryDetail): kurzes Fade + Slide-up. */
+  .vault-content-enter {
+    animation: vault-content-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /** Toast: gleitet von unten herein. */
+  .vault-toast-enter {
+    animation: vault-toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes vault-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes vault-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vault-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vault-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-modal-enter,
+  .vault-backdrop-enter,
+  .vault-content-enter,
+  .vault-toast-enter {
+    animation: none;
   }
 }

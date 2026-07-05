@@ -37,6 +37,19 @@ function StatusIcon({ ok }: Readonly<{ ok: boolean }>) {
   );
 }
 
+function StatusDot({ ok }: Readonly<{ ok: boolean }>) {
+  return (
+    <span
+      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+        ok
+          ? "bg-vault-success shadow-[0_0_5px_1px] shadow-vault-success/50"
+          : "bg-vault-danger shadow-[0_0_5px_1px] shadow-vault-danger/50"
+      }`}
+      aria-hidden="true"
+    />
+  );
+}
+
 function DiagnosticRowItem({
   row,
   translate,
@@ -50,13 +63,19 @@ function DiagnosticRowItem({
 
   return (
     <div
-      className={`${DIAGNOSTIC_GRID_CLASS} border-b border-vault-border px-4 py-3 transition-colors duration-100 hover:bg-vault-sidebar-item-hover`}
+      className={`${DIAGNOSTIC_GRID_CLASS} border-l-2 px-4 py-3 transition-colors duration-150 ${
+        row.ok
+          ? "border-transparent hover:bg-vault-sidebar-item-hover"
+          : "border-vault-danger bg-vault-danger/[0.06] hover:bg-vault-danger/10"
+      }`}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <StatusIcon ok={row.ok} />
-        <span className="text-sm whitespace-nowrap text-vault-text">{label}</span>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <StatusDot ok={row.ok} />
+        <span className="whitespace-nowrap text-sm text-vault-text">{label}</span>
       </div>
-      <span className="text-sm text-vault-muted">{status}</span>
+      <span className={`font-mono text-xs ${row.ok ? "text-vault-muted" : "text-vault-danger"}`}>
+        {status}
+      </span>
       <span className="truncate font-mono text-xs text-vault-muted">{detail}</span>
     </div>
   );
@@ -197,7 +216,9 @@ function DiagnosticsResultsList({
         {summaryHeadlineForOutcome(summaryOutcome, translate)}
       </div>
 
-      <div className={`${DIAGNOSTIC_GRID_CLASS} border-b border-vault-border px-4 py-2`}>
+      <div
+        className={`${DIAGNOSTIC_GRID_CLASS} border-b border-l-2 border-transparent border-b-vault-border px-4 py-2`}
+      >
         <span className={UI.fieldLabel}>{translate("diagnostics.columnCheck")}</span>
         <span className={UI.fieldLabel}>{translate("diagnostics.columnStatus")}</span>
         <span className={UI.fieldLabel}>{translate("diagnostics.columnDetail")}</span>

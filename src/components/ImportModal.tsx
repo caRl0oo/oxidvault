@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { CheckCircle, Warning, XCircle } from "@phosphor-icons/react";
 import { ModalDialog } from "@/components/ui/ModalDialog";
 import { VaultButton } from "@/components/ui/VaultButton";
 import { pickImportPath } from "@/lib/dialog";
@@ -28,7 +29,7 @@ import type { SecretEntryInputFull, SecretEntrySummary } from "@/types/vault";
 const TITLE_ID = "import-modal-title";
 const PREVIEW_SAMPLE_SIZE = 5;
 
-const panelClass = `${MODAL_PANEL_CLASS} max-w-2xl overflow-hidden rounded-2xl border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]`;
+const panelClass = `${MODAL_PANEL_CLASS} max-w-2xl overflow-hidden rounded-lg border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]`;
 
 const footerClass = `${MODAL_FOOTER_CLASS} justify-end bg-vault-bg/40 px-6`;
 
@@ -51,7 +52,7 @@ function highlightNumbers(text: string): ReactNode {
 }
 
 function formatOptionClass(selected: boolean): string {
-  return `flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-left transition-all duration-150 ${
+  return `flex cursor-pointer items-start gap-3 rounded-md border p-4 text-left transition-all duration-150 ${
     selected
       ? "border-vault-accent bg-vault-accent-subtle ring-1 ring-vault-accent/30"
       : "border-vault-border bg-vault-bg hover:border-vault-border-focus hover:bg-vault-sidebar-item-hover"
@@ -227,7 +228,7 @@ export function ImportModal({
         </VaultButton>
         {fileName ? (
           <div
-            className={`${NOTE_PANEL_CLASS} min-w-0 flex-1 truncate rounded-xl px-3 py-2 text-xs text-vault-text`}
+            className={`${NOTE_PANEL_CLASS} min-w-0 flex-1 truncate rounded-md px-3 py-2 text-xs text-vault-text`}
           >
             {fileName}
           </div>
@@ -235,7 +236,7 @@ export function ImportModal({
       </div>
 
       {fileError ? (
-        <p className="rounded-xl border border-vault-danger/40 bg-vault-danger-subtle px-3 py-2 font-mono text-xs text-vault-danger" role="alert">
+        <p className="rounded-md border border-vault-danger/40 bg-vault-danger-subtle px-3 py-2 font-mono text-xs text-vault-danger" role="alert">
           {fileError}
         </p>
       ) : null}
@@ -245,7 +246,7 @@ export function ImportModal({
           <p className="font-mono text-sm text-vault-text">
             {highlightNumbers(t("import.preview_found", { count: parseResult.entries.length }))}
           </p>
-          <div className="overflow-x-auto rounded-xl border border-vault-border bg-vault-bg">
+          <div className="overflow-x-auto rounded-md border border-vault-border bg-vault-bg">
             <table className="w-full min-w-[28rem] border-collapse font-mono text-xs">
               <thead>
                 <tr className="border-b border-vault-border bg-vault-elevated text-left text-vault-muted">
@@ -294,7 +295,7 @@ export function ImportModal({
     }
 
     return (
-      <div className={`${CONFIRM_PANEL_CLASS} flex flex-col gap-3 rounded-xl px-4 py-4`}>
+      <div className={`${CONFIRM_PANEL_CLASS} flex flex-col gap-3 rounded-md px-4 py-4`}>
         <p className="font-mono text-sm leading-relaxed text-vault-text">
           {highlightNumbers(t("import.confirm_question", { count: preview.importableCount }))}
         </p>
@@ -316,9 +317,7 @@ export function ImportModal({
     if (resultError) {
       return (
         <div className="flex flex-col items-center gap-4 py-4 text-center">
-          <span className="text-4xl" aria-hidden>
-            ❌
-          </span>
+          <ResultIcon tone="danger" />
           <p
             className="max-w-md font-mono text-sm leading-relaxed text-vault-danger"
             role="alert"
@@ -340,9 +339,7 @@ export function ImportModal({
     if (isSuccess) {
       return (
         <div className="flex flex-col items-center gap-4 py-4 text-center">
-          <span className="text-4xl" aria-hidden>
-            ✅
-          </span>
+          <ResultIcon tone="success" />
           <p className="max-w-md font-mono text-sm leading-relaxed text-vault-text">
             {highlightNumbers(t("import.result_success", { count: result.imported }))}
           </p>
@@ -353,9 +350,7 @@ export function ImportModal({
     if (result.imported > 0) {
       return (
         <div className="flex flex-col items-center gap-4 py-4 text-center">
-          <span className="text-4xl" aria-hidden>
-            ⚠️
-          </span>
+          <ResultIcon tone="warning" />
           <p className="max-w-md font-mono text-sm leading-relaxed text-vault-text">
             {highlightNumbers(
               t("import.result_partial", {
@@ -370,9 +365,7 @@ export function ImportModal({
 
     return (
       <div className="flex flex-col items-center gap-4 py-4 text-center">
-        <span className="text-4xl" aria-hidden>
-          ❌
-        </span>
+        <ResultIcon tone="danger" />
         <p className="max-w-md font-mono text-sm leading-relaxed text-vault-danger" role="alert">
           {t("import.result_none")}
         </p>
@@ -462,5 +455,40 @@ export function ImportModal({
         </footer>
       </div>
     </ModalDialog>
+  );
+}
+
+type ResultTone = "success" | "warning" | "danger";
+
+const RESULT_ICON: Record<ResultTone, typeof CheckCircle> = {
+  success: CheckCircle,
+  warning: Warning,
+  danger: XCircle,
+};
+
+const RESULT_TONE_CLASS: Record<ResultTone, string> = {
+  success: "bg-vault-success-subtle text-vault-success",
+  warning: "bg-vault-warning-subtle text-vault-warning",
+  danger: "bg-vault-danger-subtle text-vault-danger",
+};
+
+const RESULT_RING: Record<ResultTone, string> = {
+  success: "var(--color-vault-success)",
+  warning: "var(--color-vault-warning)",
+  danger: "var(--color-vault-danger)",
+};
+
+/** Ergebnis-Status-Badge im Import-Flow (ersetzt farbige Emojis). */
+function ResultIcon({ tone }: Readonly<{ tone: ResultTone }>) {
+  const Icon = RESULT_ICON[tone];
+  return (
+    <div
+      className={`flex h-14 w-14 items-center justify-center rounded-md ${RESULT_TONE_CLASS[tone]}`}
+      style={{
+        boxShadow: `0 0 0 1px color-mix(in srgb, ${RESULT_RING[tone]} 25%, transparent) inset`,
+      }}
+    >
+      <Icon size={26} weight="light" aria-hidden />
+    </div>
   );
 }

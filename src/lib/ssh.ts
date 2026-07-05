@@ -70,9 +70,9 @@ export function getTerminalThemeFromCss(): {
     root.getPropertyValue(name).trim() || fallback;
 
   return {
-    background: pick("--color-vault-bg", "#0a0b0d"),
-    foreground: pick("--color-vault-text", "#e5e7eb"),
-    cursor: pick("--color-vault-accent", "#3b82f6"),
-    selectionBackground: pick("--color-vault-accent", "#3b82f6") + "44",
+    background: pick("--color-vault-bg", "#05070d"),
+    foreground: pick("--color-vault-text", "#dde3ed"),
+    cursor: pick("--color-vault-accent", "#00b8a0"),
+    selectionBackground: pick("--color-vault-accent", "#00b8a0") + "44",
   };
 }

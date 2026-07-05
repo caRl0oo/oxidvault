@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { useCallback, useState } from "react";
-import { Terminal } from "lucide-react";
+import { Terminal } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { SecretTypeIcon } from "@/components/SecretTypeIcon";
@@ -84,17 +84,25 @@ export function EntryDetail({
   return (
     <div className="vault-main-panel">
       <div className="vault-main-scroll">
-      <div className="mx-auto w-full max-w-lg">
-        <header className="flex items-start justify-between border-b border-vault-border p-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-vault-accent-subtle text-vault-accent">
+      <div key={entry.id} className="vault-content-enter mx-auto w-full max-w-lg">
+        <header className="flex items-start justify-between border-b border-vault-border px-6 py-5">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-vault-accent-subtle text-vault-accent"
+              style={{ boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-vault-accent) 20%, transparent) inset" }}
+            >
               <SecretTypeIcon kind={entry.type} className="h-[18px] w-[18px]" />
             </div>
             <div className="min-w-0">
-              <h1 className={UI.title}>{entry.title}</h1>
+              <h1
+                className="truncate text-base font-bold text-vault-text"
+                style={{ letterSpacing: "-0.02em" }}
+              >
+                {entry.title}
+              </h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {entry.folder ? (
-                  <span className="text-xs text-vault-muted">{entry.folder}</span>
+                  <span className="font-mono text-[11px] text-vault-muted">{entry.folder}</span>
                 ) : null}
                 {isProbeableEntryType(entry.type) ? (
                   <ReachabilityDot state={reachability} size="md" />
@@ -104,7 +112,7 @@ export function EntryDetail({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={onEdit} className={`${UI.btnSecondary} px-3 py-1.5 text-sm`}>
+            <button type="button" onClick={onEdit} className={`${UI.btnSecondary} px-3 py-1.5 text-xs`}>
               {t("common.edit")}
             </button>
             <VaultButton
@@ -149,7 +157,7 @@ export function EntryDetail({
             <div className="flex flex-col gap-1.5">
               <span className={UI.fieldLabel}>{t("entry.url")}</span>
               <div className="flex items-start gap-2">
-                <div className={`${UI.input} flex-1 truncate bg-vault-bg`}>{entry.url}</div>
+                <div className="flex-1 truncate border-l-2 border-vault-border py-1 pl-3 font-mono text-sm text-vault-text">{entry.url}</div>
                 <button
                   type="button"
                   onClick={() => runAsync(handleOpenWebsite)}
@@ -214,7 +222,7 @@ export function EntryDetail({
                 {sshSessionStatus ? (
                   <SshSessionStatusDot status={sshSessionStatus} size="md" />
                 ) : (
-                  <Terminal className="h-3.5 w-3.5" aria-hidden />
+                  <Terminal size={14} weight="light" aria-hidden />
                 )}
                 {sshConnecting ? t("entry.connecting") : t("entry.quickConnect")}
               </button>
@@ -384,17 +392,20 @@ function PlainField({
   return (
     <div className="flex flex-col gap-1.5">
       <span className={UI.fieldLabel}>{label}</span>
-      <div className="flex items-start gap-2">
-        <div className={`${UI.input} flex-1 cursor-default bg-vault-bg`}>{value}</div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 truncate border-l-2 border-vault-border py-1 pl-3 font-mono text-sm text-vault-text">
+          {value}
+        </div>
         {copyable && onCopy ? (
           <button
             type="button"
             onClick={onCopy}
-            className={`${UI.btnGhost} px-3 ${
+            title={copyLabel ?? t("copy.copy")}
+            className={`${UI.btnGhost} shrink-0 px-2 py-1 text-xs transition-colors duration-150 ${
               copied ? "text-vault-success" : ""
             }`}
           >
-            {copyLabel ?? t("copy.copy")}
+            {copied ? "✓" : (copyLabel ?? t("copy.copy"))}
           </button>
         ) : null}
       </div>
@@ -460,18 +471,32 @@ function SecureField({
       <span className={UI.fieldLabel}>{label}</span>
       <div className="flex items-start gap-2">
         {multiline ? (
-          <pre className={`${UI.input} max-h-96 flex-1 overflow-auto whitespace-pre-wrap break-all bg-vault-bg`}>
+          <pre
+            className={`max-h-96 flex-1 overflow-auto whitespace-pre-wrap break-all border-l-2 py-1.5 pl-3 font-mono text-sm transition-colors duration-200 ${
+              revealed !== null
+                ? "border-vault-accent text-vault-text"
+                : "border-vault-border text-vault-muted"
+            }`}
+          >
             {display}
           </pre>
         ) : (
-          <div className={`${UI.input} flex-1 truncate bg-vault-bg font-mono`}>{display}</div>
+          <div
+            className={`flex-1 truncate border-l-2 py-1 pl-3 font-mono text-sm transition-colors duration-200 ${
+              revealed !== null
+                ? "border-vault-accent text-vault-text"
+                : "border-vault-border tracking-widest text-vault-muted"
+            }`}
+          >
+            {display}
+          </div>
         )}
         <div className="flex shrink-0 gap-1">
           <button
             type="button"
             onClick={() => runAsync(handleReveal)}
             disabled={loading}
-            className={`${UI.btnGhost} px-3 disabled:opacity-50`}
+            className={`${UI.btnGhost} px-2 py-1 text-xs disabled:opacity-50 ${revealed !== null ? "text-vault-accent" : ""}`}
           >
             {toggleLabel}
           </button>
@@ -479,9 +504,10 @@ function SecureField({
             <button
               type="button"
               onClick={onCopy}
-              className={`${UI.btnGhost} px-3 ${copied ? "text-vault-success" : ""}`}
+              title={copyLabel ?? t("copy.copy")}
+              className={`${UI.btnGhost} px-2 py-1 text-xs transition-colors duration-150 ${copied ? "text-vault-success" : ""}`}
             >
-              {copyLabel ?? t("copy.copy")}
+              {copied ? "✓" : (copyLabel ?? t("copy.copy"))}
             </button>
           ) : null}
         </div>

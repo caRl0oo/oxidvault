@@ -11,7 +11,7 @@ import {
   type ReactElement,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import { PasswordGenerateButton } from "@/components/PasswordGenerateButton";
 import { TagInput } from "@/components/TagInput";
 import { OverlayModal } from "@/components/ui/OverlayModal";
@@ -244,7 +244,7 @@ export function NewSecretModal({
   const inputClass = UI.input;
 
   const typeButtonClass = (kindOption: SecretKind) =>
-    `flex cursor-pointer flex-col gap-0.5 rounded-xl border p-3 text-left transition-all duration-150 ${
+    `flex cursor-pointer flex-col gap-0.5 rounded-md border p-3 text-left transition-all duration-150 ${
       kind === kindOption
         ? "border-vault-accent bg-vault-accent-subtle"
         : "border-vault-border bg-vault-bg hover:bg-vault-sidebar-item-hover"
@@ -269,7 +269,7 @@ export function NewSecretModal({
       ariaLabelledBy="secret-form-title"
       closeDisabled={loading || loadingSecrets}
       closeLabel={t("common.closeDialog")}
-      panelClassName="max-h-[85vh] w-full max-w-[520px] gap-0 overflow-hidden rounded-2xl border border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]"
+      panelClassName="max-h-[85vh] w-full max-w-[520px] gap-0 overflow-hidden rounded-lg border border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]"
     >
       <header className="flex items-center justify-between border-b border-vault-border px-6 py-4">
         <div>
@@ -286,10 +286,10 @@ export function NewSecretModal({
           type="button"
           onClick={onClose}
           disabled={loading || loadingSecrets}
-          className={`${UI.btnGhost} rounded-lg p-1.5 disabled:opacity-50`}
+          className={`${UI.btnGhost} rounded p-1.5 disabled:opacity-50`}
           aria-label={t("common.closeDialog")}
         >
-          <X size={16} aria-hidden />
+          <X size={16} weight="light" aria-hidden />
         </button>
       </header>
 

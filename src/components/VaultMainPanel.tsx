@@ -143,11 +143,20 @@ function VaultSecretsPlaceholder({
     );
   }
 
-  const hint = hasSidebarFilter ? t("vault.noMatches") : t("vault.selectHint");
+  if (hasSidebarFilter) {
+    return (
+      <div className="vault-main-panel items-center justify-center gap-3 p-8 text-center">
+        <span className="font-mono text-2xl text-vault-border" aria-hidden>
+          ∅
+        </span>
+        <p className="text-sm text-vault-muted">{t("vault.noMatches")}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="vault-main-panel items-center justify-center p-8 text-center">
-      <p className="text-sm text-vault-muted">{hint}</p>
+      <p className="text-sm text-vault-muted">{t("vault.selectHint")}</p>
     </div>
   );
 }

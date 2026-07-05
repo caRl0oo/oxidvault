@@ -26,7 +26,7 @@ export function SshUnknownHostDialog({
       className="fixed inset-0 z-[80] m-0 flex max-h-none max-w-none items-center justify-center border-0 bg-vault-overlay/80 p-4 backdrop-blur-sm"
       aria-labelledby="ssh-unknown-host-title"
     >
-      <div className="w-full max-w-md rounded-lg border border-vault-border bg-vault-surface p-6 shadow-vault-elevated">
+      <div className="vault-modal-enter w-full max-w-md rounded-lg border border-vault-border bg-vault-surface p-6 shadow-vault-elevated">
         <h2
           id="ssh-unknown-host-title"
           className="font-mono text-sm font-semibold text-vault-warning"
@@ -74,7 +74,7 @@ export function SshHostKeyMismatchDialog({
       className="fixed inset-0 z-[80] m-0 flex max-h-none max-w-none items-center justify-center border-0 bg-vault-overlay/80 p-4 backdrop-blur-sm"
       aria-labelledby="ssh-host-mismatch-title"
     >
-      <div className="w-full max-w-md rounded-lg border border-vault-danger/50 bg-vault-surface p-6 shadow-vault-elevated">
+      <div className="vault-modal-enter w-full max-w-md rounded-lg border border-vault-danger/50 bg-vault-surface p-6 shadow-vault-elevated">
         <h2
           id="ssh-host-mismatch-title"
           className="font-mono text-sm font-semibold text-vault-danger"

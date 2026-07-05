@@ -1,13 +1,31 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type ReactNode } from "react";
+import { type ReactNode, Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLogo } from "@/components/AppLogo";
 import { GitSyncStatusIndicator } from "@/components/GitSyncStatusIndicator";
 import { GearIcon } from "@/components/ui/GearIcon";
-import { APP_NAME } from "@/lib/appMeta";
 import { UI } from "@/lib/uiClasses";
+
+function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      {keys.map((key, i) => (
+        <Fragment key={key}>
+          <kbd
+            className="rounded border border-vault-border bg-vault-elevated px-1 py-px text-vault-accent"
+            style={{ fontSize: "10px", lineHeight: "14px" }}
+          >
+            {key}
+          </kbd>
+          {i < keys.length - 1 ? <span className="text-vault-border">+</span> : null}
+        </Fragment>
+      ))}
+      <span className="ml-0.5">{label}</span>
+    </span>
+  );
+}
 
 interface LayoutProps {
   readonly children: ReactNode;
@@ -38,11 +56,13 @@ export function Layout({
     <div className="flex h-full flex-col">
       <header
         className="flex h-11 shrink-0 items-center justify-between border-b border-vault-border bg-vault-elevated px-4"
-        style={{ boxShadow: "var(--shadow-sm)" }}
+        style={{
+          boxShadow: "var(--shadow-sm), inset 0 -1px 0 var(--color-vault-border)",
+          borderTop: "1px solid color-mix(in srgb, var(--color-vault-accent) 25%, transparent)",
+        }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center">
           <AppLogo size="sm" className="rounded-md" />
-          <span className="text-sm font-semibold text-vault-text">{APP_NAME}</span>
         </div>
         <div className="flex items-center gap-3">
           {showHeaderGitSync ? (
@@ -73,32 +93,12 @@ export function Layout({
         </div>
       </header>
       <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
-      <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-vault-border bg-vault-surface px-4 font-mono text-[11px] text-vault-muted">
-        <span>
-          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
-          {"+"}
-          <kbd className="rounded border border-vault-border px-1">K</kbd> {t("shortcuts.search")}
-        </span>
-        <span>
-          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
-          {"+"}
-          <kbd className="rounded border border-vault-border px-1">L</kbd> {t("shortcuts.lock")}
-        </span>
-        <span>
-          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
-          {"+"}
-          <kbd className="rounded border border-vault-border px-1">G</kbd> {t("shortcuts.generator")}
-        </span>
-        <span>
-          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
-          {"+"}
-          <kbd className="rounded border border-vault-border px-1">N</kbd> {t("shortcuts.newSecret")}
-        </span>
-        <span>
-          <kbd className="rounded border border-vault-border px-1">Ctrl</kbd>
-          {"+"}
-          <kbd className="rounded border border-vault-border px-1">Q</kbd> {t("shortcuts.quit")}
-        </span>
+      <footer className="flex h-7 shrink-0 items-center gap-5 border-t border-vault-border bg-vault-surface px-4 font-mono text-[10px] text-vault-muted">
+        <ShortcutHint keys={["Ctrl", "K"]} label={t("shortcuts.search")} />
+        <ShortcutHint keys={["Ctrl", "L"]} label={t("shortcuts.lock")} />
+        <ShortcutHint keys={["Ctrl", "G"]} label={t("shortcuts.generator")} />
+        <ShortcutHint keys={["Ctrl", "N"]} label={t("shortcuts.newSecret")} />
+        <ShortcutHint keys={["Ctrl", "Q"]} label={t("shortcuts.quit")} />
       </footer>
     </div>
   );

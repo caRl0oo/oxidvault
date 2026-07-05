@@ -335,7 +335,8 @@ export function SettingsView({
       {visibleNav.length > 1 ? (
         <nav
           aria-label={t("settings.title")}
-          className="flex w-48 shrink-0 flex-col border-r border-vault-border bg-vault-surface/50 py-4"
+          className="flex w-48 shrink-0 flex-col gap-0.5 border-r border-vault-border py-4 pr-1"
+          style={{ backgroundColor: "var(--color-vault-sidebar-bg)" }}
         >
           {visibleNav.map((id) => (
             <button
@@ -343,10 +344,10 @@ export function SettingsView({
               type="button"
               onClick={() => setCategory(id)}
               aria-current={category === id ? "page" : undefined}
-              className={`px-4 py-2.5 text-left font-mono text-xs transition ${
+              className={`border-l-2 py-2.5 pl-[14px] pr-4 text-left font-mono text-xs transition-all duration-150 ${
                 category === id
-                  ? "border-r-2 border-vault-accent bg-vault-bg text-vault-accent"
-                  : "text-vault-muted hover:bg-vault-bg hover:text-vault-text"
+                  ? "border-vault-accent bg-vault-accent-subtle text-vault-accent"
+                  : "border-transparent text-vault-muted hover:border-vault-border hover:bg-vault-sidebar-item-hover hover:text-vault-text"
               }`}
             >
               {navLabel(id)}
@@ -360,14 +361,21 @@ export function SettingsView({
           <VaultButton variant="ghost" size="sm" onClick={onBack}>
             {t("settings.back")}
           </VaultButton>
-          <h1 className="font-mono text-sm text-vault-text">{navLabel(category)}</h1>
+          <h1
+            className="text-sm font-bold text-vault-text"
+            style={{ letterSpacing: "-0.02em" }}
+          >
+            {navLabel(category)}
+          </h1>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {loading ? (
             <p className="font-mono text-sm text-vault-muted">{t("common.loading")}</p>
           ) : (
-            renderCategoryPanel()
+            <div key={category} className="vault-content-enter">
+              {renderCategoryPanel()}
+            </div>
           )}
         </div>
       </div>
@@ -475,7 +483,7 @@ function GeneralSettingsPanel({
             onClick={onOpenImport}
             className={`${UI.card} flex w-full items-center gap-4 p-4 text-left transition-shadow duration-150 hover:shadow-md`}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-vault-accent/15 font-mono text-lg text-vault-accent">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-vault-accent/15 font-mono text-lg text-vault-accent">
               ↓
             </div>
             <div className="flex flex-col gap-0.5">
@@ -493,7 +501,7 @@ function GeneralSettingsPanel({
           onClick={onOpenAbout}
           className={`${UI.card} flex w-full items-center gap-4 p-4 text-left transition-shadow duration-150 hover:shadow-md`}
         >
-          <AppLogo size="md" className="h-10 w-10 rounded-xl" />
+          <AppLogo size="md" className="h-10 w-10 rounded-md" />
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-semibold text-vault-text">{APP_NAME}</span>
             <span className="text-xs text-vault-muted">
