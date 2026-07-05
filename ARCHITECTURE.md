@@ -4,7 +4,7 @@
 > This document is the central reference for the technical architecture of OxidVault.  
 > Whenever core features, Tauri Commands, file formats, or security-relevant changes are added, **ARCHITECTURE.md** must be updated in sync with the code.
 
-**Version:** 2.4.1
+**Version:** 2.4.2
 
 ---
 
