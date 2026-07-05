@@ -9,7 +9,7 @@ import { MODAL_FOOTER_CLASS, MODAL_PANEL_CLASS, UI } from "@/lib/uiClasses";
 
 const TITLE_ID = "import-welcome-title";
 
-const panelClass = `${MODAL_PANEL_CLASS} w-full max-w-md overflow-hidden rounded-2xl border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]`;
+const panelClass = `${MODAL_PANEL_CLASS} w-full max-w-md overflow-hidden rounded-lg border-vault-border bg-vault-elevated p-0 [box-shadow:var(--shadow-lg)]`;
 
 interface ImportWelcomeModalProps {
   readonly open: boolean;
@@ -28,7 +28,7 @@ export function ImportWelcomeModal({
     <ModalDialog open={open} onClose={onStartFresh} ariaLabelledBy={TITLE_ID}>
       <div className={panelClass}>
         <div className="flex flex-col items-center gap-4 px-8 pb-6 pt-8 text-center">
-          <AppLogo size="lg" className="rounded-2xl shadow-md" />
+          <AppLogo size="lg" className="rounded-lg shadow-md" />
           <div className="flex flex-col gap-2">
             <h2 id={TITLE_ID} className={`${UI.title} text-lg`}>
               {t("import.welcome_title")}

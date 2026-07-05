@@ -57,12 +57,14 @@ export function OverlayModal({
       <button
         type="button"
         aria-label={closeLabel}
-        className="absolute inset-0 z-0 cursor-default border-0 bg-vault-overlay p-0 backdrop-blur-sm"
+        className="vault-backdrop-enter absolute inset-0 z-0 cursor-default border-0 bg-vault-overlay p-0 backdrop-blur-sm"
         onClick={handleBackdropClose}
         disabled={closeDisabled}
       />
       <div className="pointer-events-none fixed inset-0 z-10 flex items-center justify-center p-4">
-        <div className={`${MODAL_PANEL_CLASS} pointer-events-auto w-full ${panelClassName}`}>
+        <div
+          className={`${MODAL_PANEL_CLASS} vault-modal-enter pointer-events-auto w-full ${panelClassName}`}
+        >
           {children}
         </div>
       </div>

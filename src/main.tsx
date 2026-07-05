@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "@/lib/i18n";
 import { initTheme } from "./lib/theme";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles/globals.css";
 
 initTheme();

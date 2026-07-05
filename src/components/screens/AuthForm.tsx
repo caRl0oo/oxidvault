@@ -113,7 +113,7 @@ function AuthFormHeader({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <AppLogo size="md" className="h-12 w-12 rounded-xl" />
+      <AppLogo size="md" className="h-12 w-12 rounded-md" />
       <div className="flex flex-col items-center gap-1 text-center">
         <h1 className="text-lg font-semibold text-vault-text">{t(titleKey)}</h1>
         {descriptionKey ? (

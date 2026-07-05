@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { Minimize2, Focus } from "lucide-react";
+import { CornersIn, Crosshair } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SshDisconnectConfirmationModal } from "@/components/SshDisconnectConfirmationModal";
@@ -137,9 +137,9 @@ function SshTerminalHeader({
           title={focusLabel}
         >
           {focusMode ? (
-            <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <CornersIn size={14} weight="light" aria-hidden="true" />
           ) : (
-            <Focus className="h-3.5 w-3.5" aria-hidden="true" />
+            <Crosshair size={14} weight="light" aria-hidden="true" />
           )}
         </button>
         <button

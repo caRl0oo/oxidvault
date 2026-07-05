@@ -31,9 +31,9 @@ const upgradeTextBlockClass = "flex flex-col gap-1";
 const upgradeTitleClass = "text-xs font-semibold text-vault-text";
 const upgradeDescClass = "text-xs text-vault-muted";
 const enterprisePlanBadgeClass =
-  "rounded-lg border border-vault-success/40 bg-vault-success-subtle px-2 py-1 text-xs text-vault-success";
+  "rounded border border-vault-success/40 bg-vault-success-subtle px-2 py-1 text-xs text-vault-success";
 const communityPlanBadgeClass =
-  "rounded-lg border border-vault-border bg-vault-bg px-2 py-1 text-xs text-vault-muted";
+  "rounded border border-vault-border bg-vault-bg px-2 py-1 text-xs text-vault-muted";
 const upgradeBannerClass = `${UI.card} mt-6 flex items-center justify-between gap-4`;
 const upgradeCtaClass = `${UI.btnSecondary} shrink-0 whitespace-nowrap text-xs text-vault-accent`;
 const limitWarningClass = "mt-2 text-xs text-vault-warning";

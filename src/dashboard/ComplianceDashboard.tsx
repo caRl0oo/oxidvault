@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotationDialog } from "@/components/RotationDialog";
+import { Toast } from "@/components/ui/Toast";
 import { getComplianceStatus } from "@/lib/ipc";
 import { formatVaultError } from "@/lib/errors";
 import { runAsync } from "@/lib/runAsync";
@@ -130,56 +131,35 @@ export function ComplianceDashboard({
         </div>
 
         <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="vault-card flex flex-col gap-2">
-            <span className="vault-field-label">{t("compliance.policy_status")}</span>
-            <span className="text-sm text-vault-text">{t("compliance.gpo_managed")}</span>
-            <span
-              className={`text-sm font-semibold ${statusClass(status.policyManagedByGpo)}`}
-            >
-              {statusLabel(status.policyManagedByGpo)}
-            </span>
-          </div>
-
-          <div className="vault-card flex flex-col gap-2">
-            <span className="vault-field-label">{t("compliance.audit_status")}</span>
-            <span className="text-sm text-vault-text">{t("compliance.hash_chain_valid")}</span>
-            <span className={`text-sm font-semibold ${statusClass(status.auditChainValid)}`}>
-              {statusLabel(status.auditChainValid)}
-            </span>
-          </div>
-
-          <div className="vault-card flex flex-col gap-2">
-            <span className="vault-field-label">{t("compliance.audit_status")}</span>
-            <span className="text-sm text-vault-text">{t("compliance.audit_hmac_valid")}</span>
-            <span
-              className={`text-sm font-semibold ${
-                status.auditChainAuthenticated === null
-                  ? "text-vault-muted"
-                  : statusClass(status.auditChainAuthenticated)
-              }`}
-            >
-              {auditAuthenticationLabel(status, t)}
-            </span>
-          </div>
-
-          <div className="vault-card flex flex-col gap-2">
-            <span className="vault-field-label">{t("compliance.key_age")}</span>
-            <span className="text-sm text-vault-text">
-              {t("compliance.last_rotated", {
-                date: formatComplianceDate(status.keyRotatedAt, dash),
-              })}
-            </span>
-            <span className="text-xs text-vault-muted">
-              {t("compliance.created", {
-                date: formatComplianceDate(status.keyCreatedAt, dash),
-              })}
-            </span>
-            <span
-              className={`text-sm font-semibold ${keyAgeClass(status.keyRotationRecommended)}`}
-            >
-              {t("compliance.key_age_days", { days: status.keyAgeDays })}
-            </span>
-          </div>
+          <ComplianceCard
+            label={t("compliance.policy_status")}
+            description={t("compliance.gpo_managed")}
+            value={statusLabel(status.policyManagedByGpo)}
+            ok={status.policyManagedByGpo}
+          />
+          <ComplianceCard
+            label={t("compliance.audit_status")}
+            description={t("compliance.hash_chain_valid")}
+            value={statusLabel(status.auditChainValid)}
+            ok={status.auditChainValid}
+          />
+          <ComplianceCard
+            label={t("compliance.audit_status")}
+            description={t("compliance.audit_hmac_valid")}
+            value={auditAuthenticationLabel(status, t)}
+            ok={status.auditChainAuthenticated ?? null}
+          />
+          <ComplianceCard
+            label={t("compliance.key_age")}
+            description={t("compliance.last_rotated", {
+              date: formatComplianceDate(status.keyRotatedAt, dash),
+            })}
+            value={t("compliance.key_age_days", { days: status.keyAgeDays })}
+            ok={!status.keyRotationRecommended}
+            meta={t("compliance.created", {
+              date: formatComplianceDate(status.keyCreatedAt, dash),
+            })}
+          />
         </div>
 
         {status.legacyFormatMigrationRecommended ? (
@@ -223,7 +203,7 @@ export function ComplianceDashboard({
   };
 
   return (
-    <section className="relative w-full shrink-0 border-b border-vault-border bg-vault-surface/30 px-6 py-4">
+    <section className="relative w-full shrink-0 border-b border-vault-border px-6 py-4" style={{ backgroundColor: "var(--color-vault-surface)" }}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="vault-title text-base">{t("compliance.title")}</h2>
@@ -248,16 +228,59 @@ export function ComplianceDashboard({
       />
 
       {showRotationToast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-10 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-vault-success/40 bg-vault-surface px-4 py-3 shadow-lg"
-        >
-          <p className="font-mono text-xs text-vault-success">
-            {t("compliance.rotation_success_toast")}
-          </p>
-        </div>
+        <Toast tone="success">{t("compliance.rotation_success_toast")}</Toast>
       ) : null}
     </section>
+  );
+}
+
+function ComplianceCard({
+  label,
+  description,
+  value,
+  ok,
+  meta,
+}: Readonly<{
+  label: string;
+  description: string;
+  value: string;
+  ok: boolean | null;
+  meta?: string;
+}>) {
+  const borderColor =
+    ok === true
+      ? "var(--color-vault-success)"
+      : ok === false
+        ? "var(--color-vault-danger)"
+        : "var(--color-vault-border)";
+
+  const valueClass =
+    ok === true
+      ? "text-vault-success"
+      : ok === false
+        ? "text-vault-danger"
+        : "text-vault-muted";
+
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-md border p-4"
+      style={{
+        backgroundColor: "var(--color-vault-elevated)",
+        borderColor: "var(--color-vault-border)",
+        borderLeftWidth: "2px",
+        borderLeftColor: borderColor,
+        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05)",
+      }}
+    >
+      <span
+        className="text-[10px] font-medium uppercase tracking-wider text-vault-muted"
+        style={{ letterSpacing: "0.08em" }}
+      >
+        {label}
+      </span>
+      <span className="text-sm text-vault-text">{description}</span>
+      {meta ? <span className="font-mono text-[11px] text-vault-muted">{meta}</span> : null}
+      <span className={`font-mono text-sm font-semibold ${valueClass}`}>{value}</span>
+    </div>
   );
 }

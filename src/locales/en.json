@@ -320,7 +320,7 @@
     "copy": "Copy",
     "copied": "Copied!",
     "copiedWithTimer": "Copied! ({{seconds}}s)",
-    "clipboardToast": "Copied to clipboard — auto-cleared in {{seconds}}s"
+    "clipboardToast": "Copied · clears in {{seconds}}s"
   },
   "errors": {
     "unknown": "Unknown error",

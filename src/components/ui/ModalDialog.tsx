@@ -81,7 +81,7 @@ export function ModalDialog({
         onClick={handleBackdropClose}
         disabled={closeDisabled}
       />
-      <div className="relative z-10">{children}</div>
+      <div className="vault-modal-enter relative z-10">{children}</div>
     </dialog>
   );
 }
