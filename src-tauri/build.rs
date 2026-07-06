@@ -35,13 +35,11 @@ fn write_if_changed(path: &Path, content: &str) {
     let existing = std::fs::read_to_string(path).unwrap_or_default();
     if existing != content {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap_or_else(|e| {
-                panic!("failed to create {}: {e}", parent.display())
-            });
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|e| panic!("failed to create {}: {e}", parent.display()));
         }
-        std::fs::write(path, content).unwrap_or_else(|e| {
-            panic!("failed to write {}: {e}", path.display())
-        });
+        std::fs::write(path, content)
+            .unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display()));
         println!("cargo:warning=rendered {}", path.display());
     }
 }
@@ -86,9 +84,8 @@ fn render_native_messaging_artifacts(manifest_dir: &Path) {
 }
 
 fn main() {
-    let manifest_dir = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set"),
-    );
+    let manifest_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set"));
     render_native_messaging_artifacts(&manifest_dir);
     tauri_build::build()
 }
