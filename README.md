@@ -1,6 +1,7 @@
 <div align="center">
 
-<img src="public/OxidVault-01.svg" alt="OxidVault Logo" width="300" />
+<img alt="OxidVault Logo" src="public/OxidVault-011.svg#gh-dark-mode-only" width="300">
+<img alt="OxidVault Logo" src="public/OxidVault-01.svg#gh-light-mode-only" width="300">
 
 </div>
 
