@@ -18,6 +18,12 @@ use crate::mfa::StoredMfaConfig;
 use crate::vault_user::VaultUser;
 
 pub const MAGIC: &[u8; 4] = b"OXID";
+
+/// Upper bound for the `users_json` header block — prevents multi-GiB allocations
+/// from a tampered length field before any authentication happens.
+const MAX_USERS_JSON_LEN: usize = 4 * 1024 * 1024;
+/// Upper bound for the wrapped-DEK ciphertext (32-byte key + GCM tag, generous margin).
+const MAX_DEK_CIPHERTEXT_LEN: usize = 4096;
 pub const FORMAT_VERSION_V1: u16 = 1;
 pub const FORMAT_VERSION_V2: u16 = 2;
 pub const FORMAT_VERSION_V3: u16 = 3;
@@ -831,6 +837,9 @@ fn read_header_v3_v4(
     let mut users_len = [0u8; 4];
     reader.read_exact(&mut users_len)?;
     let users_size = u32::from_le_bytes(users_len) as usize;
+    if users_size > MAX_USERS_JSON_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
     let mut users_buf = vec![0u8; users_size];
     reader.read_exact(&mut users_buf)?;
     let users: Vec<VaultUser> =
@@ -881,6 +890,9 @@ fn read_header_v1_v2(
         let mut dek_len = [0u8; 4];
         reader.read_exact(&mut dek_len)?;
         let dek_size = u32::from_le_bytes(dek_len) as usize;
+        if dek_size > MAX_DEK_CIPHERTEXT_LEN {
+            return Err(VaultError::InvalidFormat);
+        }
         let mut dek_ciphertext = vec![0u8; dek_size];
         reader.read_exact(&mut dek_ciphertext)?;
 

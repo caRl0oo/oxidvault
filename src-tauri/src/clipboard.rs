@@ -67,10 +67,24 @@ impl SecureClipboard {
         }
     }
 
-    pub fn cancel_pending(&self) {
+    /// Immediately clears a pending secret from the OS clipboard (if still present)
+    /// and invalidates its auto-clear timer. Called on vault lock so a copied secret
+    /// never outlives the session in the clipboard.
+    pub fn clear_pending(&self) {
         self.next_id.fetch_add(1, Ordering::SeqCst);
-        if let Ok(mut guard) = self.active.lock() {
-            *guard = None;
+        let stored = match self.active.lock() {
+            Ok(mut guard) => guard.take().map(|(_, secret)| secret),
+            Err(_) => return,
+        };
+
+        let Some(stored) = stored else {
+            return;
+        };
+
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if clipboard.get_text().ok().as_deref() == Some(stored.as_str()) {
+                let _ = set_clipboard_text(&mut clipboard, "");
+            }
         }
     }
 }

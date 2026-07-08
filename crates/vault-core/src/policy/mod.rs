@@ -14,3 +14,14 @@ pub use admin::{
 pub use password::{
     validate_master_password, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN,
 };
+
+/// Minimum master/user password length after applying the machine-wide admin GPO.
+///
+/// Applies to every password-set path: `Vault::create`, `create_v3`, `add_user`,
+/// and per-user password changes (`rewrap_user_dek`).
+pub fn effective_min_master_password_len() -> usize {
+    admin_policy()
+        .min_master_password_len
+        .map(|value| value as usize)
+        .unwrap_or(MIN_MASTER_PASSWORD_LEN)
+}

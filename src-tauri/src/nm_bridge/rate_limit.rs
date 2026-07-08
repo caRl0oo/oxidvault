@@ -4,7 +4,7 @@
 //! Token-bucket rate limiting for bridge `get_login` requests.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -41,7 +41,10 @@ impl Bucket {
 }
 
 pub struct GetLoginRateLimiter {
-    buckets: Mutex<HashMap<SocketAddr, Bucket>>,
+    // Keyed by peer IP only: each bridge request arrives on a fresh TCP connection
+    // with a new ephemeral source port, so keying by full SocketAddr would hand
+    // every request its own bucket and disable the limit entirely.
+    buckets: Mutex<HashMap<IpAddr, Bucket>>,
 }
 
 impl GetLoginRateLimiter {
@@ -56,7 +59,7 @@ impl GetLoginRateLimiter {
             return false;
         };
         buckets
-            .entry(peer)
+            .entry(peer.ip())
             .or_insert_with(Bucket::new)
             .try_consume()
     }
@@ -82,5 +85,20 @@ mod tests {
             assert!(limiter.allow(peer));
         }
         assert!(!limiter.allow(peer));
+    }
+
+    #[test]
+    fn connections_from_different_ports_share_one_bucket() {
+        let limiter = GetLoginRateLimiter::new();
+
+        for port in 0..10u16 {
+            let peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 50_000 + port);
+            assert!(limiter.allow(peer));
+        }
+        let fresh_port = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 60_000);
+        assert!(
+            !limiter.allow(fresh_port),
+            "a new source port must not receive a fresh token bucket"
+        );
     }
 }

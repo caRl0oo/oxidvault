@@ -74,6 +74,15 @@ impl MasterKey {
         Self(bytes)
     }
 
+    /// Content-constant-time key comparison (lengths are fixed at 32 bytes).
+    pub fn ct_eq(&self, other: &Self) -> bool {
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
+    }
+
     /// Generates a random data-encryption key independent of the master password.
     pub fn generate_data_key() -> Self {
         let mut bytes = [0u8; KEY_LEN];

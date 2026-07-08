@@ -60,11 +60,17 @@ pub fn validate(candidate: &str) -> bool {
     let Some(state) = guard.as_ref() else {
         return false;
     };
-    state
-        .token
-        .lock()
-        .ok()
-        .is_some_and(|token| !token.is_empty() && token.as_str() == candidate)
+    state.token.lock().ok().is_some_and(|token| {
+        !token.is_empty() && constant_time_eq(token.as_bytes(), candidate.as_bytes())
+    })
+}
+
+/// Length-leaking but content-constant-time comparison — token length is public (UUID).
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 #[cfg(test)]

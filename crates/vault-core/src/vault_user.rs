@@ -246,7 +246,7 @@ pub fn decode_nonce(encoded: &str) -> Result<[u8; NONCE_LEN], VaultError> {
 fn validate_master_password_for_user(password: &str) -> Result<(), VaultError> {
     crate::policy::validate_master_password_with_min_len(
         password,
-        crate::policy::MIN_MASTER_PASSWORD_LEN,
+        crate::policy::effective_min_master_password_len(),
     )
 }
 

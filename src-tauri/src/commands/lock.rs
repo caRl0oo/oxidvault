@@ -32,7 +32,7 @@ fn lock_vault_with_timeout(state: &AppState) -> Result<MutexGuard<'_, vault_core
 /// Locks the vault (RAM purge + SSH disconnect). No-op if already locked.
 pub fn perform_lock(state: &AppState) -> Result<VaultInfo, String> {
     crate::commands::ssh::disconnect_all_ssh(state);
-    state.clipboard.cancel_pending();
+    state.clipboard.clear_pending();
     let mut vault = lock_vault_with_timeout(state)?;
     if vault.info().locked {
         return Ok(vault.info());

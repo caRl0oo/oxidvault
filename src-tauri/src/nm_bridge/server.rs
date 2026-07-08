@@ -71,6 +71,15 @@ async fn handle_connection(
     let request: BridgeRequest =
         serde_json::from_slice(&payload).map_err(|e| format!("invalid bridge request: {e}"))?;
 
+    // Reject unauthenticated peers before they can consume rate-limit tokens or
+    // trigger BridgeThrottled audit noise. handle_bridge_request re-validates.
+    if !crate::nm_bridge::bridge_token::validate(&request.token) {
+        let response = BridgeResponse::error("unauthorized");
+        let response_bytes =
+            serde_json::to_vec(&response).map_err(|e| format!("bridge response encode: {e}"))?;
+        return write_message_async(stream, &response_bytes).await;
+    }
+
     if request.action == "get_login" && !RATE_LIMITER.allow(peer) {
         eprintln!("native messaging bridge: get_login rate limited from {peer}");
         log_bridge_throttled(&app);

@@ -19,7 +19,7 @@ use crate::format;
 use crate::lock::VaultLock;
 use crate::mfa::{self, MfaSetupInfo, MfaStatus, StoredMfaConfig};
 use crate::path_util::normalize_vault_path;
-use crate::policy::{admin_policy, validate_master_password_with_min_len, MIN_MASTER_PASSWORD_LEN};
+use crate::policy::validate_master_password_with_min_len;
 use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
@@ -224,7 +224,11 @@ impl Vault {
         let dek = MasterKey::generate_data_key();
         let key_created_at = crate::compliance::unix_timestamp_secs();
 
-        format::write_vault_file(
+        // Hold the exclusive vault lock for the whole create session — persist()
+        // requires it, and a second instance must not open the file concurrently.
+        self.acquire_vault_lock(&path)?;
+
+        if let Err(err) = format::write_vault_file(
             &path,
             &name,
             self.kdf,
@@ -234,7 +238,10 @@ impl Vault {
             key_created_at,
             0,
             &[],
-        )?;
+        ) {
+            let _ = self.release_vault_lock();
+            return Err(err);
+        }
 
         self.path = Some(path.clone());
         self.name = name;
@@ -697,12 +704,12 @@ impl Vault {
         match self.format_version {
             format::FORMAT_VERSION_V2 => {
                 let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
-                if candidate.as_bytes() != kek.as_bytes() {
+                if !candidate.ct_eq(kek) {
                     return Err(VaultError::InvalidPassword);
                 }
             }
             _ => {
-                if candidate.as_bytes() != dek.as_bytes() {
+                if !candidate.ct_eq(dek) {
                     return Err(VaultError::InvalidPassword);
                 }
             }
@@ -964,6 +971,8 @@ impl Vault {
     }
 
     fn persist(&mut self) -> Result<(), VaultError> {
+        // §12: every vault write requires the exclusive file lock of this session.
+        self.assert_lock_valid()?;
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
 
@@ -1023,9 +1032,16 @@ impl Vault {
         let users = vec![admin_user.clone()];
         let key_created_at = crate::compliance::unix_timestamp_secs();
 
-        format::write_v3_vault_file(path.as_path(), vault_name, &users, dek.as_bytes(), &[])?;
-
         let mut vault = Self::new();
+        vault.acquire_vault_lock(&path)?;
+
+        if let Err(err) =
+            format::write_v3_vault_file(path.as_path(), vault_name, &users, dek.as_bytes(), &[])
+        {
+            let _ = vault.release_vault_lock();
+            return Err(err);
+        }
+
         vault.path = Some(path.clone());
         vault.name = vault_name.to_string();
         vault.format_version = format::FORMAT_VERSION_V4;
@@ -1069,9 +1085,14 @@ impl Vault {
             .ok_or_else(|| VaultError::UserNotFound(username.clone()))?
             .clone();
 
-        let kek = derive_user_kek(&user, password.as_str())
-            .map_err(|_| VaultError::InvalidUserPassword)?;
-        let dek = unwrap_user_dek(&user, &kek).map_err(|_| VaultError::InvalidUserPassword)?;
+        let kek = derive_user_kek(&user, password.as_str()).map_err(|_| {
+            let _ = self.record_auth_failed();
+            VaultError::InvalidUserPassword
+        })?;
+        let dek = unwrap_user_dek(&user, &kek).map_err(|_| {
+            let _ = self.record_auth_failed();
+            VaultError::InvalidUserPassword
+        })?;
 
         if user_mfa_enabled(&user) {
             let Some(code) = mfa_code else {
@@ -1358,7 +1379,9 @@ impl Vault {
             None,
         )?;
 
-        if let Some(stored_mfa) = self.mfa.take().filter(|config| config.enabled) {
+        // Clone (don't take): if the v4 write below fails, the in-RAM v2 session must
+        // keep its MFA config — otherwise a later persist() would silently drop MFA on disk.
+        if let Some(stored_mfa) = self.mfa.clone().filter(|config| config.enabled) {
             let old_dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
             let secret = mfa::decrypt_mfa_secret(old_dek, &stored_mfa)?;
             let kek = derive_user_kek(&admin_user, current_password.as_str())?;
@@ -1456,10 +1479,7 @@ fn effective_key_created_at(meta: &format::VaultFileMeta, path: &std::path::Path
 }
 
 fn effective_min_master_password_len() -> usize {
-    admin_policy()
-        .min_master_password_len
-        .map(|value| value as usize)
-        .unwrap_or(MIN_MASTER_PASSWORD_LEN)
+    crate::policy::effective_min_master_password_len()
 }
 
 impl Drop for Vault {
@@ -1520,6 +1540,7 @@ mod tests {
             .expect("rotate");
 
         vault.lock();
+        vault.close().unwrap();
 
         let mut reopened = Vault::new();
         open_vault(&mut reopened, &path, "brand-new-horse-battery-staple", None);
@@ -1540,6 +1561,8 @@ mod tests {
 
         let mut vault = Vault::new();
         vault.create(&path, "SharedVault", password).unwrap();
+        // Release our own file lock so the foreign lock below is authoritative.
+        vault.close().unwrap();
 
         let foreign = LockMetadata {
             user: "other-user".into(),
@@ -1608,6 +1631,7 @@ mod tests {
             .create(&path, "TestVault", "correct-horse-battery-staple")
             .unwrap();
         vault.lock();
+        vault.close().unwrap();
 
         let mut cold = Vault::new();
         cold.attach_locked(&path).unwrap();
@@ -1649,6 +1673,7 @@ mod tests {
 
         vault.lock();
         assert!(vault.info().locked);
+        vault.close().unwrap();
 
         let mut vault2 = Vault::new();
         vault2.path = Some(path.clone());
@@ -1709,6 +1734,7 @@ mod tests {
         assert_eq!(password.as_str(), "new-secret");
 
         vault.lock();
+        vault.close().unwrap();
         let mut vault2 = Vault::new();
         vault2.path = Some(path);
         vault2.name = "TestVault".into();
@@ -1762,6 +1788,7 @@ mod tests {
         assert!(vault.get_entry_public(&keep.id).is_ok());
 
         vault.lock();
+        vault.close().unwrap();
         let mut vault2 = Vault::new();
         vault2.path = Some(path);
         vault2.name = "TestVault".into();
@@ -1821,6 +1848,7 @@ mod tests {
             .create(&path, "AuditVault", "correct-horse-battery-staple")
             .unwrap();
         vault.lock();
+        vault.close().unwrap();
 
         let log_path = audit_log_path(&path);
         assert!(log_path.is_file());
@@ -1892,6 +1920,7 @@ mod tests {
             .create(&path, "TestVault", "correct-horse-battery-staple")
             .unwrap();
         vault.lock();
+        vault.close().unwrap();
 
         let mut session = Vault::new();
         session.attach_locked(&path).unwrap();
@@ -1938,6 +1967,7 @@ mod tests {
         assert!(vault.pending_mfa_secret.is_none());
 
         vault.lock();
+        vault.close().unwrap();
         let mut reopened = Vault::new();
         let step = reopened
             .open(&path, "correct-horse-battery-staple", None)
@@ -1966,6 +1996,7 @@ mod tests {
         assert!(vault.verify_mfa_code(&token).expect("verify enrollment"));
 
         vault.lock();
+        vault.close().unwrap();
         let mut session = Vault::new();
         session.attach_locked(&path).unwrap();
 
@@ -2044,6 +2075,7 @@ mod tests {
         assert!(!vault.mfa_status().mfa_enabled);
 
         vault.lock();
+        vault.close().unwrap();
         let mut reopened = Vault::new();
         open_vault(&mut reopened, &path, "correct-horse-battery-staple", None);
         assert!(!reopened.mfa_status().mfa_enabled);
@@ -2074,6 +2106,7 @@ mod tests {
         assert_eq!(vault.list_users().len(), 2);
 
         vault.lock();
+        vault.close().unwrap();
         let mut session = Vault::new();
         session.attach_locked(&path).unwrap();
         session
@@ -2159,6 +2192,7 @@ mod tests {
         assert_eq!(vault.list_entries().unwrap().len(), 1);
 
         vault.lock();
+        vault.close().unwrap();
         let mut reopened = Vault::new();
         reopened.attach_locked(&path).unwrap();
         reopened.unlock_as_user("admin", password, None).unwrap();
@@ -2383,6 +2417,7 @@ mod tests {
         vault.enable_mfa_for_current_user().expect("enable");
         let token = v3_totp_token_for(&vault, "admin");
         vault.lock();
+        vault.close().unwrap();
 
         let mut session = Vault::new();
         session.attach_locked(&path).unwrap();
