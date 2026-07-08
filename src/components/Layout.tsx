@@ -3,12 +3,11 @@
 
 import { type ReactNode, Fragment } from "react";
 import { useTranslation } from "react-i18next";
-import { AppLogo } from "@/components/AppLogo";
 import { GitSyncStatusIndicator } from "@/components/GitSyncStatusIndicator";
 import { GearIcon } from "@/components/ui/GearIcon";
 import { UI } from "@/lib/uiClasses";
 
-function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
+function ShortcutHint({ keys, label }: Readonly<{ keys: string[]; label: string }>) {
   return (
     <span className="flex items-center gap-1">
       {keys.map((key, i) => (
@@ -55,15 +54,12 @@ export function Layout({
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex h-11 shrink-0 items-center justify-between border-b border-vault-border bg-vault-elevated px-4"
+        className="flex h-11 shrink-0 items-center justify-end border-b border-vault-border bg-vault-elevated px-4"
         style={{
           boxShadow: "var(--shadow-sm), inset 0 -1px 0 var(--color-vault-border)",
           borderTop: "1px solid color-mix(in srgb, var(--color-vault-accent) 25%, transparent)",
         }}
       >
-        <div className="flex items-center">
-          <AppLogo size="sm" className="rounded-md" />
-        </div>
         <div className="flex items-center gap-3">
           {showHeaderGitSync ? (
             <GitSyncStatusIndicator

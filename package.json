@@ -19,7 +19,7 @@
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-dev.ps1",
     "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-build.ps1",
     "extension:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-browser-extension.ps1",
-    "icons": "tauri icon logo.png"
+    "icons": "tauri icon public/logo.svg"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

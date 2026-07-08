@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 body {
@@ -24,6 +24,8 @@ h1 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-vault-text);
 }
 
 .subtitle {
@@ -35,11 +37,16 @@ h1 {
 
 .theme-select {
   border: 1px solid var(--color-vault-border);
-  border-radius: 6px;
-  background: var(--color-vault-surface);
+  border-radius: 8px;
+  background: var(--color-vault-elevated, var(--color-vault-surface));
   color: var(--color-vault-text);
   font-size: 11px;
   padding: 4px 6px;
+}
+
+.theme-select:focus-visible {
+  outline: 2px solid var(--color-vault-accent);
+  outline-offset: 2px;
 }
 
 .section-title {
@@ -47,18 +54,18 @@ h1 {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-vault-muted);
 }
 
 .status {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 13px;
   line-height: 1.4;
   border: 1px solid var(--color-vault-border);
-  background: var(--color-vault-surface);
+  background: var(--color-vault-elevated, var(--color-vault-surface));
   color: var(--color-vault-text);
 }
 
@@ -68,7 +75,7 @@ h1 {
 }
 
 .status-locked {
-  border-color: #a16207;
+  border-color: var(--color-vault-warning);
   color: var(--color-vault-text);
 }
 
@@ -88,8 +95,8 @@ h1 {
 
 .generator-panel {
   border: 1px solid var(--color-vault-border);
-  border-radius: 10px;
-  background: var(--color-vault-surface);
+  border-radius: 12px;
+  background: var(--color-vault-elevated, var(--color-vault-surface));
   padding: 12px;
 }
 
@@ -136,7 +143,7 @@ h1 {
   gap: 6px;
   padding: 6px 8px;
   border: 1px solid var(--color-vault-border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -159,13 +166,19 @@ h1 {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--color-vault-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--color-vault-bg);
   color: var(--color-vault-text);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.03em;
   padding: 8px 10px;
+}
+
+.password-output:focus-visible {
+  outline: 2px solid var(--color-vault-accent);
+  outline-offset: 2px;
+  border-color: var(--color-vault-border-focus, var(--color-vault-accent));
 }
 
 .generator-error {
@@ -185,11 +198,12 @@ h1 {
 .btn {
   width: 100%;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 9px 12px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .btn-primary {
@@ -201,13 +215,33 @@ h1 {
   background: var(--color-vault-accent-hover);
 }
 
+.btn-primary:focus-visible {
+  outline: 2px solid var(--color-vault-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgb(0 184 160 / 35%);
+}
+
 .btn-secondary {
   background: transparent;
   border: 1px solid var(--color-vault-border);
   color: var(--color-vault-text);
 }
 
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-vault-accent-subtle, transparent);
+  border-color: color-mix(in srgb, var(--color-vault-border) 70%, var(--color-vault-accent));
+}
+
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--color-vault-accent);
+  outline-offset: 2px;
+}
+
 .btn:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+#unlockBtn {
+  margin-top: 10px;
 }

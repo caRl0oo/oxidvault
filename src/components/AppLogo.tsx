@@ -15,10 +15,10 @@ const SIZE_CLASS = {
 export function AppLogo({ size = "md", className = "" }: Readonly<AppLogoProps>) {
   return (
     <img
-      src="/logo.png"
+      src="/logo.svg"
       alt=""
       aria-hidden
-      className={`${SIZE_CLASS[size]} shrink-0 rounded-md object-cover ${className}`.trim()}
+      className={`${SIZE_CLASS[size]} shrink-0 object-contain ${className}`.trim()}
     />
   );
 }

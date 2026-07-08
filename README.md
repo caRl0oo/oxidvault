@@ -1,4 +1,10 @@
-# OxidVault
+<div align="center">
+
+<img src="public/OxidVault-01.svg" alt="OxidVault Logo" width="300" />
+
+</div>
+
+<br>
 
 ![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.4.2-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
