@@ -3,9 +3,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getVersion } from "@tauri-apps/api/app";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import { PdfExportModal, type PdfExportSelection } from "@/components/PdfExportModal";
 import { pickAuditExportPath, pickAuditPdfExportPath } from "@/lib/dialog";
-import { exportAuditLog, getAuditLogs, getComplianceStatus, getVaultInfo } from "@/lib/ipc";
+import {
+  exportAuditLog,
+  getAuditLogs,
+  getComplianceStatus,
+  getCurrentUser,
+  getVaultInfo,
+} from "@/lib/ipc";
 import { generateComplianceReportPdfBlob, loadLogoAsBase64 } from "@/lib/pdfExport";
 import { formatVaultError } from "@/lib/errors";
 import {
@@ -51,6 +59,9 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [allLogsForPdf, setAllLogsForPdf] = useState<AuditLogEntry[]>([]);
+  const [loadingPdfLogs, setLoadingPdfLogs] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState(false);
 
@@ -88,9 +99,40 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
     }
   }, [t]);
 
-  const handleExportPdf = useCallback(async () => {
+  const handleOpenPdfModal = useCallback(async () => {
     setExportMessage(null);
     setExportSuccess(false);
+    setPdfModalOpen(true);
+    setLoadingPdfLogs(true);
+    try {
+      const logs = await getAuditLogs(100000);
+      setAllLogsForPdf(logs);
+    } catch (e) {
+      setExportMessage(formatVaultError(e));
+      setExportSuccess(false);
+    } finally {
+      setLoadingPdfLogs(false);
+    }
+  }, []);
+
+  const handleExportPdf = useCallback(async (selection: PdfExportSelection) => {
+    const logsSource = allLogsForPdf.length > 0 ? allLogsForPdf : entries;
+    const logsForReport =
+      selection.mode === "dateRange"
+        ? logsSource.filter((entry) => {
+            const fromDate = selection.fromDate ?? "";
+            const toDate = selection.toDate ?? "";
+            if (!fromDate || !toDate) {
+              return false;
+            }
+            const [fromYear, fromMonth, fromDay] = fromDate.split("-").map(Number);
+            const [toYear, toMonth, toDay] = toDate.split("-").map(Number);
+            const rangeStart = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
+            const rangeEnd = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
+            const ts = new Date(entry.timestampUtc);
+            return !Number.isNaN(ts.getTime()) && ts >= rangeStart && ts <= rangeEnd;
+          })
+        : logsSource.slice(0, 50);
 
     const filePath = await pickAuditPdfExportPath();
     if (!filePath) {
@@ -99,17 +141,23 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
 
     setExportingPdf(true);
     try {
-      const [compliance, logoBase64, vaultInfo] = await Promise.all([
+      const [compliance, logoBase64, vaultInfo, appVersion, currentUser] = await Promise.all([
         getComplianceStatus(),
         loadLogoAsBase64(),
         getVaultInfo(),
+        getVersion(),
+        getCurrentUser(),
       ]);
 
       const pdfBytes = generateComplianceReportPdfBlob({
+        appVersion,
+        vaultName: vaultInfo.name,
         vaultPath: vaultInfo.path ?? "",
+        exportedBy: currentUser,
         compliance,
-        logs: entries,
-        totalEntries: entries.length,
+        logs: logsForReport,
+        totalEntriesAvailable: logsSource.length,
+        scope: selection,
         logoBase64,
       });
 
@@ -117,13 +165,14 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
 
       setExportMessage(t("audit.exportPdfSuccess", { path: filePath }));
       setExportSuccess(true);
+      setPdfModalOpen(false);
     } catch (e) {
       setExportMessage(formatVaultError(e));
       setExportSuccess(false);
     } finally {
       setExportingPdf(false);
     }
-  }, [entries, t]);
+  }, [allLogsForPdf, entries, t]);
 
   useEffect(() => {
     runAsync(loadLogs);
@@ -254,7 +303,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
         </button>
         <button
           type="button"
-          onClick={() => runAsync(handleExportPdf)}
+          onClick={() => runAsync(handleOpenPdfModal)}
           disabled={exporting || exportingPdf || loading}
           className="vault-btn-secondary px-3 py-1.5 text-sm disabled:opacity-50"
         >
@@ -289,6 +338,15 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
       </div>
 
       {renderBody()}
+
+      <PdfExportModal
+        open={pdfModalOpen}
+        loadingLogs={loadingPdfLogs}
+        exporting={exportingPdf}
+        logs={allLogsForPdf}
+        onClose={() => setPdfModalOpen(false)}
+        onExport={(selection) => runAsync(() => handleExportPdf(selection))}
+      />
 
       {!loading || entries.length > 0 ? (
         <div className="shrink-0 border-t border-vault-border px-6 py-3">

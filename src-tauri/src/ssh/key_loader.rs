@@ -8,6 +8,16 @@
 
 use data_encoding::BASE64_MIME;
 use russh::keys::{self, decode_openssh, PrivateKey};
+use vault_core::ssh_key_type::{
+    detect_private_key_type, unsupported_key_type_code, SshPrivateKeyType,
+};
+
+/// Classifies a private SSH key string from non-secret envelope identifiers only.
+///
+/// This does not require a passphrase. It never logs key material.
+pub fn classify_private_key_type(private_key: &str) -> SshPrivateKeyType {
+    detect_private_key_type(private_key)
+}
 
 const OPENSSH_BEGIN: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
 const OPENSSH_END: &str = "-----END OPENSSH PRIVATE KEY-----";
@@ -55,6 +65,11 @@ pub fn load_private_key_from_vault(
         Ok(text) => text,
         Err(failure) => return Err(failure.user_message(None)),
     };
+
+    // Connect-time hardening: reject RSA/DSA deterministically with a stable code.
+    if let Some(code) = unsupported_key_type_code(classify_private_key_type(&normalized)) {
+        return Err(code.to_string());
+    }
 
     let format = match detect_key_format(&normalized) {
         Ok(format) => format,
@@ -314,15 +329,7 @@ impl KeyLoadFailure {
             Self::EncryptedKeyMissingPassphrase => {
                 "The private key is encrypted; enter the key passphrase in the vault entry".into()
             }
-            Self::UnsupportedKeyType => match format {
-                Some(PemKeyFormat::LegacyRsa) => {
-                    "Unsupported legacy RSA key type for this build".into()
-                }
-                Some(PemKeyFormat::OpenSsh) => {
-                    "Unsupported key type inside OpenSSH envelope".into()
-                }
-                _ => "Unsupported SSH private key type".into(),
-            },
+            Self::UnsupportedKeyType => "unsupported_ssh_key_type_rsa".into(),
             Self::DecodeFailed => match format {
                 Some(PemKeyFormat::OpenSsh) => {
                     "Invalid private key: OpenSSH envelope could not be decoded".into()

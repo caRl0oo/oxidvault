@@ -44,6 +44,12 @@
     "backendBrowserOnly": "browser-only",
     "backendOffline": "offline"
   },
+  "titlebar": {
+    "minimize": "Minimize window",
+    "maximize": "Maximize window",
+    "restore": "Restore window",
+    "close": "Close window"
+  },
   "tray": {
     "statusLocked": "🔒 Vault locked",
     "statusUnlocked": "🔓 Vault unlocked",
@@ -279,6 +285,45 @@
       "mfa_disabled": "Two-factor authentication disabled"
     }
   },
+  "pdfExport": {
+    "modalTitle": "PDF Compliance Report",
+    "modalSubtitle": "Choose the report scope for export",
+    "modeLast50": "Last 50 events",
+    "modeDateRange": "Date range",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "validationRange": "Invalid range: \"From\" must be before or equal to \"To\".",
+    "loadingEventsHint": "Loading audit events for date-range preview…",
+    "emptyRangeHint": "No events found in the selected range. Export is still possible.",
+    "exportButton": "Export PDF",
+    "ofLabel": "of",
+    "periodUnavailable": "—",
+    "tableTitle": "Audit events (latest {{count}})",
+    "tableLimitHint": "Note: Showing the latest {{shown}} of {{total}} events. Full export is available as JSON/CSV.",
+    "cover": {
+      "vault": "Vault",
+      "vaultPath": "Vault file path",
+      "exportedAt": "Exported at",
+      "exportedBy": "Exported by",
+      "appVersion": "App version",
+      "reportScope": "Report scope",
+      "eventsIncluded": "Events included",
+      "periodCovered": "Period covered",
+      "explanationTitle": "Notes for auditors",
+      "hashChainTitle": "Tamper detection (hash chain)",
+      "hashChainBody": "Each event in the audit log cryptographically references the previous event (SHA-256). Subsequent modification, deletion, or reordering of individual entries breaks this chain and is detected during verification.",
+      "hmacTitle": "Authentication (HMAC checkpoints)",
+      "hmacBody": "In addition, HMAC-SHA256 checkpoints are written at regular intervals, keyed with material derived from the vault key. A complete rewrite of the log by a third party without access to the unlocked vault is thereby detectable.",
+      "privacyTitle": "Data minimisation",
+      "privacyBody": "The audit log contains metadata only: timestamps, event types, and internal identifiers (UUIDs). Passwords, plaintext secrets, or entry contents are never logged.",
+      "disclaimer": "This report documents technical safeguards provided by OxidVault. Mapping to specific legal or normative requirements (e.g. GDPR, ISO 27001) and the assessment within the organisation's own ISMS remains the responsibility of the operating organisation."
+    },
+    "integrity": {
+      "ok": "Hash chain verified, HMAC checkpoints authenticated.",
+      "structuralOnly": "Hash chain structurally valid; HMAC checkpoints are not available for this vault format.",
+      "invalid": "Warning: Audit integrity check failed (hash chain or HMAC invalid)."
+    }
+  },
   "passwordPolicy": {
     "strength": {
       "0": "Very weak",
@@ -329,6 +374,7 @@
     "invalidMasterPassword": "Master password is incorrect.",
     "invalidMfaCode": "The 2FA code is invalid.",
     "vaultLockedBy": "Vault is already in use by another instance.",
+    "unsupportedSshKeyTypeRsa": "RSA keys are not supported for security reasons (Marvin attack on RSA implementations). Please use an Ed25519 or ECDSA key.",
     "weakMasterPassword": "Master password does not meet the security policy.",
     "weakPasswordTooShort": "At least 12 characters required.",
     "weakPasswordBlocklisted": "This password is too common — please choose a unique one.",

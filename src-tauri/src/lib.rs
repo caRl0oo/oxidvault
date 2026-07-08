@@ -49,6 +49,7 @@ pub fn run() {
             commands::get_entry,
             commands::reveal_secret,
             commands::copy_to_clipboard,
+            commands::read_clipboard_text,
             commands::generate_password_cmd,
             commands::bootstrap::bootstrap_vault,
             commands::bootstrap::detach_vault,

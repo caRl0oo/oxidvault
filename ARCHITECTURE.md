@@ -4,7 +4,7 @@
 > This document is the central reference for the technical architecture of OxidVault.  
 > Whenever core features, Tauri Commands, file formats, or security-relevant changes are added, **ARCHITECTURE.md** must be updated in sync with the code.
 
-**Version:** 2.4.2
+**Version:** 2.5.0
 
 ---
 
@@ -741,6 +741,7 @@ SshTerminalPanel (xterm.js)  [split view beside vault, optional fullscreen]
 | **Credentials** | `Vault::extract_ssh_credentials` — private key **never** to frontend; IPC only `entry_id` |
 | **Key loader** | `src-tauri/src/ssh/key_loader.rs` — PEM/PPK validation, format-specific parsing; **no key in source** |
 | **Logging** | No debug/warn logging in SSH module; errors only as generic UI strings (no keys/passphrases) |
+| **Supported key types** | Ed25519, ECDSA. RSA/DSA rejected at save and connect (russh built without the `rsa` feature — Marvin audit). |
 | **Public key auth** | Explicit `authenticate_publickey`; Ed25519/ECDSA via `ring`; optional RSA hash fallback only via `best_supported_rsa_hash` (sha2-512 → sha2-256 → legacy), without `rsa` crate |
 | **Handshake** | **Command-await:** `ssh_connect` returns only after auth + shell open; no fire-and-forget |
 | **Timeout** | 15s (`SSH_HANDSHAKE_TIMEOUT`) for connect/auth/PTY/shell — prevents hung UI |
@@ -879,6 +880,7 @@ ReachabilityDot — sidebar + detail view
 | `get_entry` | `id: String` | `SecretEntryPublic` | Metadata without plaintext secrets | ✅ |
 | `reveal_secret` | `entry_id`, `field?` | `RevealedSecret` | Short-lived plaintext + warning | ✅ |
 | `copy_to_clipboard` | `entry_id`, `field?` | `()` | OS clipboard via `arboard`, 30s Rust clear | ✅ |
+| `read_clipboard_text` | — | `String` | Reads current OS clipboard text via `arboard` — **vault lock guard**; returns `""` when no text is available; no auto-clear timer | ✅ |
 | `generate_password_cmd` | `options: PasswordGenOptions` | `String` | CSPRNG password generation (no vault required) | ✅ |
 | `take_extension_new_secret` | `()` | `Option<String>` | One-shot password from extension prefill (bridge) | ✅ |
 | `open_website_url` | `url: String` | `()` | Open validated http(s) URL in default browser | ✅ |

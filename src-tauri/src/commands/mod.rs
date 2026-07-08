@@ -279,6 +279,21 @@ pub fn copy_to_clipboard(
     state.clipboard.copy(&app, secret)
 }
 
+/// Reads the current OS clipboard text (no auto-clear timer involved).
+///
+/// Returns an empty string if the clipboard does not contain text.
+#[tauri::command]
+pub fn read_clipboard_text(state: State<'_, AppState>) -> Result<String, String> {
+    ensure_vault_unlocked(&state)?;
+
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    match clipboard.get_text() {
+        Ok(text) => Ok(text),
+        Err(arboard::Error::ContentNotAvailable) => Ok(String::new()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn generate_password_cmd(options: PasswordGenOptions) -> Result<String, String> {
     generate_password(options).map_err(|e| e.to_string())

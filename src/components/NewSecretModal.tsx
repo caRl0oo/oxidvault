@@ -5,13 +5,13 @@ import {
   cloneElement,
   isValidElement,
   useEffect,
+  useMemo,
   useId,
   useRef,
   useState,
   type ReactElement,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "@phosphor-icons/react";
 import { PasswordGenerateButton } from "@/components/PasswordGenerateButton";
 import { TagInput } from "@/components/TagInput";
 import { OverlayModal } from "@/components/ui/OverlayModal";
@@ -27,6 +27,7 @@ import {
 import { runAsync } from "@/lib/runAsync";
 import { secretFormSubmitLabel } from "@/lib/secretFormLabels";
 import { UI } from "@/lib/uiClasses";
+import { detectPrivateKeyType, isUnsupportedSshKeyType } from "@/lib/sshKeyType";
 import type {
   SecretEntryInputFull,
   SecretEntryPublic,
@@ -87,6 +88,7 @@ export function NewSecretModal({
   const [expiresAt, setExpiresAt] = useState("");
   const [loadingSecrets, setLoadingSecrets] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const [sshPrivateKeyTouched, setSshPrivateKeyTouched] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -144,6 +146,21 @@ export function NewSecretModal({
     return () => globalThis.removeEventListener("keydown", onKey);
   }, [open, onClose, loading, loadingSecrets]);
 
+  const sshPrivateKeyType = useMemo(() => {
+    if (kind !== "ssh_key") return "unknown" as const;
+    return detectPrivateKeyType(ssh.privateKey);
+  }, [kind, ssh.privateKey]);
+
+  const sshPrivateKeyUnsupported = isUnsupportedSshKeyType(sshPrivateKeyType);
+
+  useEffect(() => {
+    if (!open) return;
+    if (kind === "ssh_key") {
+      // Ensure edit-mode invalid keys are rejected immediately (submit disabled + visible message).
+      setSshPrivateKeyTouched(true);
+    }
+  }, [open, kind]);
+
   if (!open) {
     return null;
   }
@@ -154,7 +171,12 @@ export function NewSecretModal({
       case "web_login":
         return !!(web.url.trim() && web.username.trim() && web.password);
       case "ssh_key":
-        return !!(ssh.host.trim() && ssh.username.trim() && ssh.privateKey.trim());
+        return !!(
+          ssh.host.trim() &&
+          ssh.username.trim() &&
+          ssh.privateKey.trim() &&
+          !sshPrivateKeyUnsupported
+        );
       case "api_token":
         return !!(api.service.trim() && api.token.trim());
       case "database": {
@@ -286,10 +308,10 @@ export function NewSecretModal({
           type="button"
           onClick={onClose}
           disabled={loading || loadingSecrets}
-          className={`${UI.btnGhost} rounded p-1.5 disabled:opacity-50`}
+          className={`${UI.btnGhost} rounded px-1.5 py-0.5 font-mono text-sm leading-none disabled:opacity-50`}
           aria-label={t("common.closeDialog")}
         >
-          <X size={16} weight="light" aria-hidden />
+          <span aria-hidden="true">×</span>
         </button>
       </header>
 
@@ -428,14 +450,25 @@ export function NewSecretModal({
                   />
                 </Field>
                 <Field label={t("entry.privateKey")} required>
-                  <textarea
-                    value={ssh.privateKey}
-                    onChange={(e) => setSsh({ ...ssh, privateKey: e.target.value })}
-                    rows={5}
-                    className={`${inputClass} text-xs`}
-                    placeholder={t("secretForm.privateKeyPlaceholder")}
-                    required
-                  />
+                  <>
+                    <textarea
+                      value={ssh.privateKey}
+                      onChange={(e) => {
+                        setSsh({ ...ssh, privateKey: e.target.value });
+                        setSshPrivateKeyTouched(true);
+                      }}
+                      onBlur={() => setSshPrivateKeyTouched(true)}
+                      rows={5}
+                      className={`${inputClass} text-xs`}
+                      placeholder={t("secretForm.privateKeyPlaceholder")}
+                      required
+                    />
+                    {sshPrivateKeyTouched && sshPrivateKeyUnsupported ? (
+                      <p className="mt-1 font-mono text-[10px] leading-relaxed text-vault-danger">
+                        {t("errors.unsupportedSshKeyTypeRsa")}
+                      </p>
+                    ) : null}
+                  </>
                 </Field>
                 <Field label={t("entry.sshKeyPassphrase")}>
                   <div className="flex gap-2">

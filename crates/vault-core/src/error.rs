@@ -82,4 +82,10 @@ pub enum VaultError {
     /// Wrong password for this user.
     #[error("invalid password for user")]
     InvalidUserPassword,
+
+    /// RSA/DSA keys are not supported by this build (security hardening).
+    ///
+    /// Stable code for frontend mapping: `unsupported_ssh_key_type_rsa`.
+    #[error("unsupported_ssh_key_type_rsa")]
+    UnsupportedSshKeyType,
 }

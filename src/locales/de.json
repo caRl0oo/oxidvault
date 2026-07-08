@@ -44,6 +44,12 @@
     "backendBrowserOnly": "browser-only",
     "backendOffline": "offline"
   },
+  "titlebar": {
+    "minimize": "Fenster minimieren",
+    "maximize": "Fenster maximieren",
+    "restore": "Fenster wiederherstellen",
+    "close": "Fenster schließen"
+  },
   "tray": {
     "statusLocked": "🔒 Vault gesperrt",
     "statusUnlocked": "🔓 Vault entsperrt",
@@ -279,6 +285,45 @@
       "mfa_disabled": "Zwei-Faktor-Authentifizierung deaktiviert"
     }
   },
+  "pdfExport": {
+    "modalTitle": "PDF Compliance Report",
+    "modalSubtitle": "Berichtsbereich für den Export festlegen",
+    "modeLast50": "Letzte 50 Ereignisse",
+    "modeDateRange": "Zeitraum wählen",
+    "fromLabel": "Von",
+    "toLabel": "Bis",
+    "validationRange": "Ungültiger Zeitraum: \"Von\" darf nicht nach \"Bis\" liegen.",
+    "loadingEventsHint": "Lade Audit-Ereignisse für die Zeitraumvorschau…",
+    "emptyRangeHint": "Im gewählten Zeitraum wurden keine Ereignisse gefunden. Export ist trotzdem möglich.",
+    "exportButton": "Export PDF",
+    "ofLabel": "von",
+    "periodUnavailable": "—",
+    "tableTitle": "Audit-Ereignisse (letzte {{count}})",
+    "tableLimitHint": "Hinweis: Zeigt die letzten {{shown}} von {{total}} Ereignissen. Vollständiger Export als JSON/CSV verfügbar.",
+    "cover": {
+      "vault": "Vault",
+      "vaultPath": "Vault-Dateipfad",
+      "exportedAt": "Exportiert am",
+      "exportedBy": "Exportiert von",
+      "appVersion": "App-Version",
+      "reportScope": "Berichtszeitraum",
+      "eventsIncluded": "Enthaltene Ereignisse",
+      "periodCovered": "Abgedeckter Zeitraum",
+      "explanationTitle": "Hinweise für Prüfer",
+      "hashChainTitle": "Manipulationserkennung (Hash-Kette)",
+      "hashChainBody": "Jedes Ereignis im Audit-Log referenziert kryptografisch (SHA-256) das vorherige Ereignis. Nachträgliche Änderungen, Löschungen oder Umsortierungen einzelner Einträge brechen diese Kette und werden bei der Verifikation erkannt.",
+      "hmacTitle": "Authentifizierung (HMAC-Checkpoints)",
+      "hmacBody": "Zusätzlich werden in regelmäßigen Abständen HMAC-SHA256-Prüfpunkte geschrieben, deren Schlüssel aus dem Tresorschlüssel abgeleitet wird. Ein vollständiges Neuschreiben des Protokolls durch Dritte ohne Zugriff auf den entsperrten Tresor wird dadurch erkennbar.",
+      "privacyTitle": "Datenminimierung",
+      "privacyBody": "Das Audit-Log enthält ausschließlich Metadaten: Zeitpunkte, Ereignistypen und interne Kennungen (UUIDs). Passwörter, Klartext-Geheimnisse oder Inhalte von Einträgen werden zu keinem Zeitpunkt protokolliert.",
+      "disclaimer": "Dieser Bericht dokumentiert technische Schutzmaßnahmen von OxidVault. Die Zuordnung zu konkreten rechtlichen oder normativen Anforderungen (z. B. DSGVO, ISO 27001) sowie die Bewertung im Rahmen des eigenen ISMS obliegt der verantwortlichen Organisation."
+    },
+    "integrity": {
+      "ok": "Hash-Kette verifiziert, HMAC-Checkpoints authentifiziert.",
+      "structuralOnly": "Hash-Kette strukturell valide; HMAC-Checkpoints für dieses Vault-Format nicht verfügbar.",
+      "invalid": "Warnung: Audit-Integrität fehlgeschlagen (Hash-Kette oder HMAC ungültig)."
+    }
+  },
   "passwordPolicy": {
     "strength": {
       "0": "Sehr schwach",
@@ -329,6 +374,7 @@
     "invalidMasterPassword": "Master-Passwort ist falsch.",
     "invalidMfaCode": "Der 2FA-Code ist ungültig.",
     "vaultLockedBy": "Vault wird bereits von einer anderen Instanz verwendet.",
+    "unsupportedSshKeyTypeRsa": "RSA-Schlüssel werden aus Sicherheitsgründen nicht unterstützt (Marvin-Angriff auf RSA-Implementierungen). Bitte verwenden Sie einen Ed25519- oder ECDSA-Schlüssel.",
     "weakMasterPassword": "Master-Passwort erfüllt nicht die Sicherheitsrichtlinie.",
     "weakPasswordTooShort": "Mindestens 12 Zeichen erforderlich.",
     "weakPasswordBlocklisted": "Dieses Passwort ist zu häufig — bitte ein einzigartiges wählen.",

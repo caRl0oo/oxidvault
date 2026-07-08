@@ -4,7 +4,9 @@
 import { type ReactNode, Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { GitSyncStatusIndicator } from "@/components/GitSyncStatusIndicator";
+import { TitleBar } from "@/components/TitleBar";
 import { GearIcon } from "@/components/ui/GearIcon";
+import { isTauri } from "@/lib/ipc";
 import { UI } from "@/lib/uiClasses";
 
 function ShortcutHint({ keys, label }: Readonly<{ keys: string[]; label: string }>) {
@@ -53,41 +55,53 @@ export function Layout({
 
   return (
     <div className="flex h-full flex-col">
-      <header
-        className="flex h-11 shrink-0 items-center justify-end border-b border-vault-border bg-vault-elevated px-4"
-        style={{
-          boxShadow: "var(--shadow-sm), inset 0 -1px 0 var(--color-vault-border)",
-          borderTop: "1px solid color-mix(in srgb, var(--color-vault-accent) 25%, transparent)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          {showHeaderGitSync ? (
-            <GitSyncStatusIndicator
-              syncing={gitSyncing}
-              syncError={gitSyncError}
-              onOpenSettings={onOpenGitSettings}
-            />
-          ) : null}
-          <div
-            className={
-              hideVaultStatusGitSync
-                ? "[&>div>button:first-child]:hidden [&>div>div]:border-l-0 [&>div>div]:pl-0"
-                : undefined
-            }
-          >
-            {vaultStatus}
+      {isTauri() ? (
+        <TitleBar
+          vaultStatus={vaultStatus}
+          vaultLocked={vaultLocked}
+          gitSyncEnabled={gitSyncEnabled}
+          gitSyncing={gitSyncing}
+          gitSyncError={gitSyncError}
+          onOpenGitSettings={onOpenGitSettings}
+          onOpenSettings={onOpenSettings}
+        />
+      ) : (
+        <header
+          className="flex h-11 shrink-0 items-center justify-end border-b border-vault-border bg-vault-elevated px-4"
+          style={{
+            boxShadow: "var(--shadow-sm), inset 0 -1px 0 var(--color-vault-border)",
+            borderTop: "1px solid color-mix(in srgb, var(--color-vault-accent) 25%, transparent)",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            {showHeaderGitSync ? (
+              <GitSyncStatusIndicator
+                syncing={gitSyncing}
+                syncError={gitSyncError}
+                onOpenSettings={onOpenGitSettings}
+              />
+            ) : null}
+            <div
+              className={
+                hideVaultStatusGitSync
+                  ? "[&>div>button:first-child]:hidden [&>div>div]:border-l-0 [&>div>div]:pl-0"
+                  : undefined
+              }
+            >
+              {vaultStatus}
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenSettings?.()}
+              className={`${UI.btnGhost} p-1.5`}
+              aria-label={t("settings.title")}
+              title={t("settings.title")}
+            >
+              <GearIcon className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenSettings?.()}
-            className={`${UI.btnGhost} p-1.5`}
-            aria-label={t("settings.title")}
-            title={t("settings.title")}
-          >
-            <GearIcon className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
+        </header>
+      )}
       <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
       <footer className="flex h-7 shrink-0 items-center gap-5 border-t border-vault-border bg-vault-surface px-4 font-mono text-[10px] text-vault-muted">
         <ShortcutHint keys={["Ctrl", "K"]} label={t("shortcuts.search")} />

@@ -1,15 +1,19 @@
 <div align="center">
-
-<img alt="OxidVault Logo" src="public/OxidVault-011.svg#gh-dark-mode-only" width="300">
-<img alt="OxidVault Logo" src="public/OxidVault-01.svg#gh-light-mode-only" width="300">
-
+  <img src="./public/OxidVault-011.svg#gh-dark-mode-only" alt="OxidVault Logo (Dark)" width="300" />
+  <img src="./public/OxidVault-01.svg#gh-light-mode-only" alt="OxidVault Logo (Light)" width="300" />
 </div>
 
 <br>
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.4.2-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.5.0-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
 If you find OxidVault useful, consider giving it a ⭐ — it helps others discover the project.
+
+**Secure, on-premise password manager for enterprise environments.**
+
+OxidVault is designed for organizations that want to operate credentials and secrets **entirely under their own control** — without cloud dependency, without third-party hosting, and with traceable compliance paths. The application combines a memory-safe Rust core with a lean desktop interface and is built for IT administrators, security officers (CISO), and end users in corporate environments.
+
+---
 
 ## Feedback & Community
 
@@ -21,10 +25,6 @@ Help us improve with low-effort participation on GitHub:
 - **React with 👍 on existing issues** — if an idea matches your needs, a thumbs-up is enough for us to gauge demand and prioritize without long comment threads.
 
 → **[GitHub Issues](https://github.com/caRl0oo/oxidvault/issues)**
-
-**Secure, on-premise password manager for enterprise environments.**
-
-OxidVault is designed for organizations that want to operate credentials and secrets **entirely under their own control** — without cloud dependency, without third-party hosting, and with traceable compliance paths. The application combines a memory-safe Rust core with a lean desktop interface and is built for IT administrators, security officers (CISO), and end users in corporate environments.
 
 ---
 
@@ -276,13 +276,18 @@ Installer artifacts: `target/release/bundle/` (MSI, NSIS, portable EXE).
 4. Optional: deploy admin policy at `C:\ProgramData\OxidVault\policy.json`.
 5. In the **Security** tab, review compliance status and password audit; **rotate password** if needed.
 
-### Quality Assurance (CI)
+### Security-First CI/CD
 
-The workflow [`.github/workflows/security-audit.yml`](.github/workflows/security-audit.yml) runs:
+Every code change undergoes automated verification before it reaches the main branch:
 
-- `cargo audit` — dependency scan
-- `cargo fmt --check` / `cargo clippy`
-- `cargo test` — crypto and integration tests
+| Check | Tool | What it ensures |
+|---|---|---|
+| **Vulnerability scanning** | `cargo audit` | Known CVEs in all dependencies are detected on every push |
+| **Zero-warning policy** | `cargo clippy` + `cargo fmt --check` | No unsafe or suboptimal patterns enter the codebase |
+| **Crypto & integration tests** | `cargo test` | Encryption, vault format, and auth flows are verified on every push |
+| **Cross-platform audits** | CI matrix (Windows + Linux) | Platform-specific safeguards (DACLs, clipboard protection, IPC bridging) are validated on both targets |
+
+> **Transparency:** All security and quality checks are public. Inspect the [security audit pipeline configuration](.github/workflows/security-audit.yml).
 
 ---
 
@@ -335,7 +340,7 @@ This architecture strictly separates **business logic (Rust)** from the **UI (Re
 
 | Platform | File |
 |---|---|
-| **Windows** | `OxidVault_2.4.2_x64_en-US.msi` |
+| **Windows** | `OxidVault_2.5.0_x64_en-US.msi` |
 
 > **Note:** After installation, place the license file for Enterprise at `C:\ProgramData\OxidVault\oxidvault.license` — details: [oxidvault.com](https://oxidvault.com)
 

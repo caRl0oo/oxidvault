@@ -120,6 +120,11 @@ export async function copyToClipboard(
   return invoke<void>("copy_to_clipboard", { entryId, field });
 }
 
+/** Reads the current OS clipboard text via Rust backend (no WebView clipboard read prompt). */
+export async function readClipboardText(): Promise<string> {
+  return invoke<string>("read_clipboard_text");
+}
+
 export async function generatePassword(options: PasswordGenOptions): Promise<string> {
   return invoke<string>("generate_password_cmd", { options });
 }

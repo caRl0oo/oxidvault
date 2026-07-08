@@ -9,6 +9,7 @@ const ERROR_PATTERNS: ReadonlyArray<{ pattern: string; key: string }> = [
   { pattern: "invalid master password", key: "errors.invalidMasterPassword" },
   { pattern: "invalid mfa code", key: "errors.invalidMfaCode" },
   { pattern: "vault is locked by", key: "errors.vaultLockedBy" },
+  { pattern: "unsupported_ssh_key_type_rsa", key: "errors.unsupportedSshKeyTypeRsa" },
   { pattern: "weak master password: too_short", key: "errors.weakPasswordTooShort" },
   { pattern: "weak master password: blocklisted", key: "errors.weakPasswordBlocklisted" },
   { pattern: "weak master password: low_entropy", key: "errors.weakPasswordLowEntropy" },

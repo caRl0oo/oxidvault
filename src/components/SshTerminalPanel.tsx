@@ -1,16 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Pascal Kuhn <support@oxidvault.com>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { CornersIn, Crosshair } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SshDisconnectConfirmationModal } from "@/components/SshDisconnectConfirmationModal";
 import { SshSessionStatusDot } from "@/components/SshSessionStatusDot";
+import { readClipboardText } from "@/lib/ipc";
 import {
   mountTerminalSession,
   scheduleLayoutSync,
   type TerminalRuntime,
 } from "@/lib/sshTerminalSession";
+import { sshWrite } from "@/lib/ssh";
 import type { SshSessionStatus, SshTerminalState } from "@/types/ssh";
 import "@xterm/xterm/css/xterm.css";
 
@@ -36,12 +37,48 @@ export function SshTerminalPanel({
   onSessionEnded,
 }: Readonly<SshTerminalPanelProps>) {
   const { t } = useTranslation();
+  const DEBUG_CLIPBOARD = import.meta.env.DEV;
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<TerminalRuntime | null>(null);
+  const sessionIdRef = useRef(state.session.sessionId);
+  const clipboardHandlersRef = useRef<{
+    target: HTMLElement;
+    onContextMenu: (event: MouseEvent) => void;
+    onMouseUp: (event: MouseEvent) => void;
+  } | null>(null);
   const onSessionEndedRef = useRef(onSessionEnded);
   const onSessionActiveRef = useRef(onSessionActive);
   const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    sessionIdRef.current = state.session.sessionId;
+  }, [state.session.sessionId]);
+
+  const pasteFromClipboard = async (): Promise<void> => {
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId) return;
+
+    let text = "";
+    try {
+      text = await readClipboardText();
+    } catch (err) {
+      console.error("[ssh][paste] read_clipboard_text failed:", err);
+      return;
+    }
+
+    if (DEBUG_CLIPBOARD) {
+      console.debug("[ssh][paste] sessionId present:", Boolean(currentSessionId), "len:", text.length);
+    }
+
+    if (!text) return;
+
+    try {
+      await sshWrite(currentSessionId, text);
+    } catch (err) {
+      console.error("[ssh][paste] ssh_write failed:", err);
+    }
+  };
 
   onSessionEndedRef.current = onSessionEnded;
   onSessionActiveRef.current = onSessionActive;
@@ -50,7 +87,7 @@ export function SshTerminalPanel({
     const container = containerRef.current;
     if (!container) return;
 
-    return mountTerminalSession({
+    const cleanup = mountTerminalSession({
       container,
       panel: panelRef.current,
       containerRef,
@@ -59,6 +96,79 @@ export function SshTerminalPanel({
       onSessionActive: () => onSessionActiveRef.current(),
       runtimeRef,
     });
+
+    const term = runtimeRef.current?.term;
+    const target = (term as unknown as { element?: HTMLElement }).element ?? container;
+
+    if (term && target) {
+      const onContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (DEBUG_CLIPBOARD) {
+          console.debug("[ssh][paste] contextmenu handler fired");
+        }
+      };
+
+      const onMouseUp = (event: MouseEvent) => {
+        if (event.button !== 2) return; // right click only
+        event.preventDefault();
+        event.stopPropagation();
+
+        void (async () => {
+          const selection = term.getSelection();
+          if (selection.length > 0) {
+            try {
+              await navigator.clipboard.writeText(selection);
+            } catch {
+              /* ignore clipboard write errors */
+            } finally {
+              term.clearSelection();
+            }
+            return;
+          }
+
+          await pasteFromClipboard();
+        })().catch((err) => {
+          console.error("[ssh][paste] mouseup paste failed:", err);
+        });
+      };
+
+      term.attachCustomKeyEventHandler((ev) => {
+        if (ev.type !== "keydown") return true;
+        const isV = ev.key?.toLowerCase?.() === "v";
+        if (!ev.ctrlKey || !isV) return true;
+
+        // PuTTY-like paste: Ctrl+Shift+V (and Ctrl+V) reads clipboard via Rust.
+        ev.preventDefault();
+        ev.stopPropagation();
+        void pasteFromClipboard().catch((err) => {
+          console.error("[ssh][paste] key paste failed:", err);
+        });
+        return false;
+      });
+
+      console.debug("[panel][ssh][clipboard] handlers registered on", target.tagName);
+      target.addEventListener("contextmenu", onContextMenu, { capture: true });
+      target.addEventListener("mouseup", onMouseUp, { capture: true });
+
+      clipboardHandlersRef.current = { target, onContextMenu, onMouseUp };
+    } else {
+      console.debug(
+        "[panel][ssh][clipboard] handlers not registered (term missing?)",
+      );
+    }
+
+    return () => {
+      const handlers = clipboardHandlersRef.current;
+      if (handlers) {
+        handlers.target.removeEventListener("contextmenu", handlers.onContextMenu, {
+          capture: true,
+        });
+        handlers.target.removeEventListener("mouseup", handlers.onMouseUp, { capture: true });
+        clipboardHandlersRef.current = null;
+      }
+      cleanup();
+    };
   }, [state]);
 
   useEffect(() => {
@@ -136,11 +246,9 @@ function SshTerminalHeader({
           aria-label={focusLabel}
           title={focusLabel}
         >
-          {focusMode ? (
-            <CornersIn size={14} weight="light" aria-hidden="true" />
-          ) : (
-            <Crosshair size={14} weight="light" aria-hidden="true" />
-          )}
+          <span className="font-mono text-xs" aria-hidden="true">
+            {focusMode ? "[ ]" : "[+]"}
+          </span>
         </button>
         <button
           type="button"

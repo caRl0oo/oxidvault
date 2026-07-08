@@ -518,6 +518,15 @@ fn validate_input(input: &SecretEntryInput) -> Result<(), crate::error::VaultErr
                     "ssh key fields are incomplete".into(),
                 ));
             }
+
+            // Reject RSA/DSA keys early at save time (do not block formats we can't classify).
+            if let Some(code) = crate::ssh_key_type::unsupported_key_type_code(
+                crate::ssh_key_type::detect_private_key_type(private_key),
+            ) {
+                // Stable code is encoded in the VaultError display.
+                let _ = code;
+                return Err(crate::error::VaultError::UnsupportedSshKeyType);
+            }
         }
         SecretPayload::ApiToken { service, token } => {
             if service.trim().is_empty() || token.trim().is_empty() {

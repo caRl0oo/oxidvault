@@ -21,6 +21,7 @@ pub mod path_util;
 pub mod policy;
 pub mod probe;
 pub mod security_audit;
+pub mod ssh_key_type;
 pub mod unlock;
 pub mod url_match;
 pub mod vault;
