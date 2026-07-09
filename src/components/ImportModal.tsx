@@ -3,11 +3,9 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { readTextFile } from "@tauri-apps/plugin-fs";
-import { CheckCircle, Warning, XCircle } from "@phosphor-icons/react";
 import { ModalDialog } from "@/components/ui/ModalDialog";
 import { VaultButton } from "@/components/ui/VaultButton";
-import { pickImportPath } from "@/lib/dialog";
+import { pickImportPath, readTextFileViaBackend } from "@/lib/dialog";
 import { runAsync } from "@/lib/runAsync";
 import {
   CONFIRM_PANEL_CLASS,
@@ -120,7 +118,7 @@ export function ImportModal({
         return;
       }
 
-      const content = await readTextFile(path);
+      const content = await readTextFileViaBackend(path);
       if (!validateImportFormat(content, format)) {
         setFileError(t("import.error_format_mismatch"));
         setFileName(path.split(/[/\\]/).pop() ?? path);
@@ -460,10 +458,10 @@ export function ImportModal({
 
 type ResultTone = "success" | "warning" | "danger";
 
-const RESULT_ICON: Record<ResultTone, typeof CheckCircle> = {
-  success: CheckCircle,
-  warning: Warning,
-  danger: XCircle,
+const RESULT_GLYPH: Record<ResultTone, string> = {
+  success: "✓",
+  warning: "!",
+  danger: "✕",
 };
 
 const RESULT_TONE_CLASS: Record<ResultTone, string> = {
@@ -480,7 +478,6 @@ const RESULT_RING: Record<ResultTone, string> = {
 
 /** Ergebnis-Status-Badge im Import-Flow (ersetzt farbige Emojis). */
 function ResultIcon({ tone }: Readonly<{ tone: ResultTone }>) {
-  const Icon = RESULT_ICON[tone];
   return (
     <div
       className={`flex h-14 w-14 items-center justify-center rounded-md ${RESULT_TONE_CLASS[tone]}`}
@@ -488,7 +485,9 @@ function ResultIcon({ tone }: Readonly<{ tone: ResultTone }>) {
         boxShadow: `0 0 0 1px color-mix(in srgb, ${RESULT_RING[tone]} 25%, transparent) inset`,
       }}
     >
-      <Icon size={26} weight="light" aria-hidden />
+      <span className="font-mono text-2xl leading-none" aria-hidden>
+        {RESULT_GLYPH[tone]}
+      </span>
     </div>
   );
 }

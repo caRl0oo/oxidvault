@@ -4,9 +4,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
-import { writeFile } from "@tauri-apps/plugin-fs";
 import { PdfExportModal, type PdfExportSelection } from "@/components/PdfExportModal";
-import { pickAuditExportPath, pickAuditPdfExportPath } from "@/lib/dialog";
+import { pickAuditExportPath, pickAuditPdfExportPath, writeBinaryFileViaBackend } from "@/lib/dialog";
 import {
   exportAuditLog,
   getAuditLogs,
@@ -161,7 +160,7 @@ export function AuditLogTable({ limit = DEFAULT_LIMIT }: Readonly<AuditLogTableP
         logoBase64,
       });
 
-      await writeFile(filePath, pdfBytes);
+      await writeBinaryFileViaBackend(filePath, pdfBytes);
 
       setExportMessage(t("audit.exportPdfSuccess", { path: filePath }));
       setExportSuccess(true);

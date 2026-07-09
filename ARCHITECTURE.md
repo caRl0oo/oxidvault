@@ -4,7 +4,7 @@
 > This document is the central reference for the technical architecture of OxidVault.  
 > Whenever core features, Tauri Commands, file formats, or security-relevant changes are added, **ARCHITECTURE.md** must be updated in sync with the code.
 
-**Version:** 2.5.0
+**Version:** 2.5.1
 
 ---
 
@@ -181,8 +181,9 @@ Detail view / sidebar
 | **Memory (m)** | 64 MiB | B2B-grade brute-force protection |
 | **Iterations (t)** | 3 | OWASP recommendation for Argon2id |
 | **Parallelism (p)** | 4 | Balanced for desktop hardware |
+| **On-disk minimum** | m ≥ 16 MiB, t ≥ 2, p ≥ 1 | `KdfParams::enforce_minimums()` on v1/v2 header parse and multi-user unlock — rejects KDF downgrade tampering |
 
-**Implementation status:** ✅ Implemented in `crates/vault-core/src/crypto.rs` (`MasterKey::derive_from_password`).
+**Implementation status:** ✅ Implemented in `crates/vault-core/src/crypto.rs` (`MasterKey::derive_from_password`, `KdfParams::enforce_minimums`).
 
 **Memory hardening (K2):** The stack buffer for KDF output is held as **`Zeroizing<[u8; 32]>`** — on success **and** failure (early return via `?`) the buffer is overwritten on drop before being passed to `MasterKey`.
 
@@ -392,7 +393,7 @@ Frontend: Listener `vault-locked` → UI-Reset + Hinweis
 | Component | Purge mechanism |
 |---|---|
 | **Master key** | `#[derive(Zeroize, ZeroizeOnDrop)]` on `MasterKey([u8; 32])` |
-| **Secret strings** | `String::zeroize()` on password, token, keys before drop |
+| **Secret strings** | `String::zeroize()` on password, token, keys before drop (`delete_entry`, `update_entry`, `lock`) |
 | **Frontend state** | Entries, detail view, form state reset |
 | **Clipboard (backend)** | `SecureClipboard::clear_pending()` on `perform_lock()` — clears the OS clipboard immediately (if still holding the copied secret) and invalidates the timer |
 
@@ -666,7 +667,7 @@ flowchart TB
 5. `vault-core::Vault::update_entry`:
    - Validates input, checks unchanged entry type
    - Keeps `id` + `created_at`, sets new `updated_at`
-   - Replaces entry in RAM, calls `persist()` (borrow, no clone)
+   - `zeroize_secrets()` on the previous entry, then replaces it in RAM, calls `persist()` (borrow, no clone)
 6. Entire vault body is re-encrypted with AES-256-GCM and written to `.oxid`.
 7. Frontend updates sidebar (`list_entries`) and detail view (`get_entry` → Public).
 
