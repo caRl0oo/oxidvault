@@ -383,6 +383,7 @@ pub mod audit;
 pub mod bootstrap;
 pub mod compliance;
 pub mod diagnostics;
+pub mod file_dialog;
 pub mod git_sync;
 pub mod open_url;
 pub mod policy;
