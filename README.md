@@ -15,6 +15,32 @@ OxidVault is designed for organizations that want to operate credentials and sec
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/oxidvault-dashboard.png" alt="Vault Overview" width="800" />
+  <br />
+  <em>Vault overview — organize logins, SSH keys, databases, and secure notes in one place</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/oxidvault-security-dashboard.png" alt="Security Dashboard" width="800" />
+  <br />
+  <em>Security Dashboard — offline vulnerability analysis, duplicate detection, entropy scoring</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/oxidvault-log.png" alt="Audit Log with Hash Chain" width="800" />
+  <br />
+  <em>Tamper-evident audit log with SHA-256 hash chain</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/oxidvault-ssh.png" alt="SSH Quick Connect" width="800" />
+  <br />
+  <em>Integrated SSH terminal — Quick Connect with host key verification</em>
+</p>
+
 ## Feedback & Community
 
 OxidVault is already used in the wild — **200+ repository clones** and growing. Your input shapes what we build next.
