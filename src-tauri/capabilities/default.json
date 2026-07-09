@@ -11,16 +11,6 @@
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-is-maximized",
-    "dialog:allow-open",
-    "dialog:allow-save",
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
-    }
+    "core:window:allow-is-maximized"
   ]
 }
