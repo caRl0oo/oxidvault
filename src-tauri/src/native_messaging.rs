@@ -73,7 +73,7 @@ pub fn run() -> io::Result<()> {
 
 fn process_message(payload: &[u8]) -> Vec<u8> {
     match serde_json::from_slice::<IncomingMessage>(payload) {
-        Ok(IncomingMessage { action, url: _, .. }) if action == "ping" => {
+        Ok(IncomingMessage { action, .. }) if action == "ping" => {
             serialize_response(OutgoingMessage {
                 status: "pong".into(),
                 success: None,
@@ -101,16 +101,14 @@ fn process_message(payload: &[u8]) -> Vec<u8> {
             }
             serialize_response(OutgoingMessage::from(request_get_login(hostname.trim())))
         }
-        Ok(IncomingMessage { action, url: _, .. }) if action == "vault_status" => {
+        Ok(IncomingMessage { action, .. }) if action == "vault_status" => {
             serialize_response(OutgoingMessage::from(request_vault_status()))
         }
-        Ok(IncomingMessage { action, url: _, .. }) if action == "request_unlock" => {
+        Ok(IncomingMessage { action, .. }) if action == "request_unlock" => {
             serialize_response(OutgoingMessage::from(request_unlock()))
         }
         Ok(IncomingMessage {
-            action,
-            password,
-            url: _,
+            action, password, ..
         }) if action == "open_new_secret" => {
             let generated = password.unwrap_or_default();
             if generated.trim().is_empty() {

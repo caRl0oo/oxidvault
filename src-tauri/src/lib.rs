@@ -26,7 +26,6 @@ pub fn run_native_messaging() -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             system_tray::setup_tray(app.handle())?;
             nm_bridge::spawn_server(app.handle().clone());
@@ -70,6 +69,14 @@ pub fn run() {
             commands::compliance::get_compliance_status,
             commands::compliance::reencrypt_vault,
             commands::diagnostics::get_system_diagnostics,
+            commands::file_dialog::save_vault,
+            commands::file_dialog::load_vault,
+            commands::file_dialog::select_vault_file_via_dialog,
+            commands::file_dialog::pick_audit_export_path,
+            commands::file_dialog::pick_audit_pdf_export_path,
+            commands::file_dialog::pick_import_path,
+            commands::file_dialog::read_text_file_cmd,
+            commands::file_dialog::write_binary_file_cmd,
             commands::enable_mfa,
             commands::get_mfa_status,
             commands::disable_mfa,
