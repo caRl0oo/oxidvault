@@ -35,6 +35,28 @@ impl Default for KdfParams {
     }
 }
 
+impl KdfParams {
+    /// Rejects on-disk KDF parameters below the B2B minimum (downgrade-attack guard).
+    pub fn enforce_minimums(&self) -> Result<(), VaultError> {
+        if self.memory_kib < 16384 {
+            return Err(VaultError::Crypto(
+                "KDF memory parameter too low (Downgrade attack detected)".into(),
+            ));
+        }
+        if self.iterations < 2 {
+            return Err(VaultError::Crypto(
+                "KDF iteration parameter too low (Downgrade attack detected)".into(),
+            ));
+        }
+        if self.parallelism < 1 {
+            return Err(VaultError::Crypto(
+                "KDF parallelism parameter invalid".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Sensitive key material — never `Clone`, never `Debug`.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct MasterKey([u8; KEY_LEN]);
@@ -268,5 +290,43 @@ mod tests {
             ciphertext_a, ciphertext_b,
             "identical plaintext must produce distinct ciphertext when nonces differ"
         );
+    }
+
+    #[test]
+    fn kdf_enforce_minimums_accepts_default_params() {
+        assert!(KdfParams::default().enforce_minimums().is_ok());
+    }
+
+    #[test]
+    fn kdf_enforce_minimums_rejects_low_memory() {
+        let params = KdfParams {
+            memory_kib: 8192,
+            iterations: 3,
+            parallelism: 4,
+        };
+        let err = params.enforce_minimums().unwrap_err();
+        assert!(matches!(err, VaultError::Crypto(_)));
+    }
+
+    #[test]
+    fn kdf_enforce_minimums_rejects_low_iterations() {
+        let params = KdfParams {
+            memory_kib: 65536,
+            iterations: 1,
+            parallelism: 4,
+        };
+        let err = params.enforce_minimums().unwrap_err();
+        assert!(matches!(err, VaultError::Crypto(_)));
+    }
+
+    #[test]
+    fn kdf_enforce_minimums_rejects_invalid_parallelism() {
+        let params = KdfParams {
+            memory_kib: 65536,
+            iterations: 3,
+            parallelism: 0,
+        };
+        let err = params.enforce_minimums().unwrap_err();
+        assert!(matches!(err, VaultError::Crypto(_)));
     }
 }

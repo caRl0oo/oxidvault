@@ -908,13 +908,16 @@ fn read_header_v1_v2(
         (0, 0, None)
     };
 
+    let kdf = KdfParams {
+        memory_kib: u32::from_le_bytes(memory),
+        iterations: u32::from_le_bytes(iterations),
+        parallelism: u32::from_le_bytes(parallelism),
+    };
+    kdf.enforce_minimums()?;
+
     Ok(VaultFileMeta {
         name,
-        kdf: KdfParams {
-            memory_kib: u32::from_le_bytes(memory),
-            iterations: u32::from_le_bytes(iterations),
-            parallelism: u32::from_le_bytes(parallelism),
-        },
+        kdf,
         salt,
         format_version,
         key_created_at,

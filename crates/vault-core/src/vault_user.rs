@@ -117,6 +117,7 @@ pub fn derive_user_kek(user: &VaultUser, password: &str) -> Result<MasterKey, Va
         iterations: user.kdf_iterations,
         parallelism: user.kdf_parallelism,
     };
+    kdf.enforce_minimums()?;
     MasterKey::derive_from_password(password, &salt, kdf)
 }
 

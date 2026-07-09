@@ -438,6 +438,7 @@ impl Vault {
         merge_ssh_known_host_on_update(&existing.payload, &mut input.payload);
         let entry = SecretEntry::update_from(id, created_at, input)?;
         let summary = entry.summary();
+        self.entries[idx].zeroize_secrets();
         self.entries[idx] = entry;
         self.persist()?;
         self.audit(AuditAction::SecretModified {
