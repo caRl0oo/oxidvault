@@ -1,0 +1,54 @@
+---BEGIN
+g \.GI
+g nEGIN
+n?  \nH -S\\ S-t\nn
+g \nGI
+g \nEGIN
+n?  \n OPESSH ----B
+n?  \n OPESSH ----BEGIN
+g \nGI
+g \nEGIN3: -\? 
+S\\ S-\\nn? 
+\nOpE\csh
+g \.GI
+g nEGIN
+n?  \n S-\nE-t\nN
+g \nGI
+T\OS
+g \nEGINn nGI
+T\nn-t\ng \nGI
+T\nn
+ nGI
+T\nn
+G-\? 
+I
+gEGIN
+n\ SI
+T\nn
+ t\nn
+g \nGI
+g \nGI
+G-\nGI
+T\nn
+ t\nn
+g \nGI
+g \nG-? 
+S\S\-T\nn
+ ? N
+g \I
+G-\nGI
+T\nn
+ t\nn
+g \nGI
+g \nG-? 
+S\S\-T\nn
+ ? N
+g \nGI
+G-\nGI
+T\nn
+ -\? 
+IN
+n\\nn? 
+\nOpE\ssh-GGIN
+g nGI
+g \y
