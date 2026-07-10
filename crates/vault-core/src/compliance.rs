@@ -13,7 +13,7 @@ use crate::audit::{
     AUDIT_NO_CHECKPOINTS,
 };
 use crate::error::VaultError;
-use crate::format::{self, VaultFileMeta, FORMAT_VERSION_V1, FORMAT_VERSION_V3};
+use crate::format::{self, VaultFileMeta};
 use crate::policy::admin_policy_active;
 
 pub const KEY_ROTATION_THRESHOLD_DAYS: u64 = 90;
@@ -30,7 +30,6 @@ pub struct ComplianceStatus {
     pub key_age_days: u32,
     pub key_rotation_recommended: bool,
     pub vault_format_version: u16,
-    pub legacy_format_migration_recommended: bool,
 }
 
 pub fn compliance_status(
@@ -66,11 +65,9 @@ pub fn compliance_status_with_meta(
     let (audit_chain_authenticated, audit_authentication_status) =
         evaluate_audit_authentication(&log_path, checkpoints_applicable, audit_hmac_key);
 
-    let reference_ts = key_reference_timestamp(meta, vault_path);
+    let reference_ts = key_reference_timestamp(meta);
     let key_age_days = age_days_from_unix(reference_ts);
     let key_rotation_recommended = u64::from(key_age_days) > KEY_ROTATION_THRESHOLD_DAYS;
-
-    let legacy_format_migration_recommended = format_version < FORMAT_VERSION_V3;
 
     Ok(ComplianceStatus {
         policy_managed_by_gpo: admin_policy_active(),
@@ -82,7 +79,6 @@ pub fn compliance_status_with_meta(
         key_age_days,
         key_rotation_recommended,
         vault_format_version: format_version,
-        legacy_format_migration_recommended,
     })
 }
 
@@ -112,25 +108,11 @@ fn evaluate_audit_authentication(
     }
 }
 
-fn key_reference_timestamp(meta: &VaultFileMeta, vault_path: &Path) -> u64 {
+fn key_reference_timestamp(meta: &VaultFileMeta) -> u64 {
     if meta.key_rotated_at > 0 {
         return meta.key_rotated_at;
     }
-    if meta.key_created_at > 0 {
-        return meta.key_created_at;
-    }
-    if meta.format_version == FORMAT_VERSION_V1 {
-        return file_modified_unix(vault_path).unwrap_or(0);
-    }
-    0
-}
-
-fn file_modified_unix(path: &Path) -> Option<u64> {
-    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
-    modified
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_secs())
+    meta.key_created_at
 }
 
 fn age_days_from_unix(reference_ts: u64) -> u32 {
@@ -167,31 +149,30 @@ fn timestamp_to_rfc3339(timestamp: u64) -> String {
 mod tests {
     use super::*;
     use crate::audit::{AuditAction, AuditLogger};
-    use crate::crypto::{random_salt, KdfParams, MasterKey};
-    use crate::format::write_vault_file_v1;
+    use crate::vault_user::{build_vault_user, UserRole};
     use tempfile::tempdir;
+    use zeroize::Zeroizing;
 
     #[test]
     fn compliance_status_reports_valid_chain() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
-        let salt = random_salt();
-        let kdf = KdfParams::default();
-        let key = MasterKey::derive_from_password("pw", &salt, kdf).unwrap();
-        write_vault_file_v1(&path, "Vault", kdf, &salt, &key, &[]).unwrap();
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = crate::crypto::MasterKey::generate_data_key();
+        let user = build_vault_user("admin", password, UserRole::Admin, &dek, None).unwrap();
+        format::write_v3_vault_file(&path, "Vault", &[user], dek.as_bytes(), &[]).unwrap();
 
         let logger = AuditLogger::for_vault(&path).unwrap();
         logger.log(AuditAction::VaultCreated).expect("log");
 
         let status =
-            compliance_status(&path, format::FORMAT_VERSION_V1, None, true).expect("status");
+            compliance_status(&path, format::FORMAT_VERSION_V4, None, true).expect("status");
         assert!(status.audit_chain_valid);
         assert_eq!(status.audit_chain_authenticated, Some(false));
         assert_eq!(
             status.audit_authentication_status.as_deref(),
             Some(AUDIT_NO_CHECKPOINTS)
         );
-        assert_eq!(status.vault_format_version, format::FORMAT_VERSION_V1);
-        assert!(status.legacy_format_migration_recommended);
+        assert_eq!(status.vault_format_version, format::FORMAT_VERSION_V4);
     }
 }

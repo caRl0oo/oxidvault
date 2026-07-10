@@ -11,7 +11,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::VaultError;
 
-pub const KDF_MEMORY_KIB: u32 = 65536;
+/// Default Argon2id memory for **new** user credentials (128 MiB).
+/// Memory-hardness is the primary file-at-rest defense; TOTP does not protect the `.oxid` offline.
+pub const KDF_MEMORY_KIB: u32 = 131_072;
 pub const KDF_ITERATIONS: u32 = 3;
 pub const KDF_PARALLELISM: u32 = 4;
 pub const KEY_LEN: usize = 32;
@@ -36,6 +38,11 @@ impl Default for KdfParams {
 }
 
 impl KdfParams {
+    /// Argon2id parameters for newly created vault users and password rotations.
+    pub fn default_for_new_vaults() -> Self {
+        Self::default()
+    }
+
     /// Rejects on-disk KDF parameters below the B2B minimum (downgrade-attack guard).
     pub fn enforce_minimums(&self) -> Result<(), VaultError> {
         if self.memory_kib < 16384 {

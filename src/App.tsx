@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MigrateToV3Modal } from "@/components/MigrateToV3Modal";
 import { OnboardingModal, ONBOARDING_STORAGE_KEY } from "@/components/OnboardingModal";
 import { ImportModal } from "@/components/ImportModal";
 import { ImportWelcomeModal } from "@/components/ImportWelcomeModal";
@@ -53,10 +52,7 @@ import {
   isTauri,
   listEntries,
   lockVault,
-  migrateVaultToV3,
-  openVault,
   triggerGitSync,
-  unlockVault,
   unlockVaultAsUser,
   updateEntry,
   deleteEntry,
@@ -129,10 +125,6 @@ export default function App() {
   const [mfaChallengeActive, setMfaChallengeActive] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
-  const [migrationBannerDismissed, setMigrationBannerDismissed] = useState(false);
-  const [migrateModalOpen, setMigrateModalOpen] = useState(false);
-  const [migrateLoading, setMigrateLoading] = useState(false);
-  const [migrationSuccess, setMigrationSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showImportWelcome, setShowImportWelcome] = useState(false);
   const [importWelcomePending, setImportWelcomePending] = useState(false);
@@ -235,36 +227,7 @@ export default function App() {
     }
   }, [vaultInfo?.initialized]);
 
-  const handleMigrateToV3 = useCallback(
-    async (adminUser: string, currentPassword: string) => {
-      setMigrateLoading(true);
-      setError(null);
-      try {
-        const info = await migrateVaultToV3(currentPassword, adminUser);
-        setVaultInfo(info);
-        setMigrationBannerDismissed(true);
-        setMigrateModalOpen(false);
-        setMigrationSuccess(true);
-        globalThis.setTimeout(() => setMigrationSuccess(false), 4000);
-      } catch (e) {
-        setError(formatVaultError(e));
-      } finally {
-        setMigrateLoading(false);
-      }
-    },
-    [],
-  );
-
-  const showMigrationBanner = Boolean(
-    vaultInfo &&
-      !vaultInfo.locked &&
-      !vaultInfo.is_multi_user &&
-      !migrationBannerDismissed,
-  );
-
-  const isMultiUserAuth = Boolean(
-    vaultInfo?.is_multi_user || (screen === "open" && vaultInfo?.is_multi_user),
-  );
+  const isMultiUserAuth = Boolean(vaultInfo?.initialized);
 
   const handleGitSyncChange = useCallback((settings: GitSyncSettings) => {
     setGitSyncSettings(settings);
@@ -415,50 +378,27 @@ export default function App() {
 
   const unlockWithCurrentCredentials = useCallback(
     async (mfaCodeValue?: string) => {
-      const isMultiUser = vaultInfo?.is_multi_user ?? false;
-      if (isMultiUser) {
-        if (!username.trim()) {
-          throw new Error("username required");
-        }
-        return unlockVaultAsUser(username.trim(), password, mfaCodeValue);
+      if (!username.trim()) {
+        throw new Error("username required");
       }
-      if (screen === "open" && vaultPath) {
-        return openVault(vaultPath, password, mfaCodeValue);
-      }
-      return unlockVault(password, mfaCodeValue);
+      return unlockVaultAsUser(username.trim(), password, mfaCodeValue);
     },
-    [vaultInfo?.is_multi_user, username, password, screen, vaultPath],
+    [username, password],
   );
 
   const handleOpen = useCallback(async () => {
-    if (!password.trim() || !vaultPath) return;
+    if (!password.trim() || !vaultPath || !username.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      if (vaultInfo?.is_multi_user) {
-        if (!username.trim()) {
-          return;
-        }
-        const result = await unlockVaultAsUser(username.trim(), password);
-        await processUnlockResponse(result);
-        return;
-      }
-      const result = await openVault(vaultPath, password);
+      const result = await unlockVaultAsUser(username.trim(), password);
       await processUnlockResponse(result);
     } catch (e) {
-      setError(
-        vaultInfo?.is_multi_user ? formatMultiUserAuthError(e) : formatVaultError(e),
-      );
+      setError(formatMultiUserAuthError(e));
     } finally {
       setLoading(false);
     }
-  }, [
-    password,
-    vaultPath,
-    vaultInfo?.is_multi_user,
-    username,
-    processUnlockResponse,
-  ]);
+  }, [password, vaultPath, username, processUnlockResponse]);
 
   const handleSwitchVault = useCallback(async () => {
     setLoading(true);
@@ -471,7 +411,6 @@ export default function App() {
       setPassword("");
       setUsername("");
       setAdminUsername("admin");
-      setMigrationBannerDismissed(false);
       setMfaCode("");
       setMfaChallengeActive(false);
       setScreen("welcome");
@@ -483,24 +422,20 @@ export default function App() {
   }, [resetMfaRateLimit]);
 
   const handleUnlock = useCallback(async () => {
-    if (!password.trim()) return;
-    if (vaultInfo?.is_multi_user && !username.trim()) return;
+    if (!password.trim() || !username.trim()) return;
     setLoading(true);
     setError(null);
     try {
       const result = await unlockWithCurrentCredentials();
       await processUnlockResponse(result);
     } catch (e) {
-      setError(
-        vaultInfo?.is_multi_user ? formatMultiUserAuthError(e) : formatVaultError(e),
-      );
+      setError(formatMultiUserAuthError(e));
     } finally {
       setLoading(false);
     }
   }, [
     password,
     username,
-    vaultInfo?.is_multi_user,
     unlockWithCurrentCredentials,
     processUnlockResponse,
   ]);
@@ -1055,10 +990,6 @@ export default function App() {
             isMultiUserAuth={isMultiUserAuth}
             username={username}
             onUsernameChange={setUsername}
-            showMigrationBanner={showMigrationBanner}
-            onDismissMigrationBanner={() => setMigrationBannerDismissed(true)}
-            onOpenMigrateModal={() => setMigrateModalOpen(true)}
-            migrationSuccess={migrationSuccess}
             onStartCreate={startCreate}
             onStartOpen={startOpen}
             onCreate={handleCreate}
@@ -1134,14 +1065,6 @@ export default function App() {
           onClose={() => setSshHostKeyMismatch(null)}
         />
       ) : null}
-      <MigrateToV3Modal
-        open={migrateModalOpen}
-        loading={migrateLoading}
-        onClose={() => setMigrateModalOpen(false)}
-        onMigrate={(adminUser, currentPassword) => {
-          void handleMigrateToV3(adminUser, currentPassword);
-        }}
-      />
       {showOnboarding ? <OnboardingModal onComplete={completeOnboarding} /> : null}
       <ImportWelcomeModal
         open={showImportWelcome}

@@ -67,7 +67,6 @@ interface VaultWorkspaceProps {
   readonly onCloseSshTerminal: () => void;
   readonly onSshSessionActive: () => void;
   readonly onSshSessionEnded: () => void;
-  readonly onOpenMigrateModal?: () => void;
 }
 
 export function VaultWorkspace(props: Readonly<VaultWorkspaceProps>) {
@@ -100,7 +99,6 @@ export function VaultWorkspace(props: Readonly<VaultWorkspaceProps>) {
       reachability={props.reachability}
       sshSessionStatus={props.sshSessionStatus}
       activeSshEntryId={props.sshTerminal?.entryId ?? null}
-      onOpenMigrateModal={props.onOpenMigrateModal}
     />
   );
 

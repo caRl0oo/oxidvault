@@ -26,6 +26,8 @@ pub struct AdminPolicy {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_sync_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub kdf_memory_mib: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_master_password_len: Option<u32>,
 }
 
@@ -72,6 +74,7 @@ pub struct ResolvedConfig {
     pub auto_lock_seconds: ResolvedU32Field,
     pub git_sync_enabled: ResolvedBoolField,
     pub min_master_password_len: ResolvedU32Field,
+    pub kdf_memory_mib: ResolvedU32Field,
 }
 
 /// Returns the platform-specific admin policy file path.
@@ -138,6 +141,7 @@ pub fn resolve_config_with_admin(
             user.min_master_password_len,
             admin.min_master_password_len,
         ),
+        kdf_memory_mib: merge_u32(crate::crypto::KDF_MEMORY_KIB / 1024, admin.kdf_memory_mib),
     }
 }
 
@@ -183,6 +187,7 @@ mod tests {
             force_lock_on_minimize: Some(true),
             auto_lock_seconds: None,
             git_sync_enabled: Some(false),
+            kdf_memory_mib: None,
             min_master_password_len: Some(16),
         };
 

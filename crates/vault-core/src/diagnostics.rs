@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::audit::{audit_log_has_checkpoints, audit_log_path, verify_audit_chain};
 use crate::audit_secure::secure_audit_log_file;
 use crate::error::VaultError;
-use crate::format::{self, FORMAT_VERSION_V1};
+use crate::format;
 use crate::policy::{admin_policy_path, load_admin_policy};
 
 /// Stable status code — mapped to i18n keys in the frontend (`diagnostics.statusCodes.*`).
@@ -238,7 +238,7 @@ fn diagnose_audit_log(vault_path: Option<&str>) -> AuditLogDiagnostics {
     }
 
     if let Ok(meta) = format::read_vault_meta(Path::new(vault_path)) {
-        if meta.format_version != FORMAT_VERSION_V1
+        if meta.format_version == format::FORMAT_VERSION_V4
             && log_path.is_file()
             && !audit_log_has_checkpoints(&log_path)
         {
@@ -292,18 +292,26 @@ fn sha256_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::audit::{AuditAction, AuditLogger};
-    use crate::crypto::{random_salt, KdfParams, MasterKey};
-    use crate::format::write_vault_file_v1;
+    use crate::crypto::MasterKey;
+    use crate::format::write_v3_vault_file;
+    use crate::vault_user::{build_vault_user, UserRole};
     use tempfile::tempdir;
+    use zeroize::Zeroizing;
 
     #[test]
     fn diagnostics_ok_for_local_vault() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("team.oxid");
-        let salt = random_salt();
-        let kdf = KdfParams::default();
-        let key = MasterKey::derive_from_password("pw", &salt, kdf).expect("key");
-        write_vault_file_v1(&path, "Vault", kdf, &salt, &key, &[]).expect("write");
+        let dek = MasterKey::generate_data_key();
+        let admin = build_vault_user(
+            "admin",
+            Zeroizing::new("correct-horse-battery-staple".to_string()),
+            UserRole::Admin,
+            &dek,
+            None,
+        )
+        .expect("admin user");
+        write_v3_vault_file(&path, "Vault", &[admin], dek.as_bytes(), &[]).expect("write");
 
         let logger = AuditLogger::for_vault(&path).expect("logger");
         logger.log(AuditAction::VaultCreated).expect("audit log");

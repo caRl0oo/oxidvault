@@ -5,7 +5,7 @@
 
 <br>
 
-![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-2.5.1-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
+![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/Version-3.0.0-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey) ![Website](https://img.shields.io/badge/Website-oxidvault.com-purple)
 
 If you find OxidVault useful, consider giving it a ⭐ — it helps others discover the project.
 
@@ -63,7 +63,7 @@ OxidVault is an **Offline-First** vault for passwords, SSH access, and other sec
 | **On-Premise** | No cloud sync, no third-party infrastructure |
 | **Zero-Knowledge** | Master password and secret payloads remain in the Rust backend; plaintext is not persisted in the UI layer |
 | **Governance-ready** | Central policies via policy file, auditable events, compliance dashboard |
-| **Operationally safe** | Atomic writes, exclusive file locking, key rotation without payload re-encryption |
+| **Operationally safe** | Atomic writes, exclusive file locking, per-user password rotation with header-bound payload |
 | **MFA-protected** | TOTP (RFC 6238) as a second factor; atomic unlock without intermediate RAM states |
 | **Multi-User** | Up to 5 users per vault (CE) — each with their own password and MFA; shared DEK architecture |
 | **Commercial license** | Enterprise Edition for unlimited users, LDAP, SSO — [oxidvault.com](https://oxidvault.com) |
@@ -88,41 +88,42 @@ OxidVault is designed as a **memory-safe, offline-capable vault**. Security deci
 - **Enrollment in settings** — CSPRNG secret, QR code (otpauth URI), encrypted persistence in the vault payload (AES-256-GCM).
 - **Unlock flow** — after the correct master password, the MFA challenge appears; auto-focus, auto-submit, and **UI-side rate limiting** (3 failed attempts → 30 s lockout) make brute-force attempts on the desktop harder.
 
-### Multi-User Vaults (Format v3)
+### Multi-User Vaults
 
-OxidVault supports shared vaults with multiple users — without a central server.
+OxidVault supports shared vaults with multiple users — without a central server. All vaults use **format v4**: a header-authenticated multi-user layout (AES-GCM with header bytes as AAD).
 
 - **Own password per user** — no shared master password
 - **Own TOTP per user** — MFA is bound to the person, not the vault
 - **Shared DEK architecture** — one shared Data-Encryption-Key, wrapped per user with their KEK; password rotation for one user does not affect others
 - **Roles** — `Admin` (manage users) and `Member` (read/write secrets)
-- **Migration** — existing v1/v2 vaults can be migrated to v3 in a one-time operation; the previous master password becomes the first admin user
+- **Header AAD** — serialized header bytes authenticate the encrypted payload; tampering with `users_json` invalidates decryption
 
 Community Edition: up to **5 users** per vault.  
 Enterprise Edition: unlimited users — [oxidvault.com](https://oxidvault.com)
 
 ### Atomic Unlock
 
-The vault **cannot** be opened with the master password alone when MFA is active:
+Unlock is always **per user** (`unlock_vault_as_user` / `Vault::unlock_as_user`). The vault cannot be opened with password alone when MFA is active for that user:
 
 ```
-Passwort ──► KEK-Ableitung (Argon2id) ──► Payload-Entschlüsselung (ephemer)
-                    │
-                    ▼
-            MFA aktiv? ──Nein──► VaultHandle committen ──► entsperrt
-                    │
-                   Ja
-                    ▼
-            mfa_code vorhanden & gültig? ──Nein──► AuthError (kein Commit)
-                    │
-                   Ja
-                    ▼
-            Keys & Einträge erst jetzt in Vault-Session
+Username + password ──► KEK derivation (Argon2id) ──► unwrap shared DEK
+                                    │
+                                    ▼
+                          MFA enabled for user? ──No──► decrypt payload ──► unlocked session
+                                    │
+                                   Yes
+                                    ▼
+                          mfa_code present & valid? ──No──► MfaRequired / InvalidMfa (no commit)
+                                    │
+                                   Yes
+                                    ▼
+                          Keys & entries loaded into vault session
 ```
 
-- Central function: `vault-core/src/auth.rs` → `unlock_vault(password, mfa_code)` → `VaultHandle` | `AuthError`
-- **No `PendingUnlock`** — on `MfaRequired`, `InvalidPassword`, or `InvalidMfa`, **nothing** is committed to the live `Vault` session.
-- Decrypted data exists only in **ephemeral stack memory** during verification and is explicitly zeroized on abort.
+- Core entry point: `crates/vault-core/src/vault.rs` → `Vault::unlock_as_user(username, password, mfa_code)` → `UnlockStep`
+- Tauri command: `unlock_vault_as_user` (see `src-tauri/src/commands/users.rs`)
+- On `MfaRequired`, `InvalidUserPassword`, or `InvalidMfa`, **nothing** is committed to the live `Vault` session
+- Decrypted data exists only during verification; secrets are zeroized on lock and auth failure
 
 ### Zero-Knowledge & Memory Protection
 
@@ -139,14 +140,15 @@ Passwort ──► KEK-Ableitung (Argon2id) ──► Payload-Entschlüsselung (
 ### Enterprise Interface & Operations
 
 - **Modular theme system** — Oxid Default, Oxid Light, Dracula, Nord, and more; semantic design tokens (`vault-accent`, `vault-danger`, …) for consistent presentation in light, dark, and high-contrast environments.
-- **Admin policy (GPO-style)** — central requirements for password length, auto-lock, UI locks.
+- **Admin policy (GPO-style)** — central requirements for password length, Argon2id memory (`kdfMemoryMib`), auto-lock, UI locks.
 - **Audit & compliance** — append-only audit log with hash chain, export for auditors, compliance dashboard.
 
 ### Relevant Modules (Excerpt)
 
 | Module / Component | Responsibility |
 |---|---|
-| `crates/vault-core/src/auth.rs` | Atomic authentication (`AuthError`, `VaultHandle`, `unlock_vault`) |
+| `crates/vault-core/src/vault.rs` | Vault session, `unlock_as_user`, persistence, user management |
+| `crates/vault-core/src/vault_user.rs` | Per-user KEK wrapping, roles, password rewrap |
 | `crates/vault-core/src/mfa.rs` | TOTP enrollment, verification (RFC 6238), encrypted MFA secret storage |
 | `crates/vault-core/src/crypto.rs` | Argon2id, AES-256-GCM, `MasterKey`, Zeroizing |
 | `src/hooks/useMfaRateLimit.ts` | UI rate limiting for MFA failed attempts (lockout + countdown) |
@@ -174,9 +176,9 @@ Central control via an **admin policy file** in GPO style. IT administrators def
 
 Special filesystem handling for **UNC paths and network drives**: writes use temporary files in the same directory with **`fsync`** and atomic **`rename`**, including SMB fallback. Team vaults on file servers remain consistent even with parallel access.
 
-### Security by Design — Key Rotation (Format v2)
+### Security by Design — Key Rotation
 
-Master password rotation via **secure key wrapping**: a random Data-Encryption-Key (DEK) encrypts the payload; the DEK is protected in the header with the password-derived Key Encryption Key (KEK). On rotation, **only the header is re-protected** — the encrypted payload block is copied 1:1. **No plaintext of secrets in RAM** during migration.
+Per-user password rotation on **format v4**: the shared DEK stays unchanged; only the current user's KEK-wrapped DEK entry in the header is re-derived under the new password (`change_own_password` / `reencrypt_vault`). Because the payload is bound to the serialized header via AES-GCM AAD, any header change (including user-table updates) **re-encrypts the payload** with the same DEK — no plaintext secrets are held in RAM beyond the normal unlocked session.
 
 ### Exclusive Access
 
@@ -185,7 +187,7 @@ Stable **file locking mechanisms** (`{vault}.lock`) prevent race conditions when
 ### Additional Enterprise Features
 
 - **Two-factor authentication (TOTP)** — MFA enrollment, atomic unlock, UI rate limiting
-- **Multi-User Vaults (v3)** — up to 5 users CE, unlimited EE; per-user password + MFA
+- **Multi-User Vaults** — up to 5 users CE, unlimited EE; per-user password + MFA
 - **Ed25519 license validation** — offline, tamper-resistant, no license server required
 - **SSH known-hosts verification** — TOFU + stored fingerprint; MITM warning on mismatch
 - **reveal_secret rate limiting** — sliding window (5 requests / 60s) against bulk extraction
@@ -245,7 +247,7 @@ OxidVault follows a **zero-knowledge model**:
 
 | Component | Method |
 |---|---|
-| Key derivation | Argon2id (OWASP recommendation) |
+| Key derivation | Argon2id (OWASP recommendation); **128 MiB** memory default for new vaults and password changes; admin policy `kdfMemoryMib` (64–1024 MiB) |
 | Encryption | AES-256-GCM |
 | Second factor | TOTP / RFC 6238 (SHA-1, 6 digits, 30 s window) |
 | Random numbers | OS CSPRNG (`getrandom`) |
@@ -329,8 +331,8 @@ Every code change undergoes automated verification before it reaches the main br
 │  Desktop      Tauri v2 (Rust)                  │
 ├──────────────────────────────────────────────┤
 │  Kern         vault-core (Rust)              │
-│               auth · mfa · argon2 · aes-gcm  │
-│               zeroize · totp-rs              │
+│               vault_user · mfa · format    │
+│               argon2 · aes-gcm · zeroize   │
 └──────────────────────────────────────────────┘
 ```
 
@@ -366,13 +368,20 @@ This architecture strictly separates **business logic (Rust)** from the **UI (Re
 
 | Platform | File |
 |---|---|
-| **Windows** | `OxidVault_2.5.1_x64_en-US.msi` |
+| **Windows** | `OxidVault_3.0.0_x64_en-US.msi` |
 
 > **Note:** After installation, place the license file for Enterprise at `C:\ProgramData\OxidVault\oxidvault.license` — details: [oxidvault.com](https://oxidvault.com)
 
 ---
 
 ## Changelog
+
+### [3.0.0] — Vault Format v4 Only
+
+- **Breaking:** legacy vault formats v1–v3 removed; vaults created before v2.0 must be migrated once with OxidVault 2.5.1
+- **Parser reduced ~50%** — single authenticated format (header AAD + downgrade guard) for every vault
+- **Argon2id defaults raised** — 128 MiB memory for new vaults and password changes; admin policy `kdfMemoryMib` (64–1024)
+- **Removed:** `create_vault`, `migrate_vault_to_v3` commands, migration UI
 
 ### [2.3.0] — Password Import
 
@@ -475,7 +484,7 @@ Please describe the affected version, platform, reproduction steps, and — if p
 
 ## Enterprise & Compliance
 
-OxidVault supports **enterprise policies** via a machine-wide `policy.json` (auto-lock, minimum password length, Git sync, lock-on-minimize). IT teams can roll out requirements centrally via GPO or Intune without end users being able to override these settings.
+OxidVault supports **enterprise policies** via a machine-wide `policy.json` (auto-lock, minimum password length, Argon2id memory via `kdfMemoryMib`, Git sync, lock-on-minimize). IT teams can roll out requirements centrally via GPO or Intune without end users being able to override these settings.
 
 | Resource | Content |
 |---|---|

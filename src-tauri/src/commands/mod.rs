@@ -47,15 +47,11 @@ pub(super) fn wrap_password(password: String) -> Zeroizing<String> {
 pub(super) fn unlock_response(vault: &vault_core::Vault, step: UnlockStep) -> UnlockVaultResponse {
     match step {
         UnlockStep::Complete => {
-            if vault.is_multi_user_vault() {
-                let username = vault
-                    .get_current_user_public()
-                    .map(|user| user.username)
-                    .unwrap_or_default();
-                UnlockVaultResponse::complete_as_user(vault.info(), username)
-            } else {
-                UnlockVaultResponse::complete(vault.info())
-            }
+            let username = vault
+                .get_current_user_public()
+                .map(|user| user.username)
+                .unwrap_or_default();
+            UnlockVaultResponse::complete_as_user(vault.info(), username)
         }
         UnlockStep::MfaRequired => UnlockVaultResponse::mfa_pending(vault.info()),
     }
@@ -65,14 +61,6 @@ pub(super) fn sync_vault_format_state(state: &AppState, vault: &vault_core::Vaul
     if let Ok(mut version) = state.vault_format_version.lock() {
         *version = vault.format_version() as u8;
     }
-}
-
-fn is_v3_vault_path(path: &str) -> Result<bool, String> {
-    let meta = vault_core::format::read_vault_meta(std::path::Path::new(path))
-        .map_err(|e| e.to_string())?;
-    Ok(vault_core::format::is_multi_user_format(
-        meta.format_version,
-    ))
 }
 
 #[tauri::command]
@@ -93,63 +81,17 @@ pub fn touch_activity(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-pub fn create_vault(
-    path: String,
-    name: String,
-    password: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<VaultInfo, String> {
-    let password = wrap_password(password);
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault
-        .create(&path, name, &password)
-        .map_err(|e| e.to_string())?;
-    sync_vault_format_state(&state, &vault);
-    let info = vault.info();
-    bootstrap::remember_vault_path(&app, &info);
-    state.touch_activity();
-    Ok(info)
-}
-
-#[tauri::command]
 pub fn open_vault(
     path: String,
-    password: String,
-    mfa_code: Option<String>,
+    _password: String,
+    _mfa_code: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<UnlockVaultResponse, String> {
-    let password = wrap_password(password);
-    let mfa_code = mfa_code.map(wrap_password);
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-
-    if is_v3_vault_path(&path)? {
-        vault.attach_locked(&path).map_err(|e| e.to_string())?;
-        sync_vault_format_state(&state, &vault);
-        let response = UnlockVaultResponse::multi_user_pending(vault.info());
-        if response.vault.initialized {
-            bootstrap::remember_vault_path(&app, &response.vault);
-        }
-        return Ok(response);
-    }
-
-    let step = match vault.open(
-        &path,
-        &password,
-        mfa_code.as_ref().map(|code| code.as_str()),
-    ) {
-        Ok(step) => step,
-        Err(err) => {
-            note_unlock_error(&state, &err);
-            return Err(err.to_string());
-        }
-    };
-    if step == UnlockStep::Complete {
-        note_unlock_success(&state, &app, &vault);
-    }
+    vault.attach_locked(&path).map_err(|e| e.to_string())?;
     sync_vault_format_state(&state, &vault);
-    let response = unlock_response(&vault, step);
+    let response = UnlockVaultResponse::multi_user_pending(vault.info());
     if response.vault.initialized {
         bootstrap::remember_vault_path(&app, &response.vault);
     }
@@ -157,32 +99,9 @@ pub fn open_vault(
 }
 
 #[tauri::command]
-pub fn unlock_vault(
-    password: String,
-    mfa_code: Option<String>,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<UnlockVaultResponse, String> {
-    let password = wrap_password(password);
-    let mfa_code = mfa_code.map(wrap_password);
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-
-    if vault.is_multi_user_vault() {
-        return Ok(UnlockVaultResponse::multi_user_pending(vault.info()));
-    }
-
-    let step = match vault.unlock(&password, mfa_code.as_ref().map(|code| code.as_str())) {
-        Ok(step) => step,
-        Err(err) => {
-            note_unlock_error(&state, &err);
-            return Err(err.to_string());
-        }
-    };
-    if step == UnlockStep::Complete {
-        note_unlock_success(&state, &app, &vault);
-    }
-    sync_vault_format_state(&state, &vault);
-    Ok(unlock_response(&vault, step))
+pub fn unlock_vault(state: State<'_, AppState>) -> Result<UnlockVaultResponse, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    Ok(UnlockVaultResponse::multi_user_pending(vault.info()))
 }
 
 #[tauri::command]
@@ -307,16 +226,10 @@ pub fn enable_mfa(
     ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    let info = if vault.is_v3() {
-        vault
-            .enable_mfa_for_current_user()
-            .map_err(|e| e.to_string())?
-    } else {
-        vault.begin_mfa_enrollment().map_err(|e| e.to_string())?
-    };
-    if vault.is_v3() {
-        let _ = settings::save_vault_mfa_configured(&app, true);
-    }
+    let info = vault
+        .enable_mfa_for_current_user()
+        .map_err(|e| e.to_string())?;
+    let _ = settings::save_vault_mfa_configured(&app, true);
     Ok(info)
 }
 
@@ -341,38 +254,21 @@ pub fn disable_mfa(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<
     ensure_vault_unlocked(&state)?;
     let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    if vault.is_v3() {
-        vault
-            .disable_mfa_for_current_user()
-            .map_err(|e| e.to_string())?;
-    } else {
-        vault.disable_mfa().map_err(|e| e.to_string())?;
-    }
+    vault
+        .disable_mfa_for_current_user()
+        .map_err(|e| e.to_string())?;
     let _ = settings::save_vault_mfa_configured(&app, false);
     Ok(())
 }
 
 #[tauri::command]
-pub fn verify_mfa_code(
-    code: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<bool, String> {
+pub fn verify_mfa_code(code: String, state: State<'_, AppState>) -> Result<bool, String> {
     let code = Zeroizing::new(code);
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
     state.record_activity_for(&vault.info());
-    let verified = if vault.is_v3() {
-        vault
-            .verify_mfa_code_for_current_user(code.as_str())
-            .map_err(|e| e.to_string())?
-    } else {
-        vault
-            .verify_mfa_code(code.as_str())
-            .map_err(|e| e.to_string())?
-    };
-    if verified && !vault.is_v3() {
-        let _ = settings::save_vault_mfa_configured(&app, true);
-    }
+    let verified = vault
+        .verify_mfa_code_for_current_user(code.as_str())
+        .map_err(|e| e.to_string())?;
     Ok(verified)
 }
 

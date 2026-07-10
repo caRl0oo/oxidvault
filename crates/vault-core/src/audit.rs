@@ -814,10 +814,8 @@ mod tests {
     fn forged_rewrite_passes_structural_fails_keyed() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("forge.oxid");
-        let mut vault = crate::vault::Vault::new();
-        vault
-            .create(&path, "ForgeVault", "correct-horse-battery-staple")
-            .unwrap();
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let vault = crate::vault::Vault::create_v3(&path, "ForgeVault", "admin", password).unwrap();
         vault
             .record_audit(AuditAction::SecretCreated {
                 id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
@@ -843,10 +841,9 @@ mod tests {
     fn truncate_after_checkpoint_fails_keyed_verification() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("truncate.oxid");
-        let mut vault = crate::vault::Vault::new();
-        vault
-            .create(&path, "TruncateVault", "correct-horse-battery-staple")
-            .unwrap();
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let vault =
+            crate::vault::Vault::create_v3(&path, "TruncateVault", "admin", password).unwrap();
         vault.record_audit(AuditAction::VaultOpened).unwrap();
 
         let log_path = audit_log_path(&path);
@@ -865,10 +862,9 @@ mod tests {
     fn audit_chain_survives_key_rotation_export_path() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("rotate-export.oxid");
-        let mut vault = crate::vault::Vault::new();
-        vault
-            .create(&path, "ExportVault", "correct-horse-battery-staple")
-            .unwrap();
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let mut vault =
+            crate::vault::Vault::create_v3(&path, "ExportVault", "admin", password).unwrap();
         vault
             .reencrypt_vault("correct-horse-battery-staple", "rotation-export-test-pw")
             .unwrap();
@@ -936,30 +932,35 @@ mod tests {
     }
 
     #[test]
-    fn v1_vault_writes_no_checkpoints() {
+    fn v4_vault_attach_only_writes_no_checkpoints() {
         use crate::compliance::compliance_status;
-        use crate::crypto::{random_salt, KdfParams, MasterKey};
-        use crate::format::{write_vault_file_v1, FORMAT_VERSION_V1};
+        use crate::crypto::MasterKey;
+        use crate::format::{write_v3_vault_file, FORMAT_VERSION_V4};
         use crate::vault::Vault;
+        use crate::vault_user::{build_vault_user, UserRole};
+        use zeroize::Zeroizing;
 
         let dir = tempdir().unwrap();
-        let path = dir.path().join("v1.oxid");
-        let salt = random_salt();
-        let kdf = KdfParams::default();
-        let key =
-            MasterKey::derive_from_password("correct-horse-battery-staple", &salt, kdf).unwrap();
-        write_vault_file_v1(&path, "V1Vault", kdf, &salt, &key, &[]).unwrap();
+        let path = dir.path().join("v4.oxid");
+        let dek = MasterKey::generate_data_key();
+        let admin = build_vault_user(
+            "admin",
+            Zeroizing::new("correct-horse-battery-staple".to_string()),
+            UserRole::Admin,
+            &dek,
+            None,
+        )
+        .unwrap();
+        write_v3_vault_file(&path, "V4Vault", &[admin], dek.as_bytes(), &[]).unwrap();
 
         let mut vault = Vault::new();
-        vault
-            .open(&path, "correct-horse-battery-staple", None)
-            .unwrap();
+        vault.attach_locked(&path).unwrap();
 
         let log_path = audit_log_path(&path);
         assert!(!audit_log_has_checkpoints(&log_path));
         assert!(vault.audit_session_hmac_key().is_none());
 
-        let status = compliance_status(&path, FORMAT_VERSION_V1, None, true).unwrap();
+        let status = compliance_status(&path, FORMAT_VERSION_V4, None, true).unwrap();
         assert_eq!(
             status.audit_authentication_status.as_deref(),
             Some(AUDIT_NO_CHECKPOINTS)

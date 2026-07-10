@@ -88,4 +88,10 @@ pub enum VaultError {
     /// Stable code for frontend mapping: `unsupported_ssh_key_type_rsa`.
     #[error("unsupported_ssh_key_type_rsa")]
     UnsupportedSshKeyType,
+
+    /// On-disk vault format v1–v3 is no longer supported (migrate with OxidVault ≤ 2.5.1).
+    ///
+    /// Stable code for frontend mapping: `unsupported_legacy_format`.
+    #[error("unsupported_legacy_format")]
+    UnsupportedLegacyFormat { version: u16 },
 }

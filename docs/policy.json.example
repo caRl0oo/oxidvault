@@ -8,10 +8,12 @@
     "forceLockOnMinimize": "Optional (boolean). If set, vault locks when the main window is minimized. UI toggle is disabled for users.",
     "autoLockSeconds": "Optional (unsigned integer). Inactivity timeout in seconds before the vault auto-locks. UI control is disabled when set.",
     "gitSyncEnabled": "Optional (boolean). Enables or disables Git sync for all users on this machine. UI toggle is disabled when set.",
-    "minMasterPasswordLen": "Optional (unsigned integer). Minimum master password length for new vaults (app default without policy: 12)."
+    "minMasterPasswordLen": "Optional (unsigned integer). Minimum master password length for new vaults (app default without policy: 12).",
+    "kdfMemoryMib": "Optional (unsigned integer, 64–1024). Argon2id memory cost in MiB for new user credentials (app default: 128). Overrides the built-in default on all password-set paths."
   },
   "forceLockOnMinimize": true,
   "autoLockSeconds": 120,
   "gitSyncEnabled": false,
-  "minMasterPasswordLen": 16
+  "minMasterPasswordLen": 16,
+  "kdfMemoryMib": 128
 }

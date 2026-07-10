@@ -36,7 +36,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::health_check,
             commands::get_vault_info,
-            commands::create_vault,
             commands::open_vault,
             commands::unlock_vault,
             commands::lock_vault,
@@ -98,7 +97,6 @@ pub fn run() {
             commands::users::add_vault_user,
             commands::users::remove_vault_user,
             commands::users::change_user_password,
-            commands::users::migrate_vault_to_v3,
             commands::users::get_license_info,
             commands::users::get_current_user,
             system_tray::sync_tray_locale,

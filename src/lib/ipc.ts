@@ -39,14 +39,6 @@ export async function detachVault(): Promise<void> {
   return invoke<void>("detach_vault");
 }
 
-export async function createVault(
-  path: string,
-  name: string,
-  password: string,
-): Promise<VaultInfo> {
-  return invoke<VaultInfo>("create_vault", { path, name, password });
-}
-
 export async function openVault(
   path: string,
   password: string,
@@ -59,14 +51,8 @@ export async function openVault(
   });
 }
 
-export async function unlockVault(
-  password: string,
-  mfaCode?: string,
-): Promise<UnlockVaultResponse> {
-  return invoke<UnlockVaultResponse>("unlock_vault", {
-    password,
-    mfaCode: mfaCode ?? null,
-  });
+export async function unlockVault(): Promise<UnlockVaultResponse> {
+  return invoke<UnlockVaultResponse>("unlock_vault");
 }
 
 export async function lockVault(): Promise<VaultInfo> {
@@ -302,13 +288,6 @@ export async function changeUserPassword(
   newPassword: string,
 ): Promise<void> {
   return invoke<void>("change_user_password", { currentPassword, newPassword });
-}
-
-export async function migrateVaultToV3(
-  currentPassword: string,
-  adminUsername: string,
-): Promise<VaultInfo> {
-  return invoke<VaultInfo>("migrate_vault_to_v3", { currentPassword, adminUsername });
 }
 
 export async function getCurrentUser(): Promise<VaultUserPublic | null> {

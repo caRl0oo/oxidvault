@@ -195,7 +195,7 @@ pub fn remove_vault_user(username: String, state: State<'_, AppState>) -> Result
     vault.remove_user(&username).map_err(|e| e.to_string())
 }
 
-/// Changes the current user's password (v3 only).
+/// Changes the current user's password (v4 per-user KEK rewrap).
 #[tauri::command]
 pub fn change_user_password(
     current_password: String,
@@ -213,28 +213,7 @@ pub fn change_user_password(
         .map_err(|e| e.to_string())
 }
 
-/// Migrates a v1/v2 vault to v3 multi-user format.
-#[tauri::command]
-pub fn migrate_vault_to_v3(
-    current_password: String,
-    admin_username: String,
-    state: State<'_, AppState>,
-) -> Result<vault_core::VaultInfo, String> {
-    ensure_vault_unlocked(&state)?;
-    if state.is_multi_user() {
-        return Err("vault is already multi-user".into());
-    }
-    let current_password = wrap_password(current_password);
-    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
-    state.record_activity_for(&vault.info());
-    vault
-        .migrate_to_v3(current_password, &admin_username)
-        .map_err(|e| e.to_string())?;
-    sync_vault_format_state(&state, &vault);
-    Ok(vault.info())
-}
-
-/// Returns the currently logged-in user (v3 only).
+/// Returns the currently logged-in user.
 #[tauri::command]
 pub fn get_current_user(state: State<'_, AppState>) -> Result<Option<VaultUserPublic>, String> {
     ensure_vault_unlocked(&state)?;

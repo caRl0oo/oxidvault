@@ -121,6 +121,7 @@ pub fn lock_path_for(vault_path: &Path) -> PathBuf {
 }
 
 /// Ensures the current process may write the vault file (held lock or matching lock metadata).
+#[allow(dead_code)]
 pub(crate) fn assert_vault_write_access(
     vault_path: &Path,
     held_lock: Option<&VaultLock>,

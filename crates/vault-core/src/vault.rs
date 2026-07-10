@@ -8,8 +8,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::audit::{derive_audit_hmac_key, AuditAction, AuditLogger, AUDIT_CHECKPOINT_INTERVAL};
-use crate::auth::{self, AuthError};
-use crate::crypto::{self, KdfParams, MasterKey};
+use crate::crypto::{self, MasterKey};
 use crate::entry::{
     RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
     SecretField, SecretPayload, REVEAL_SECRET_WARNING,
@@ -19,14 +18,12 @@ use crate::format;
 use crate::lock::VaultLock;
 use crate::mfa::{self, MfaSetupInfo, MfaStatus, StoredMfaConfig};
 use crate::path_util::normalize_vault_path;
-use crate::policy::validate_master_password_with_min_len;
 use crate::probe::{resolve_probe_target, ProbeTarget};
 use crate::security_audit::{audit_entries, SecurityAuditReport};
 use crate::unlock::UnlockStep;
 use crate::vault_user::{
-    build_vault_user, build_vault_user_from_existing_credential, derive_user_kek, rewrap_user_dek,
-    to_public, unwrap_user_dek, user_mfa_enabled, validate_username, UnlockedUser, UserRole,
-    VaultUser, VaultUserPublic,
+    build_vault_user, derive_user_kek, rewrap_user_dek, to_public, unwrap_user_dek,
+    user_mfa_enabled, validate_username, UnlockedUser, UserRole, VaultUser, VaultUserPublic,
 };
 
 /// `(host, username, private_key, passphrase, known_host_fingerprint)`
@@ -47,7 +44,6 @@ pub struct Vault {
     path: Option<PathBuf>,
     name: String,
     locked: bool,
-    kdf: KdfParams,
     salt: Option<[u8; crypto::SALT_LEN]>,
     master_key: Option<MasterKey>,
     entries: Vec<SecretEntry>,
@@ -69,11 +65,6 @@ pub struct Vault {
     audit_events_since_checkpoint: Mutex<u32>,
 }
 
-enum UnlockAuditAction {
-    Opened,
-    Unlocked { lock_id: String },
-}
-
 impl Default for Vault {
     fn default() -> Self {
         Self::new()
@@ -86,14 +77,13 @@ impl Vault {
             path: None,
             name: String::new(),
             locked: true,
-            kdf: KdfParams::default(),
             salt: None,
             master_key: None,
             entries: Vec::new(),
             cached_entry_count: 0,
             audit_logger: AuditLogger::disabled(),
             vault_lock: None,
-            format_version: format::FORMAT_VERSION_V2,
+            format_version: format::FORMAT_VERSION_V4,
             key_created_at: None,
             key_rotated_at: None,
             kek: None,
@@ -161,10 +151,6 @@ impl Vault {
     }
 
     fn establish_audit_session(&mut self) -> Result<(), VaultError> {
-        if self.format_version == format::FORMAT_VERSION_V1 {
-            self.audit_hmac_key = None;
-            return Ok(());
-        }
         let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
         self.audit_hmac_key = Some(derive_audit_hmac_key(dek));
         if let Ok(mut count) = self.audit_events_since_checkpoint.lock() {
@@ -205,142 +191,6 @@ impl Vault {
         })
     }
 
-    pub fn create(
-        &mut self,
-        path: impl AsRef<Path>,
-        name: impl Into<String>,
-        password: &str,
-    ) -> Result<(), VaultError> {
-        let path = normalize_vault_path(path)?;
-        if path.exists() {
-            return Err(VaultError::FileExists);
-        }
-
-        validate_master_password_with_min_len(password, effective_min_master_password_len())?;
-
-        let name = name.into();
-        let salt = crypto::random_salt();
-        let kek = MasterKey::derive_from_password(password, &salt, self.kdf)?;
-        let dek = MasterKey::generate_data_key();
-        let key_created_at = crate::compliance::unix_timestamp_secs();
-
-        // Hold the exclusive vault lock for the whole create session — persist()
-        // requires it, and a second instance must not open the file concurrently.
-        self.acquire_vault_lock(&path)?;
-
-        if let Err(err) = format::write_vault_file(
-            &path,
-            &name,
-            self.kdf,
-            &salt,
-            &kek,
-            &dek,
-            key_created_at,
-            0,
-            &[],
-        ) {
-            let _ = self.release_vault_lock();
-            return Err(err);
-        }
-
-        self.path = Some(path.clone());
-        self.name = name;
-        self.salt = Some(salt);
-        self.master_key = Some(dek);
-        self.kek = Some(kek);
-        self.format_version = format::FORMAT_VERSION_V2;
-        self.key_created_at = Some(key_created_at);
-        self.key_rotated_at = None;
-        self.entries.clear();
-        self.mfa = None;
-        self.pending_mfa_secret = None;
-        self.cached_entry_count = 0;
-        self.locked = false;
-        self.bind_audit_logger(&path)?;
-        self.audit(AuditAction::VaultCreated)?;
-        self.establish_audit_session()?;
-        Ok(())
-    }
-
-    pub fn open(
-        &mut self,
-        path: impl AsRef<Path>,
-        password: &str,
-        mfa_code: Option<&str>,
-    ) -> Result<UnlockStep, VaultError> {
-        let path = normalize_vault_path(path)?;
-        self.acquire_vault_lock(&path)?;
-
-        let password = Zeroizing::new(password.to_owned());
-        let mfa_code = mfa_code.map(|code| Zeroizing::new(code.to_owned()));
-
-        let open_result = match auth::unlock_vault(&path, password, mfa_code) {
-            Ok(handle) => {
-                self.path = Some(path.clone());
-                self.name = handle.meta.name.clone();
-                self.kdf = handle.meta.kdf;
-                self.salt = Some(handle.meta.salt);
-                self.cached_entry_count = handle.payload.entries.len();
-                self.apply_unlock_handle(handle, UnlockAuditAction::Opened)?;
-                self.bind_audit_logger(&path)?;
-                Ok(UnlockStep::Complete)
-            }
-            Err(AuthError::MfaRequired) => Ok(UnlockStep::MfaRequired),
-            Err(AuthError::InvalidPassword) => {
-                let _ = crate::audit::log_event_for_vault(&path, AuditAction::AuthFailed);
-                Err(VaultError::InvalidPassword)
-            }
-            Err(AuthError::InvalidMfa) => Err(VaultError::InvalidMfaCode),
-            Err(AuthError::Vault(err)) => Err(err),
-        };
-
-        if open_result.is_err() || matches!(open_result, Ok(UnlockStep::MfaRequired)) {
-            let _ = self.release_vault_lock();
-        }
-
-        open_result
-    }
-
-    pub fn unlock(
-        &mut self,
-        password: &str,
-        mfa_code: Option<&str>,
-    ) -> Result<UnlockStep, VaultError> {
-        if !self.locked {
-            return Ok(UnlockStep::Complete);
-        }
-
-        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
-
-        if self.vault_lock.is_none() {
-            self.acquire_vault_lock(&path)?;
-        }
-
-        let lock_meta = self.assert_lock_valid()?;
-        let password = Zeroizing::new(password.to_owned());
-        let mfa_code = mfa_code.map(|code| Zeroizing::new(code.to_owned()));
-
-        match auth::unlock_vault(&path, password, mfa_code) {
-            Ok(handle) => {
-                self.cached_entry_count = handle.payload.entries.len();
-                self.apply_unlock_handle(
-                    handle,
-                    UnlockAuditAction::Unlocked {
-                        lock_id: lock_meta.lock_id(),
-                    },
-                )?;
-                Ok(UnlockStep::Complete)
-            }
-            Err(AuthError::MfaRequired) => Ok(UnlockStep::MfaRequired),
-            Err(AuthError::InvalidPassword) => {
-                let _ = self.record_auth_failed();
-                Err(VaultError::InvalidPassword)
-            }
-            Err(AuthError::InvalidMfa) => Err(VaultError::InvalidMfaCode),
-            Err(AuthError::Vault(err)) => Err(err),
-        }
-    }
-
     /// Locks the vault and purges decrypted secrets and the master key from RAM.
     pub fn lock(&mut self) {
         if !self.locked {
@@ -376,11 +226,10 @@ impl Vault {
         self.acquire_vault_lock(&path)?;
 
         let meta = format::read_vault_meta(&path)?;
-        let key_created_at = effective_key_created_at(&meta, &path);
+        let key_created_at = effective_key_created_at(&meta);
         let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
         self.path = Some(path.clone());
         self.name = meta.name;
-        self.kdf = meta.kdf;
         self.format_version = meta.format_version;
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = key_rotated_at;
@@ -391,13 +240,8 @@ impl Vault {
         self.entries.clear();
         self.mfa = None;
         self.pending_mfa_secret = None;
-        if format::is_multi_user_format(meta.format_version) {
-            self.users = meta.users.unwrap_or_default();
-            self.salt = None;
-        } else {
-            self.users.clear();
-            self.salt = Some(meta.salt);
-        }
+        self.users = meta.users;
+        self.salt = None;
         self.cached_entry_count = 0;
         self.locked = true;
         self.bind_audit_logger(&path)?;
@@ -664,59 +508,16 @@ impl Vault {
         Ok(audit_entries(&self.entries))
     }
 
-    /// Re-encrypts the master-key container under a new password without decrypting payload blocks.
+    /// Rotates the current user's password (v4 per-user KEK rewrap).
     pub fn reencrypt_vault(
         &mut self,
         current_password: &str,
         new_password: &str,
     ) -> Result<(), VaultError> {
-        self.ensure_unlocked()?;
-
-        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
-        crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
-        self.verify_current_password(current_password)?;
-
-        validate_master_password_with_min_len(new_password, effective_min_master_password_len())?;
-
-        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
-        let new_salt = crypto::random_salt();
-        let new_kek = MasterKey::derive_from_password(new_password, &new_salt, self.kdf)?;
-        let now = crate::compliance::unix_timestamp_secs();
-        let created = self.key_created_at.unwrap_or(now);
-
-        format::rotate_vault_key_container(
-            &path, &self.name, self.kdf, &new_salt, &new_kek, dek, created, now,
-        )?;
-
-        self.salt = Some(new_salt);
-        self.kek = Some(new_kek);
-        self.format_version = format::FORMAT_VERSION_V2;
-        self.key_created_at = Some(created);
-        self.key_rotated_at = Some(now);
-        self.audit(AuditAction::VaultKeyRotated)?;
-        Ok(())
-    }
-
-    fn verify_current_password(&self, current_password: &str) -> Result<(), VaultError> {
-        let salt = self.salt.ok_or(VaultError::NotInitialized)?;
-        let candidate = MasterKey::derive_from_password(current_password, &salt, self.kdf)?;
-        let dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
-
-        match self.format_version {
-            format::FORMAT_VERSION_V2 => {
-                let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
-                if !candidate.ct_eq(kek) {
-                    return Err(VaultError::InvalidPassword);
-                }
-            }
-            _ => {
-                if !candidate.ct_eq(dek) {
-                    return Err(VaultError::InvalidPassword);
-                }
-            }
-        }
-
-        Ok(())
+        self.change_own_password(
+            Zeroizing::new(current_password.to_string()),
+            Zeroizing::new(new_password.to_string()),
+        )
     }
 
     pub fn compliance_status(&self) -> Result<crate::compliance::ComplianceStatus, VaultError> {
@@ -744,43 +545,27 @@ impl Vault {
             return self.attach_locked(path);
         }
 
-        if format::is_multi_user_format(self.format_version) {
-            let current_user = self.current_user.as_ref().ok_or(VaultError::Locked)?;
-            let dek = MasterKey::from_bytes(current_user.dek);
+        let current_user = self.current_user.as_ref().ok_or(VaultError::Locked)?;
+        let dek = MasterKey::from_bytes(current_user.dek);
 
-            let file = format::read_multi_user_vault_file(&path)?;
-            let payload = format::decrypt_multi_user_payload(
-                &dek,
-                &file.payload_nonce,
-                &file.payload_ciphertext,
-                file.format_version,
-                &file.header_aad,
-            )?;
+        let file = format::read_multi_user_vault_file(&path)?;
+        let payload = format::decrypt_multi_user_payload(
+            &dek,
+            &file.payload_nonce,
+            &file.payload_ciphertext,
+            file.format_version,
+            &file.header_aad,
+        )?;
 
-            let meta = format::read_vault_meta(&path)?;
-            let key_created_at = effective_key_created_at(&meta, &path);
-            let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
-
-            self.name = meta.name;
-            self.key_created_at = Some(key_created_at);
-            self.key_rotated_at = key_rotated_at;
-            self.users = file.users;
-            self.format_version = meta.format_version;
-            self.apply_payload(payload);
-            self.cached_entry_count = self.entries.len();
-            return Ok(());
-        }
-
-        let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
         let meta = format::read_vault_meta(&path)?;
-        let key_created_at = effective_key_created_at(&meta, &path);
+        let key_created_at = effective_key_created_at(&meta);
         let key_rotated_at = (meta.key_rotated_at > 0).then_some(meta.key_rotated_at);
-        let (_, payload) = format::read_vault_file(&path, kek)?;
 
         self.name = meta.name;
-        self.format_version = meta.format_version;
         self.key_created_at = Some(key_created_at);
         self.key_rotated_at = key_rotated_at;
+        self.users = file.users;
+        self.format_version = meta.format_version;
         self.apply_payload(payload);
         self.cached_entry_count = self.entries.len();
         Ok(())
@@ -841,14 +626,8 @@ impl Vault {
 
     /// Returns whether TOTP MFA is active for the current vault session.
     pub fn mfa_status(&self) -> MfaStatus {
-        if self.is_v3() {
-            return MfaStatus {
-                mfa_enabled: self.current_user_has_mfa(),
-                vault_locked: self.locked,
-            };
-        }
         MfaStatus {
-            mfa_enabled: self.mfa.as_ref().is_some_and(|config| config.enabled),
+            mfa_enabled: self.current_user_has_mfa(),
             vault_locked: self.locked,
         }
     }
@@ -872,28 +651,6 @@ impl Vault {
         self.entries = payload.entries;
         self.mfa = payload.mfa;
         self.cached_entry_count = self.entries.len();
-    }
-
-    fn apply_unlock_handle(
-        &mut self,
-        handle: auth::VaultHandle,
-        audit: UnlockAuditAction,
-    ) -> Result<(), VaultError> {
-        self.master_key = Some(handle.payload_key);
-        self.kek = Some(handle.kek);
-        self.key_created_at = Some(handle.key_created_at);
-        self.key_rotated_at = handle.key_rotated_at;
-        self.format_version = handle.meta.format_version;
-        self.apply_payload(handle.payload);
-        self.locked = false;
-        match audit {
-            UnlockAuditAction::Opened => self.audit(AuditAction::VaultOpened)?,
-            UnlockAuditAction::Unlocked { lock_id } => {
-                self.audit(AuditAction::VaultUnlocked { lock_id })?
-            }
-        }
-        self.establish_audit_session()?;
-        Ok(())
     }
 
     pub fn format_version(&self) -> u16 {
@@ -972,41 +729,21 @@ impl Vault {
     }
 
     fn persist(&mut self) -> Result<(), VaultError> {
-        // §12: every vault write requires the exclusive file lock of this session.
         self.assert_lock_valid()?;
         let path = self.path.as_ref().ok_or(VaultError::NoVaultFile)?;
         let payload_key = self.master_key.as_ref().ok_or(VaultError::Locked)?;
 
-        if format::is_multi_user_format(self.format_version) {
-            format::update_v3_vault_file(
-                path,
-                &self.name,
-                &self.users,
-                payload_key,
-                &self.entries,
-                self.key_created_at.unwrap_or(0),
-                self.key_rotated_at.unwrap_or(0),
-            )?;
-            self.format_version = format::FORMAT_VERSION_V4;
-            return Ok(());
-        }
-
-        let salt = self.salt.ok_or(VaultError::NotInitialized)?;
-        format::update_vault_file_payload(
+        format::update_v3_vault_file(
             path,
             &self.name,
-            self.kdf,
-            &salt,
+            &self.users,
             payload_key,
-            self.kek.as_ref(),
-            self.format_version,
+            &self.entries,
             self.key_created_at.unwrap_or(0),
             self.key_rotated_at.unwrap_or(0),
-            format::VaultPersistPayload {
-                entries: &self.entries,
-                mfa: self.mfa.as_ref(),
-            },
-        )
+        )?;
+        self.format_version = format::FORMAT_VERSION_V4;
+        Ok(())
     }
 
     /// Creates a new v3 multi-user vault with the first admin user.
@@ -1344,89 +1081,6 @@ impl Vault {
             .collect()
     }
 
-    /// Migrates a v1/v2 single-password vault to v3 multi-user format.
-    pub fn migrate_to_v3(
-        &mut self,
-        current_password: Zeroizing<String>,
-        admin_username: &str,
-    ) -> Result<(), VaultError> {
-        if format::is_multi_user_format(self.format_version) {
-            return Err(VaultError::Other(
-                "vault is already multi-user format".into(),
-            ));
-        }
-
-        self.verify_current_password(current_password.as_str())?;
-        self.ensure_unlocked()?;
-
-        let admin_username = validate_username(admin_username)?;
-        if self
-            .users
-            .iter()
-            .any(|user| user.username == admin_username)
-        {
-            return Err(VaultError::UserAlreadyExists(admin_username.clone()));
-        }
-
-        let path = self.path.clone().ok_or(VaultError::NoVaultFile)?;
-        crate::lock::assert_vault_write_access(&path, self.vault_lock.as_ref())?;
-
-        let new_dek = MasterKey::generate_data_key();
-        let mut admin_user = build_vault_user_from_existing_credential(
-            &admin_username,
-            current_password.clone(),
-            UserRole::Admin,
-            &new_dek,
-            None,
-        )?;
-
-        // Clone (don't take): if the v4 write below fails, the in-RAM v2 session must
-        // keep its MFA config — otherwise a later persist() would silently drop MFA on disk.
-        if let Some(stored_mfa) = self.mfa.clone().filter(|config| config.enabled) {
-            let old_dek = self.master_key.as_ref().ok_or(VaultError::Locked)?;
-            let secret = mfa::decrypt_mfa_secret(old_dek, &stored_mfa)?;
-            let kek = derive_user_kek(&admin_user, current_password.as_str())?;
-            let (mfa_nonce, mfa_ciphertext) =
-                mfa::encrypt_mfa_secret_with_kek(&kek, secret.as_ref())?;
-            admin_user.mfa_nonce = Some(mfa_nonce);
-            admin_user.mfa_ciphertext = Some(mfa_ciphertext);
-        }
-
-        let entries = self.entries.clone();
-        let key_created_at = self
-            .key_created_at
-            .unwrap_or_else(crate::compliance::unix_timestamp_secs);
-        let key_rotated_at = self.key_rotated_at.unwrap_or(0);
-
-        format::update_v3_vault_file(
-            &path,
-            &self.name,
-            std::slice::from_ref(&admin_user),
-            &new_dek,
-            &entries,
-            key_created_at,
-            key_rotated_at,
-        )?;
-
-        let session_kek = derive_user_kek(&admin_user, current_password.as_str())?;
-        self.users = vec![admin_user];
-        self.master_key = Some(new_dek);
-        self.store_session_kek(&session_kek);
-        self.current_user = Some(UnlockedUser {
-            username: admin_username.clone(),
-            role: UserRole::Admin,
-            dek: *self.master_key.as_ref().expect("dek").as_bytes(),
-        });
-        self.format_version = format::FORMAT_VERSION_V4;
-        self.salt = None;
-        self.kek = None;
-        self.mfa = None;
-        self.pending_mfa_secret = None;
-        self.entries = entries;
-        self.cached_entry_count = self.entries.len();
-        self.audit(AuditAction::VaultMigratedToV3 { admin_username })
-    }
-
     fn ensure_admin(&self) -> Result<(), VaultError> {
         match self.current_user.as_ref().map(|user| &user.role) {
             Some(UserRole::Admin) => Ok(()),
@@ -1464,25 +1118,12 @@ fn unix_timestamp_string() -> String {
     format!("{secs}")
 }
 
-fn effective_key_created_at(meta: &format::VaultFileMeta, path: &std::path::Path) -> u64 {
+fn effective_key_created_at(meta: &format::VaultFileMeta) -> u64 {
     if meta.key_created_at > 0 {
         return meta.key_created_at;
     }
-    if meta.format_version == format::FORMAT_VERSION_V1 {
-        return std::fs::metadata(path)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok())
-            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|duration| duration.as_secs())
-            .unwrap_or(0);
-    }
     0
 }
-
-fn effective_min_master_password_len() -> usize {
-    crate::policy::effective_min_master_password_len()
-}
-
 impl Drop for Vault {
     fn drop(&mut self) {
         let _ = self.release_vault_lock();
@@ -1495,32 +1136,26 @@ mod tests {
     use crate::entry::{SecretEntryInput, SecretPayload};
     use tempfile::tempdir;
 
-    fn open_vault(vault: &mut Vault, path: &Path, password: &str, mfa_code: Option<&str>) {
-        let step = vault.open(path, password, mfa_code).expect("open vault");
+    const TEST_PASSWORD: &str = "correct-horse-battery-staple";
+    const TEST_USER: &str = "admin";
+
+    fn create_v4_vault(path: &Path, name: &str, password: &str) -> Vault {
+        Vault::create_v3(path, name, TEST_USER, Zeroizing::new(password.to_string())).unwrap()
+    }
+
+    fn attach_and_unlock(vault: &mut Vault, path: &Path, password: &str, mfa_code: Option<&str>) {
+        vault.attach_locked(path).expect("attach");
+        let step = vault
+            .unlock_as_user(TEST_USER, Zeroizing::new(password.to_string()), mfa_code)
+            .expect("unlock");
         assert_eq!(step, UnlockStep::Complete);
     }
 
     fn unlock_vault(vault: &mut Vault, password: &str, mfa_code: Option<&str>) {
-        let step = vault.unlock(password, mfa_code).expect("unlock vault");
+        let step = vault
+            .unlock_as_user(TEST_USER, Zeroizing::new(password.to_string()), mfa_code)
+            .expect("unlock vault");
         assert_eq!(step, UnlockStep::Complete);
-    }
-
-    fn totp_token_for(vault: &Vault, account: &str) -> String {
-        let totp = totp_rs::TOTP::new(
-            totp_rs::Algorithm::SHA1,
-            6,
-            1,
-            30,
-            vault
-                .pending_mfa_secret
-                .as_ref()
-                .expect("pending secret")
-                .to_vec(),
-            Some("OxidVault".to_string()),
-            account.to_string(),
-        )
-        .expect("totp");
-        totp.generate_current().expect("token")
     }
 
     #[test]
@@ -1528,10 +1163,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "RotateMe", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "RotateMe", TEST_PASSWORD);
 
         vault
             .reencrypt_vault(
@@ -1544,12 +1176,12 @@ mod tests {
         vault.close().unwrap();
 
         let mut reopened = Vault::new();
-        open_vault(&mut reopened, &path, "brand-new-horse-battery-staple", None);
+        attach_and_unlock(&mut reopened, &path, "brand-new-horse-battery-staple", None);
         assert_eq!(reopened.list_entries().unwrap().len(), 0);
 
         let log_path = crate::audit::audit_log_path(&path);
         let raw = std::fs::read_to_string(log_path).unwrap();
-        assert!(raw.contains("[VaultKeyRotated]"));
+        assert!(raw.contains("[UserPasswordChanged]"));
     }
 
     #[test]
@@ -1560,9 +1192,7 @@ mod tests {
         let path = dir.path().join("vault.oxid");
         let password = "correct-horse-battery-staple";
 
-        let mut vault = Vault::new();
-        vault.create(&path, "SharedVault", password).unwrap();
-        // Release our own file lock so the foreign lock below is authoritative.
+        let mut vault = create_v4_vault(&path, "SharedVault", password);
         vault.close().unwrap();
 
         let foreign = LockMetadata {
@@ -1579,7 +1209,7 @@ mod tests {
         let err = vault
             .reencrypt_vault(password, "another-strong-password-1")
             .expect_err("foreign lock holder");
-        assert!(matches!(err, VaultError::LockedBy(_)));
+        assert!(matches!(err, VaultError::LockLost));
     }
 
     #[test]
@@ -1591,8 +1221,7 @@ mod tests {
         let old_password = "correct-horse-battery-staple";
         let new_password = "rotation-export-test-pw";
 
-        let mut vault = Vault::new();
-        vault.create(&path, "ExportVault", old_password).unwrap();
+        let mut vault = create_v4_vault(&path, "ExportVault", old_password);
         vault
             .reencrypt_vault(old_password, new_password)
             .expect("rotate");
@@ -1602,7 +1231,7 @@ mod tests {
             .expect("export audit");
 
         let raw = std::fs::read_to_string(export_path).unwrap();
-        assert!(raw.contains("VaultKeyRotated"));
+        assert!(raw.contains("UserPasswordChanged"));
         assert!(raw.contains("\"chainVerified\": true"));
     }
 
@@ -1611,10 +1240,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "RotateMe", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "RotateMe", TEST_PASSWORD);
 
         let err = vault
             .reencrypt_vault("wrong-password-here", "brand-new-horse-battery-staple")
@@ -1627,10 +1253,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
         vault.lock();
         vault.close().unwrap();
 
@@ -1640,7 +1263,7 @@ mod tests {
         assert!(cold.info().initialized);
         assert_eq!(cold.info().name, "TestVault");
 
-        unlock_vault(&mut cold, "correct-horse-battery-staple", None);
+        unlock_vault(&mut cold, TEST_PASSWORD, None);
         assert!(!cold.info().locked);
     }
 
@@ -1649,10 +1272,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
         assert!(!vault.info().locked);
 
         vault
@@ -1677,10 +1297,7 @@ mod tests {
         vault.close().unwrap();
 
         let mut vault2 = Vault::new();
-        vault2.path = Some(path.clone());
-        vault2.name = "TestVault".into();
-        vault2.locked = true;
-        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
+        attach_and_unlock(&mut vault2, &path, TEST_PASSWORD, None);
         assert_eq!(vault2.list_entries().unwrap().len(), 1);
     }
 
@@ -1689,10 +1306,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
 
         let summary = vault
             .add_entry(SecretEntryInput {
@@ -1737,10 +1351,7 @@ mod tests {
         vault.lock();
         vault.close().unwrap();
         let mut vault2 = Vault::new();
-        vault2.path = Some(path);
-        vault2.name = "TestVault".into();
-        vault2.locked = true;
-        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
+        attach_and_unlock(&mut vault2, &path, TEST_PASSWORD, None);
         let reloaded = vault2.get_entry_public(&summary.id).unwrap();
         assert_eq!(reloaded.title, "GitHub Prod");
     }
@@ -1750,10 +1361,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
 
         let summary = vault
             .add_entry(SecretEntryInput {
@@ -1791,10 +1399,7 @@ mod tests {
         vault.lock();
         vault.close().unwrap();
         let mut vault2 = Vault::new();
-        vault2.path = Some(path);
-        vault2.name = "TestVault".into();
-        vault2.locked = true;
-        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
+        attach_and_unlock(&mut vault2, &path, TEST_PASSWORD, None);
         assert_eq!(vault2.list_entries().unwrap().len(), 1);
         assert!(vault2.get_entry_public(&summary.id).is_err());
     }
@@ -1804,10 +1409,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
 
         vault
             .add_entry(SecretEntryInput {
@@ -1844,10 +1446,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "AuditVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "AuditVault", TEST_PASSWORD);
         vault.lock();
         vault.close().unwrap();
 
@@ -1862,7 +1461,7 @@ mod tests {
 
         let mut vault2 = Vault::new();
         vault2.attach_locked(&path).unwrap();
-        unlock_vault(&mut vault2, "correct-horse-battery-staple", None);
+        unlock_vault(&mut vault2, TEST_PASSWORD, None);
         let raw2 = std::fs::read_to_string(&log_path).unwrap();
         assert!(raw2.contains("[VaultUnlocked]"));
         let lock_id = format!(
@@ -1886,17 +1485,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut owner = Vault::new();
-        owner
-            .create(&path, "LockVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut owner = create_v4_vault(&path, "LockVault", TEST_PASSWORD);
         owner.lock();
-        open_vault(&mut owner, &path, "correct-horse-battery-staple", None);
+        attach_and_unlock(&mut owner, &path, TEST_PASSWORD, None);
         assert!(lock_path_for(&path).is_file());
 
         let mut blocked = Vault::new();
         let err = blocked
-            .open(&path, "correct-horse-battery-staple", None)
+            .attach_locked(&path)
             .expect_err("lock held by owner");
         assert!(matches!(err, VaultError::LockedBy(_)));
 
@@ -1904,7 +1500,7 @@ mod tests {
         assert!(!lock_path_for(&path).is_file());
 
         let mut next = Vault::new();
-        open_vault(&mut next, &path, "correct-horse-battery-staple", None);
+        attach_and_unlock(&mut next, &path, TEST_PASSWORD, None);
         next.close().unwrap();
         assert!(!lock_path_for(&path).is_file());
     }
@@ -1916,10 +1512,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vault.oxid");
 
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "TestVault", "correct-horse-battery-staple")
-            .unwrap();
+        let mut vault = create_v4_vault(&path, "TestVault", TEST_PASSWORD);
         vault.lock();
         vault.close().unwrap();
 
@@ -1930,156 +1523,10 @@ mod tests {
         std::fs::remove_file(lock_path_for(&path)).expect("simulate external lock deletion");
 
         let err = session
-            .unlock("correct-horse-battery-staple", None)
+            .unlock_as_user(TEST_USER, Zeroizing::new(TEST_PASSWORD.to_string()), None)
             .expect_err("unlock must refuse without valid lock");
         assert!(matches!(err, VaultError::LockLost));
         assert!(session.info().locked);
-    }
-
-    #[test]
-    fn mfa_enrollment_persists_after_verification() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vault.oxid");
-
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "MfaVault", "correct-horse-battery-staple")
-            .unwrap();
-
-        let setup = vault.begin_mfa_enrollment().expect("enrollment");
-        let totp = totp_rs::TOTP::new(
-            totp_rs::Algorithm::SHA1,
-            6,
-            1,
-            30,
-            vault
-                .pending_mfa_secret
-                .as_ref()
-                .expect("pending secret")
-                .to_vec(),
-            Some("OxidVault".to_string()),
-            "MfaVault".to_string(),
-        )
-        .expect("totp");
-        let token = totp.generate_current().expect("token");
-
-        assert!(vault.verify_mfa_code(&token).expect("verify"));
-        assert!(vault.mfa.as_ref().is_some_and(|config| config.enabled));
-        assert!(vault.pending_mfa_secret.is_none());
-
-        vault.lock();
-        vault.close().unwrap();
-        let mut reopened = Vault::new();
-        let step = reopened
-            .open(&path, "correct-horse-battery-staple", None)
-            .expect("reopen");
-        assert_eq!(step, UnlockStep::MfaRequired);
-        assert!(reopened.info().locked);
-        let step = reopened
-            .open(&path, "correct-horse-battery-staple", Some(&token))
-            .expect("complete MFA unlock");
-        assert_eq!(step, UnlockStep::Complete);
-        assert!(reopened.mfa.as_ref().is_some_and(|config| config.enabled));
-        assert!(reopened.verify_mfa_code(&token).expect("verify persisted"));
-        assert_eq!(setup.account_label, "OxidVault:MfaVault");
-    }
-
-    #[test]
-    fn mfa_blocks_unlock_until_valid_totp() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vault.oxid");
-        let password = "correct-horse-battery-staple";
-
-        let mut vault = Vault::new();
-        vault.create(&path, "MfaVault", password).unwrap();
-        let _setup = vault.begin_mfa_enrollment().expect("enrollment");
-        let token = totp_token_for(&vault, "MfaVault");
-        assert!(vault.verify_mfa_code(&token).expect("verify enrollment"));
-
-        vault.lock();
-        vault.close().unwrap();
-        let mut session = Vault::new();
-        session.attach_locked(&path).unwrap();
-
-        let step = session.unlock(password, None).expect("password accepted");
-        assert_eq!(step, UnlockStep::MfaRequired);
-        assert!(session.info().locked);
-        assert!(session.list_entries().is_err());
-
-        let err = session
-            .unlock(password, Some("000000"))
-            .expect_err("wrong code");
-        assert!(matches!(err, VaultError::InvalidMfaCode));
-        assert!(session.info().locked);
-
-        let step = session
-            .unlock(password, Some(&token))
-            .expect("valid MFA code");
-        assert_eq!(step, UnlockStep::Complete);
-        assert!(!session.info().locked);
-        assert_eq!(session.list_entries().unwrap().len(), 0);
-    }
-
-    #[test]
-    fn atomic_unlock_vault_requires_mfa_code_when_enabled() {
-        use crate::auth::{unlock_vault as authenticate_unlock, AuthError};
-
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vault.oxid");
-        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
-
-        let mut vault = Vault::new();
-        vault.create(&path, "MfaVault", password.as_str()).unwrap();
-        let _setup = vault.begin_mfa_enrollment().expect("enrollment");
-        let token = totp_token_for(&vault, "MfaVault");
-        assert!(vault.verify_mfa_code(&token).expect("verify enrollment"));
-        vault.lock();
-
-        let err = authenticate_unlock(&path, password.clone(), None).unwrap_err();
-        assert!(matches!(err, AuthError::MfaRequired));
-
-        let handle = authenticate_unlock(&path, password.clone(), Some(Zeroizing::new(token)))
-            .expect("atomic unlock");
-        assert_eq!(handle.meta.name, "MfaVault");
-    }
-
-    #[test]
-    fn disable_mfa_removes_stored_secret() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vault.oxid");
-
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "MfaVault", "correct-horse-battery-staple")
-            .unwrap();
-
-        let _setup = vault.begin_mfa_enrollment().expect("enrollment");
-        let totp = totp_rs::TOTP::new(
-            totp_rs::Algorithm::SHA1,
-            6,
-            1,
-            30,
-            vault
-                .pending_mfa_secret
-                .as_ref()
-                .expect("pending secret")
-                .to_vec(),
-            Some("OxidVault".to_string()),
-            "MfaVault".to_string(),
-        )
-        .expect("totp");
-        let token = totp.generate_current().expect("token");
-        assert!(vault.verify_mfa_code(&token).expect("verify"));
-        assert!(vault.mfa_status().mfa_enabled);
-
-        vault.disable_mfa().expect("disable");
-        assert!(!vault.mfa_status().mfa_enabled);
-
-        vault.lock();
-        vault.close().unwrap();
-        let mut reopened = Vault::new();
-        open_vault(&mut reopened, &path, "correct-horse-battery-staple", None);
-        assert!(!reopened.mfa_status().mfa_enabled);
     }
 
     #[test]
@@ -2115,93 +1562,6 @@ mod tests {
             .expect("unlock");
         assert_eq!(session.list_users().len(), 2);
         assert_eq!(session.format_version, format::FORMAT_VERSION_V4);
-    }
-
-    #[test]
-    fn migrate_v2_to_v3_accepts_legacy_weak_password() {
-        use crate::crypto::{random_salt, KdfParams, MasterKey};
-        use zeroize::Zeroizing;
-
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("weak-legacy.oxid");
-        let password = Zeroizing::new("aaaaaaaaaaaa".to_string());
-
-        let salt = random_salt();
-        let kdf = KdfParams::default();
-        let kek = MasterKey::derive_from_password(password.as_str(), &salt, kdf).unwrap();
-        let dek = MasterKey::generate_data_key();
-        format::write_vault_file(
-            &path,
-            "WeakLegacy",
-            kdf,
-            &salt,
-            &kek,
-            &dek,
-            crate::compliance::unix_timestamp_secs(),
-            0,
-            &[],
-        )
-        .unwrap();
-
-        let mut vault = Vault::new();
-        open_vault(&mut vault, &path, password.as_str(), None);
-        vault
-            .migrate_to_v3(password.clone(), "admin")
-            .expect("migrate weak legacy password");
-
-        vault.close().unwrap();
-
-        let mut reopened = Vault::new();
-        reopened.attach_locked(&path).unwrap();
-        reopened
-            .unlock_as_user("admin", password, None)
-            .expect("unlock after migrate");
-        assert_eq!(reopened.format_version, format::FORMAT_VERSION_V4);
-    }
-
-    #[test]
-    fn migrate_v2_to_v3_preserves_entries() {
-        use zeroize::Zeroizing;
-
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("legacy.oxid");
-        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
-
-        let mut vault = Vault::new();
-        vault
-            .create(&path, "LegacyVault", password.as_str())
-            .unwrap();
-        vault
-            .add_entry(SecretEntryInput {
-                title: "Token".into(),
-                folder: None,
-                tags: vec![],
-                expires_at: None,
-                payload: SecretPayload::ApiToken {
-                    service: "API".into(),
-                    token: "secret-token".into(),
-                },
-            })
-            .unwrap();
-
-        vault
-            .migrate_to_v3(password.clone(), "admin")
-            .expect("migrate");
-
-        assert_eq!(vault.format_version, format::FORMAT_VERSION_V4);
-        assert_eq!(vault.list_users().len(), 1);
-        assert_eq!(vault.list_entries().unwrap().len(), 1);
-
-        vault.lock();
-        vault.close().unwrap();
-        let mut reopened = Vault::new();
-        reopened.attach_locked(&path).unwrap();
-        reopened.unlock_as_user("admin", password, None).unwrap();
-        assert_eq!(reopened.list_entries().unwrap().len(), 1);
-
-        let log_path = crate::audit::audit_log_path(&path);
-        let raw = std::fs::read_to_string(log_path).unwrap();
-        assert!(raw.contains("[VaultMigratedToV3]"));
     }
 
     #[test]

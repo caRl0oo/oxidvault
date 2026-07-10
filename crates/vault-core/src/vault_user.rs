@@ -129,7 +129,6 @@ pub fn unwrap_user_dek(user: &VaultUser, kek: &MasterKey) -> Result<MasterKey, V
     crypto::unwrap_data_key(kek, &nonce, &ciphertext)
 }
 
-/// Builds a new [`VaultUser`] with a freshly derived KEK wrapping the shared DEK.
 pub fn build_vault_user(
     username: &str,
     password: Zeroizing<String>,
@@ -137,36 +136,10 @@ pub fn build_vault_user(
     dek: &MasterKey,
     mfa: Option<(String, String)>,
 ) -> Result<VaultUser, VaultError> {
-    build_vault_user_inner(username, password, role, dek, mfa, true)
-}
-
-/// Like [`build_vault_user`], but skips master password policy.
-///
-/// Used when v1/v2 → v3 migration re-wraps an existing credential — policy applies on set, not re-wrap.
-pub(crate) fn build_vault_user_from_existing_credential(
-    username: &str,
-    password: Zeroizing<String>,
-    role: UserRole,
-    dek: &MasterKey,
-    mfa: Option<(String, String)>,
-) -> Result<VaultUser, VaultError> {
-    build_vault_user_inner(username, password, role, dek, mfa, false)
-}
-
-fn build_vault_user_inner(
-    username: &str,
-    password: Zeroizing<String>,
-    role: UserRole,
-    dek: &MasterKey,
-    mfa: Option<(String, String)>,
-    enforce_password_policy: bool,
-) -> Result<VaultUser, VaultError> {
     let username = validate_username(username)?;
-    if enforce_password_policy {
-        validate_master_password_for_user(password.as_str())?;
-    }
+    validate_master_password_for_user(password.as_str())?;
 
-    let kdf = KdfParams::default();
+    let kdf = crate::policy::effective_kdf_params_for_new_vaults();
     let salt = crypto::random_salt();
     let kek = MasterKey::derive_from_password(password.as_str(), &salt, kdf)?;
     let (dek_nonce, dek_ciphertext) = crypto::wrap_data_key(&kek, dek)?;
@@ -205,7 +178,7 @@ pub fn rewrap_user_dek(
 
     validate_master_password_for_user(new_password.as_str())?;
 
-    let kdf = KdfParams::default();
+    let kdf = crate::policy::effective_kdf_params_for_new_vaults();
     let salt = crypto::random_salt();
     let new_kek = MasterKey::derive_from_password(new_password.as_str(), &salt, kdf)?;
     let (dek_nonce, dek_ciphertext) = crypto::wrap_data_key(&new_kek, dek)?;

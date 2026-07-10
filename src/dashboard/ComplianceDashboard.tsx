@@ -34,8 +34,7 @@ function isComplianceOk(status: ComplianceStatus): boolean {
   return (
     status.auditChainValid &&
     auditAuthenticated &&
-    !status.keyRotationRecommended &&
-    !status.legacyFormatMigrationRecommended
+    !status.keyRotationRecommended
   );
 }
 
@@ -52,11 +51,7 @@ function auditAuthenticationLabel(
   return status.auditChainAuthenticated ? translate("common.yes") : translate("common.no");
 }
 
-export function ComplianceDashboard({
-  onOpenMigrateModal,
-}: Readonly<{
-  onOpenMigrateModal?: () => void;
-}>) {
+export function ComplianceDashboard() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ComplianceStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,25 +152,6 @@ export function ComplianceDashboard({
           />
         </div>
 
-        {status.legacyFormatMigrationRecommended ? (
-          <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
-            <p className="text-sm text-vault-accent">
-              {t("compliance.legacy_format_hint", { version: status.vaultFormatVersion })}
-            </p>
-            <button
-              type="button"
-              onClick={onOpenMigrateModal}
-              disabled={!onOpenMigrateModal}
-              className="vault-btn-primary mt-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t("compliance.migrate_to_v3")}
-            </button>
-            <p className="mt-2 text-xs leading-relaxed text-vault-muted">
-              {t("compliance.legacy_format_migration_note")}
-            </p>
-          </div>
-        ) : null}
-
         {status.keyRotationRecommended ? (
           <div className="mt-4 rounded border border-vault-accent/30 bg-vault-accent/5 p-4">
             <p className="text-sm text-vault-accent">
@@ -229,6 +205,28 @@ export function ComplianceDashboard({
   );
 }
 
+function complianceAccentStyle(ok: boolean | null): {
+  borderColor: string;
+  valueClass: string;
+} {
+  if (ok === true) {
+    return {
+      borderColor: "var(--color-vault-success)",
+      valueClass: "text-vault-success",
+    };
+  }
+  if (ok === false) {
+    return {
+      borderColor: "var(--color-vault-danger)",
+      valueClass: "text-vault-danger",
+    };
+  }
+  return {
+    borderColor: "var(--color-vault-border)",
+    valueClass: "text-vault-muted",
+  };
+}
+
 function ComplianceCard({
   label,
   description,
@@ -242,19 +240,7 @@ function ComplianceCard({
   ok: boolean | null;
   meta?: string;
 }>) {
-  const borderColor =
-    ok === true
-      ? "var(--color-vault-success)"
-      : ok === false
-        ? "var(--color-vault-danger)"
-        : "var(--color-vault-border)";
-
-  const valueClass =
-    ok === true
-      ? "text-vault-success"
-      : ok === false
-        ? "text-vault-danger"
-        : "text-vault-muted";
+  const { borderColor, valueClass } = complianceAccentStyle(ok);
 
   return (
     <div
