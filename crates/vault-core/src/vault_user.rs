@@ -11,6 +11,8 @@ use crate::crypto::{self, KdfParams, MasterKey, NONCE_LEN, SALT_LEN};
 use crate::error::VaultError;
 
 const MAX_USERNAME_LEN: usize = 64;
+/// Upper bound for decoded wrapped-DEK ciphertext (AES-GCM tag + payload).
+const MAX_WRAPPED_DEK_CIPHERTEXT_LEN: usize = 4096;
 
 /// Role of a vault user.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -215,6 +217,42 @@ pub fn decode_nonce(encoded: &str) -> Result<[u8; NONCE_LEN], VaultError> {
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(&bytes);
     Ok(nonce)
+}
+
+/// Validates base64-encoded user header fields without decrypting secrets.
+pub fn validate_user_record_fields(user: &VaultUser) -> Result<(), VaultError> {
+    decode_salt(&user.kdf_salt)?;
+    decode_nonce(&user.wrapped_dek_nonce)?;
+    let dek_ciphertext = STANDARD
+        .decode(&user.wrapped_dek_ciphertext)
+        .map_err(|_| VaultError::InvalidFormat)?;
+    if dek_ciphertext.is_empty() || dek_ciphertext.len() > MAX_WRAPPED_DEK_CIPHERTEXT_LEN {
+        return Err(VaultError::InvalidFormat);
+    }
+
+    match (&user.mfa_nonce, &user.mfa_ciphertext) {
+        (Some(nonce), Some(ciphertext)) => {
+            decode_nonce(nonce)?;
+            let mfa_bytes = STANDARD
+                .decode(ciphertext)
+                .map_err(|_| VaultError::InvalidFormat)?;
+            if mfa_bytes.is_empty() || mfa_bytes.len() > MAX_WRAPPED_DEK_CIPHERTEXT_LEN {
+                return Err(VaultError::InvalidFormat);
+            }
+        }
+        (None, None) => {}
+        _ => return Err(VaultError::InvalidFormat),
+    }
+
+    Ok(())
+}
+
+/// Validates every user record in a parsed `users_json` array.
+pub fn validate_users_json_fields(users: &[VaultUser]) -> Result<(), VaultError> {
+    for user in users {
+        validate_user_record_fields(user)?;
+    }
+    Ok(())
 }
 
 fn validate_master_password_for_user(password: &str) -> Result<(), VaultError> {

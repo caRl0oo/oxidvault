@@ -1665,6 +1665,18 @@ OxidVault is designed **offline-first**. Vault files (`.oxid`) reside on the ope
 
 See also [Browser Extension — Native Messaging (Phase 1–3)](#10-browser-extension--native-messaging-phase-13) for headless registration and the ping/pong E2E test.
 
+### Security-First CI/CD — Parser Fuzzing
+
+> **Status:** ✅ `fuzz/` crate (cargo-fuzz, libFuzzer) · byte-level parser entry points in `vault-core`
+
+| Target | `vault-core` entry point | Scope |
+|---|---|---|
+| `vault_format` | `format::parse_vault_file_bytes` | v4 magic, header, `users_json` (+ base64 field validation), payload nonce/ciphertext split — **no decryption** |
+| `audit_log` | `audit::parse_audit_log_bytes`, `audit::verify_audit_chain_bytes` | Line format, hash-chain field extraction and verification |
+| `ssh_key` | `ssh_key_parse::parse_ssh_private_key_bytes` | PEM/PPK normalization, envelope checks, `ssh_key_type` classification |
+
+The `fuzz/` workspace member is **excluded** from the root Cargo workspace. Run on Linux/WSL2 with Rust nightly — see [`fuzz/README.md`](fuzz/README.md). Optional GitHub workflow: `.github/workflows/fuzz.yml` (disabled via `if: false`; enable via `workflow_dispatch`).
+
 ---
 
 ## 10. Browser Extension — Native Messaging (Phase 1–3)
@@ -2329,6 +2341,7 @@ Full release history: [`CHANGELOG.md`](CHANGELOG.md).
 
 | Date | Change |
 |---|---|
+| **2026-07-10** | **cargo-fuzz** — `fuzz/` targets `vault_format`, `audit_log`, `ssh_key`; byte parsers `parse_vault_file_bytes`, `parse_audit_log_bytes`, `parse_ssh_private_key_bytes`; SSH structural parse moved to `vault-core/ssh_key_parse.rs` |
 | **2026-07-10** | **v4-only vault format** — v1–v3 read/write removed; legacy `.oxid` migration via OxidVault ≤ 2.5.1; new-vault KDF default **128 MiB** (131072 KiB, t=3, p=4); admin `kdfMemoryMib` (64–1024); `VaultError::UnsupportedLegacyFormat` / IPC `unsupported_legacy_format`; `open_vault` attach-only; `reencrypt_vault` → `change_own_password` |
 
 ## 15. Key Rotation & Compliance Dashboard

@@ -124,9 +124,23 @@ pub fn detect_private_key_type(private_key: &str) -> SshPrivateKeyType {
 
     if first.starts_with(PPK_PREFIX) {
         // Example:
+        //   PuTTY-User-Key-File-3: ssh-ed25519
         //   Key-Type: ssh-ed25519
-        //   Key-Type: ssh-rsa
-        //   Key-Type: ecdsa-sha2-nistp256
+        if let Some((_, key_type)) = first.split_once(':') {
+            let value = key_type.trim().to_ascii_lowercase();
+            if value.contains("ssh-rsa") {
+                return SshPrivateKeyType::Rsa;
+            }
+            if value.contains("ssh-dss") {
+                return SshPrivateKeyType::Dsa;
+            }
+            if value.contains("ssh-ed25519") {
+                return SshPrivateKeyType::Ed25519;
+            }
+            if value.contains("ecdsa-sha2") {
+                return SshPrivateKeyType::Ecdsa;
+            }
+        }
         for line in lower_norm.lines() {
             let line = line.trim();
             if let Some(value) = line.strip_prefix("key-type:") {
@@ -210,5 +224,11 @@ mod tests {
     fn detects_legacy_dsa_header() {
         let pem = "-----BEGIN DSA PRIVATE KEY-----\nQUJDREVGRw==\n-----END DSA PRIVATE KEY-----";
         assert_eq!(detect_private_key_type(pem), SshPrivateKeyType::Dsa);
+    }
+
+    #[test]
+    fn detects_ppk_version_line_ed25519() {
+        let ppk = "PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\n";
+        assert_eq!(detect_private_key_type(ppk), SshPrivateKeyType::Ed25519);
     }
 }

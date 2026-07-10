@@ -596,9 +596,31 @@ pub fn audit_log_has_checkpoints(path: &Path) -> bool {
         .any(|line| line.contains("[Checkpoint]") && line.contains(" hmac="))
 }
 
-/// Verifies the hash chain of an audit log file (integrity check).
-pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
-    let content = std::fs::read_to_string(path)?;
+/// Parses an audit log from untrusted bytes (line format + hash-chain fields).
+pub fn parse_audit_log_bytes(data: &[u8]) -> Result<Vec<AuditLogEntry>, VaultError> {
+    let content = std::str::from_utf8(data).map_err(|_| VaultError::AuditLogCorrupted)?;
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let parsed = parse_audit_line(line)?;
+            Ok(AuditLogEntry {
+                timestamp_utc: parsed.timestamp_utc,
+                action: parsed.action,
+                entry_id: parsed.entry_id,
+                entry_hash: parsed.entry_hash,
+            })
+        })
+        .collect()
+}
+
+/// Verifies the hash chain of audit log bytes (integrity check; pure computation).
+pub fn verify_audit_chain_bytes(data: &[u8]) -> Result<(), VaultError> {
+    let content = std::str::from_utf8(data).map_err(|_| VaultError::AuditLogCorrupted)?;
+    verify_audit_chain_content(content)
+}
+
+fn verify_audit_chain_content(content: &str) -> Result<(), VaultError> {
     let mut prev_hash = GENESIS_HASH.to_string();
 
     for line in content.lines().filter(|line| !line.trim().is_empty()) {
@@ -623,6 +645,12 @@ pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
     }
 
     Ok(())
+}
+
+/// Verifies the hash chain of an audit log file (integrity check).
+pub fn verify_audit_chain(path: &Path) -> Result<(), VaultError> {
+    let content = std::fs::read_to_string(path)?;
+    verify_audit_chain_content(&content)
 }
 
 /// Verifies checkpoint HMACs in addition to the structural hash chain.
@@ -965,5 +993,68 @@ mod tests {
             status.audit_authentication_status.as_deref(),
             Some(AUDIT_NO_CHECKPOINTS)
         );
+    }
+
+    fn build_test_audit_line(
+        timestamp: &str,
+        action: &str,
+        entry_id: &str,
+        prev_hash: &str,
+    ) -> String {
+        let record = format!(
+            "[{timestamp}] [{action}] [{entry_id}] prev_hash={prev_hash}",
+            timestamp = timestamp,
+            action = action,
+            entry_id = entry_id,
+            prev_hash = prev_hash,
+        );
+        let digest = Sha256::digest(record.as_bytes());
+        let entry_hash: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{record} entry_hash={entry_hash}")
+    }
+
+    #[test]
+    fn parse_audit_log_bytes_roundtrip() {
+        let line1 =
+            build_test_audit_line("2026-01-01T00:00:00.000Z", "VaultOpened", "-", GENESIS_HASH);
+        let hash1 = line1.rsplit_once(" entry_hash=").unwrap().1.to_string();
+        let line2 = build_test_audit_line(
+            "2026-01-01T00:00:01.000Z",
+            "VaultUnlocked",
+            "lock-1",
+            &hash1,
+        );
+        let content = format!("{line1}\n{line2}\n");
+        let bytes = content.as_bytes();
+
+        let entries = parse_audit_log_bytes(bytes).expect("parse");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].action, "VaultOpened");
+        verify_audit_chain_bytes(bytes).expect("chain");
+    }
+
+    #[test]
+    #[ignore = "run manually to refresh fuzz/corpus/audit_log seeds"]
+    fn write_fuzz_audit_corpus_seeds() {
+        use std::path::PathBuf;
+
+        let line1 =
+            build_test_audit_line("2026-01-01T00:00:00.000Z", "VaultOpened", "-", GENESIS_HASH);
+        let hash1 = line1.rsplit_once(" entry_hash=").unwrap().1.to_string();
+        let line2 = build_test_audit_line("2026-01-01T00:00:01.000Z", "Checkpoint", "-", &hash1);
+        let entry_hash = line2.rsplit_once(" entry_hash=").unwrap().1.to_string();
+        let hmac_key = [0x42u8; 32];
+        let hmac = compute_checkpoint_hmac(&hmac_key, &entry_hash);
+        let checkpoint = format!("{line2} hmac={hmac}");
+
+        let corpus_dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/audit_log");
+        std::fs::create_dir_all(&corpus_dir).unwrap();
+        std::fs::write(corpus_dir.join("line_vault_opened"), format!("{line1}\n")).unwrap();
+        std::fs::write(
+            corpus_dir.join("line_checkpoint"),
+            format!("{checkpoint}\n"),
+        )
+        .unwrap();
     }
 }

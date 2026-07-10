@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/vault-core", "crates/vault-generator", "crates/vault-wasm", "src-tauri", "tools/license-generator"]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "3.0.0"

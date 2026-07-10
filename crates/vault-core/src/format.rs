@@ -251,6 +251,15 @@ pub fn decrypt_multi_user_payload(
     Ok(payload)
 }
 
+/// Structural parse result for a v4 `.oxid` file (header + payload split; no decryption).
+#[derive(Debug, Clone)]
+pub struct ParsedVaultFile {
+    pub meta: VaultFileMeta,
+    pub header_len: usize,
+    pub payload_nonce: [u8; NONCE_LEN],
+    pub payload_ciphertext: Vec<u8>,
+}
+
 /// Parsed v4 vault file on disk: plaintext user table in the header plus the
 /// still-encrypted payload block (nonce + ciphertext) that follows the header bytes.
 #[derive(Debug, Clone)]
@@ -262,39 +271,49 @@ pub struct MultiUserVaultFile {
     pub payload_ciphertext: Vec<u8>,
 }
 
-pub fn read_raw_vault(path: &Path) -> Result<(VaultFileMeta, Vec<u8>), VaultError> {
-    let bytes = fs::read(path)?;
-    let (meta, header_len) = parse_header(&bytes)?;
-    Ok((meta, bytes[header_len..].to_vec()))
-}
+/// Parses a v4 vault file from untrusted bytes: magic, header, `users_json` (incl. base64
+/// field validation), and payload nonce/ciphertext split. Does not decrypt the payload.
+pub fn parse_vault_file_bytes(data: &[u8]) -> Result<ParsedVaultFile, VaultError> {
+    let (meta, header_len) = parse_header(data)?;
+    crate::vault_user::validate_users_json_fields(&meta.users)?;
 
-pub fn read_vault_meta(path: &Path) -> Result<VaultFileMeta, VaultError> {
-    let bytes = fs::read(path)?;
-    parse_header(&bytes).map(|(meta, _)| meta)
-}
-
-/// Reads a v4 vault header and encrypted payload parts.
-pub fn read_multi_user_vault_file(path: &Path) -> Result<MultiUserVaultFile, VaultError> {
-    let bytes = fs::read(path)?;
-    let (meta, header_len) = parse_header(&bytes)?;
-    if meta.format_version != FORMAT_VERSION_V4 {
-        return Err(VaultError::UnsupportedLegacyFormat {
-            version: meta.format_version,
-        });
-    }
-    let payload_blob = &bytes[header_len..];
+    let payload_blob = &data[header_len..];
     if payload_blob.len() <= NONCE_LEN {
         return Err(VaultError::InvalidFormat);
     }
     let (nonce_bytes, ciphertext) = payload_blob.split_at(NONCE_LEN);
     let mut payload_nonce = [0u8; NONCE_LEN];
     payload_nonce.copy_from_slice(nonce_bytes);
-    Ok(MultiUserVaultFile {
-        users: meta.users,
-        header_aad: bytes[..header_len].to_vec(),
-        format_version: meta.format_version,
+
+    Ok(ParsedVaultFile {
+        meta,
+        header_len,
         payload_nonce,
         payload_ciphertext: ciphertext.to_vec(),
+    })
+}
+
+pub fn read_raw_vault(path: &Path) -> Result<(VaultFileMeta, Vec<u8>), VaultError> {
+    let bytes = fs::read(path)?;
+    let parsed = parse_vault_file_bytes(&bytes)?;
+    Ok((parsed.meta, bytes[parsed.header_len..].to_vec()))
+}
+
+pub fn read_vault_meta(path: &Path) -> Result<VaultFileMeta, VaultError> {
+    let bytes = fs::read(path)?;
+    parse_vault_file_bytes(&bytes).map(|parsed| parsed.meta)
+}
+
+/// Reads a v4 vault header and encrypted payload parts.
+pub fn read_multi_user_vault_file(path: &Path) -> Result<MultiUserVaultFile, VaultError> {
+    let bytes = fs::read(path)?;
+    let parsed = parse_vault_file_bytes(&bytes)?;
+    Ok(MultiUserVaultFile {
+        users: parsed.meta.users,
+        header_aad: bytes[..parsed.header_len].to_vec(),
+        format_version: parsed.meta.format_version,
+        payload_nonce: parsed.payload_nonce,
+        payload_ciphertext: parsed.payload_ciphertext,
     })
 }
 
@@ -381,6 +400,7 @@ fn read_header_v4(
     reader.read_exact(&mut users_buf)?;
     let users: Vec<VaultUser> =
         serde_json::from_slice(&users_buf).map_err(|_| VaultError::InvalidFormat)?;
+    crate::vault_user::validate_users_json_fields(&users)?;
 
     Ok(VaultFileMeta {
         name,
@@ -717,5 +737,49 @@ mod tests {
         write_v3_vault_file(&path, "OnlyV4", &[user], dek.as_bytes(), &[]).unwrap();
         let meta = read_vault_meta(&path).unwrap();
         assert_eq!(meta.format_version, FORMAT_VERSION_V4);
+    }
+
+    #[test]
+    fn parse_vault_file_bytes_matches_path_reader() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bytes.oxid");
+        let password = Zeroizing::new("correct-horse-battery-staple".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user = build_vault_user("admin", password, UserRole::Admin, &dek, None).unwrap();
+        write_v3_vault_file(&path, "BytesVault", &[user], dek.as_bytes(), &[]).unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        let parsed = parse_vault_file_bytes(&bytes).unwrap();
+        let from_path = read_multi_user_vault_file(&path).unwrap();
+        assert_eq!(parsed.meta.format_version, from_path.format_version);
+        assert_eq!(parsed.payload_nonce, from_path.payload_nonce);
+        assert_eq!(parsed.payload_ciphertext, from_path.payload_ciphertext);
+    }
+
+    #[test]
+    #[ignore = "run manually to refresh fuzz/corpus/vault_format seeds"]
+    fn write_fuzz_vault_corpus_seeds() {
+        use std::path::PathBuf;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("minimal.oxid");
+        let password = Zeroizing::new("fuzz-corpus-password".to_string());
+        let dek = MasterKey::generate_data_key();
+        let user = build_vault_user("admin", password, UserRole::Admin, &dek, None).unwrap();
+        write_v3_vault_file(&path, "FuzzSeed", &[user], dek.as_bytes(), &[]).unwrap();
+        let bytes = fs::read(&path).unwrap();
+
+        let corpus_dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/vault_format");
+        fs::create_dir_all(&corpus_dir).unwrap();
+        fs::write(corpus_dir.join("minimal_v4.oxid"), &bytes).unwrap();
+
+        let mut truncated = bytes.clone();
+        truncated.truncate(bytes.len() / 2);
+        fs::write(corpus_dir.join("truncated_v4.oxid"), &truncated).unwrap();
+
+        let mut bad_magic = bytes;
+        bad_magic[0] = b'X';
+        fs::write(corpus_dir.join("bad_magic.oxid"), &bad_magic).unwrap();
     }
 }

@@ -20,6 +20,7 @@ pub mod path_util;
 pub mod policy;
 pub mod probe;
 pub mod security_audit;
+pub mod ssh_key_parse;
 pub mod ssh_key_type;
 pub mod unlock;
 pub mod url_match;
@@ -28,8 +29,9 @@ pub mod vault_user;
 
 pub use audit::{
     audit_log_has_checkpoints, derive_audit_hmac_key, init as init_audit_log, log_event_for_vault,
-    read_audit_logs, verify_audit_chain, verify_audit_chain_keyed, AuditAction, AuditLog,
-    AuditLogEntry, AuditLogger, AUDIT_CHECKPOINT_INTERVAL, AUDIT_NO_CHECKPOINTS,
+    parse_audit_log_bytes, read_audit_logs, verify_audit_chain, verify_audit_chain_bytes,
+    verify_audit_chain_keyed, AuditAction, AuditLog, AuditLogEntry, AuditLogger,
+    AUDIT_CHECKPOINT_INTERVAL, AUDIT_NO_CHECKPOINTS,
 };
 pub use audit_export::{export_audit_report, ExportFormat};
 pub use compliance::{compliance_status, ComplianceStatus, KEY_ROTATION_THRESHOLD_DAYS};
@@ -43,12 +45,21 @@ pub use policy::{
     MIN_MASTER_PASSWORD_LEN,
 };
 pub use security_audit::{audit_entries, SecurityAuditReport};
+pub use ssh_key_parse::{
+    classify_private_key_type, parse_ssh_private_key_bytes, PemKeyFormat, SshKeyParseFailure,
+    SshKeyParseOutcome,
+};
 
 pub use entry::{
     RevealedSecret, SecretEntry, SecretEntryInput, SecretEntryPublic, SecretEntrySummary,
     SecretField, SecretKindTag, SecretPayload, REVEAL_SECRET_WARNING,
 };
 pub use error::{VaultError, WeakPasswordReason};
+pub use format::{
+    decrypt_multi_user_payload, parse_vault_file_bytes, read_multi_user_vault_file, read_raw_vault,
+    read_vault_meta, update_v3_vault_file, write_v3_vault_file, MultiUserVaultFile,
+    ParsedVaultFile, VaultFileMeta, VaultPayload, FORMAT_VERSION_V4, MAGIC,
+};
 pub use generator::{generate_password, PasswordGenOptions, DEFAULT_PASSWORD_LENGTH};
 pub use license::{
     community_license, load_license, ActiveLicense, LicenseError, Plan, CE_MAX_USERS,
