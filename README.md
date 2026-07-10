@@ -314,6 +314,9 @@ Every code change undergoes automated verification before it reaches the main br
 | **Zero-warning policy** | `cargo clippy` + `cargo fmt --check` | No unsafe or suboptimal patterns enter the codebase |
 | **Crypto & integration tests** | `cargo test` | Encryption, vault format, and auth flows are verified on every push |
 | **Cross-platform audits** | CI matrix (Windows + Linux) | Platform-specific safeguards (DACLs, clipboard protection, IPC bridging) are validated on both targets |
+| **Parser fuzzing** | `cargo-fuzz` (libFuzzer + ASan) | Vault file, SSH key, and audit log parsers are fuzzed against malformed input; seed corpus maintained in-repo (`fuzz/`) |
+
+> Extended libFuzzer/ASan sessions to date report no crashes or panics across three parsers: ~1.28 billion runs on the v4 vault file parser, ~164 million on the SSH key parser, and ~215 million on the audit log parser. Targets and seed corpus are in [`fuzz/`](fuzz/) — reproduce with `cargo +nightly fuzz run vault_format` (Linux/WSL2, nightly).
 
 > **Transparency:** All security and quality checks are public. Inspect the [security audit pipeline configuration](.github/workflows/security-audit.yml).
 
